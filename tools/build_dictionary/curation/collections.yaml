@@ -1,0 +1,167 @@
+# Themed collections (axis 2). Bands (axis 1) are derived from freq_rank in
+# build_dictionary.py and are not defined here.
+#
+# Each collection lists the signals that admit a word, in the order the
+# pipeline applies them. The signal that produced a membership is recorded in
+# collection_words.source so a bad tag can be traced to its rule.
+#
+#   topics:      kaikki sense `topics` values (lowercase, hyphenated)      -> wiktionary_topic
+#   categories:  kaikki sense `categories` names (as printed on Wiktionary) -> wiktionary_topic
+#   registers:   kaikki sense `tags` used as register labels               -> register
+#   registers_exclude: any of these tags on the sense vetoes it
+#   freq_ratio:  {min, max} on log10(spoken per million) - log10(written per million),
+#                restricted to `bands`                                     -> freq_ratio
+#   include:     headwords forced in (or an explicit word_key)             -> manual
+#   exclude:     headwords forced out, every sense
+#   max_size:    cap, most frequent members win (default 400)
+#   min_size:    below this the collection is rejected with a warning (default 40)
+#   sort:        freq_rank (the only sort implemented)
+#
+# Forced entries always win over the automatic signals. Edit this file to make
+# a collection better; the pipeline does not need to change.
+
+defaults:
+  max_size: 400
+  min_size: 40
+  sort: freq_rank
+  # Tags that veto a sense from every themed collection.
+  veto_tags: [vulgar, offensive, slur, derogatory, obsolete, archaic, ethnic, dated]
+
+collections:
+  daily_use:
+    title: Daily Use
+    description: The words a normal day asks for.
+    icon: sun
+    # Signal 3 does most of the work here: conversational words are the ones
+    # that turn up in subtitles far more than in print.
+    freq_ratio: { min: 0.35 }
+    bands: [core, everyday]
+    categories: [Talking, Household, Family, Rooms, Furniture, Shopping, Cleaning, Sleep]
+    include: [borrow, tidy, queue, fetch, mend, nap, spare, chores, errand, fortnight]
+    exclude: []
+
+  professional_words:
+    title: Professional Words
+    description: Plainer than jargon, precise at work.
+    icon: briefcase
+    registers: [formal]
+    topics: [business, management, law, accounting, marketing, commerce, insurance]
+    categories: [Business, Law, Management]
+    # Bookish words in everyday-to-well-read range: written far more than spoken.
+    freq_ratio: { max: -0.5 }
+    bands: [everyday, well_read]
+    include: [notwithstanding, expedite, contingent, stakeholder, deliverable, mitigate, facilitate, leverage, liaise, escalate, streamline, benchmark, procure, remit, ratify]
+    exclude: [aforementioned]
+
+  social_gathering:
+    title: Social Gathering
+    description: For rooms full of people you half know.
+    icon: people
+    registers: [informal, colloquial]
+    registers_exclude: [slang, vulgar, dated, derogatory, offensive, slur, humorous]
+    categories: [Talking, People]
+    bands: [core, everyday, well_read]
+    include: [mingle, banter, chitchat, small talk, toast, host, guest, gathering, acquaintance, natter, chinwag, rapport, icebreaker, plus-one]
+    exclude: []
+
+  feelings_moods:
+    title: Feelings & Moods
+    description: Names for states you already know.
+    icon: heart
+    categories: [Emotions, Fear, Love, Anger, Happiness, Sadness, Pride, Shame, Anxiety, Emotional states]
+    topics: [emotion, psychology]
+    include: [wistful, morose, giddy, sullen, elated, listless, pensive, jittery, smug, glum, serene, irritable, forlorn, buoyant, apprehensive]
+    exclude: []
+
+  describing_people:
+    title: Describing People
+    description: Character, manner, and how someone reads.
+    icon: person
+    categories: [Personality, Appearance, Character, People, Male people, Female people, Hair, Body, Age, Human behaviour]
+    bands: [core, everyday, well_read, uncommon]
+    include: [affable, brusque, candid, diligent, gregarious, meticulous, obstinate, pragmatic, reticent, taciturn, unassuming, garrulous, aloof, gaunt, lanky, stocky, wiry, dishevelled, urbane, laconic]
+    exclude: []
+
+  food_cooking:
+    title: Food & Cooking
+    description: Heat, texture, and what to call it.
+    icon: pan
+    topics: [food, cooking, beverages, baking, cuisine]
+    categories: [Foods, Cooking, Beverages, Fruits, Vegetables, Meats, Cheeses, Breads, Desserts, Spices and herbs, Cooking utensils, Kitchenware, Alcoholic beverages, Condiments, Sauces, Pasta, Seafood, Sweets, Nuts, Grains, Dairy products]
+    include: [simmer, sear, braise, whisk, knead, zest, marinate, blanch, drizzle, garnish, savoury, tangy, crumbly, unctuous, aubergine, courgette, coriander]
+    exclude: []
+
+  travel:
+    title: Travel
+    description: Getting there, and writing about it after.
+    icon: compass
+    topics: [travel, tourism, transport, aviation, nautical, road, rail-transport, railways, vehicles, automotive, navigation]
+    categories: [Travel, Transport, Vehicles, Roads, Hotels, Aviation, Nautical, Rail transportation, Airports, Ships, Boats, Cycling, Tourism]
+    include: [itinerary, layover, sojourn, wanderlust, jaunt, excursion, detour, embark, disembark, berth, customs, timetable, fare, luggage, expedition, pilgrimage]
+    exclude: []
+
+  money_work:
+    title: Money & Work
+    description: Earning, owing, and the words in between.
+    icon: coins
+    topics: [finance, economics, banking, accounting, commerce, business, employment, insurance, marketing, management]
+    categories: [Money, Finance, Economics, Business, Occupations, Banking, Employment, Currency, Taxation, Trade, Investment]
+    include: [salary, invoice, overdraft, mortgage, dividend, budget, thrifty, frugal, solvent, arrears, freelance, redundancy, pension, ledger, tender, quota]
+    exclude: []
+
+  weather_nature:
+    title: Weather & Nature
+    description: A vocabulary for a grey afternoon.
+    icon: cloud
+    topics: [meteorology, climatology, ecology, botany, geography, horticulture, forestry]
+    categories: [Weather, Meteorology, Nature, Landforms, Trees, Flowers, Plants, Seasons, Water, Bodies of water, Sky, Atmosphere, Rain, Snow, Wind, Rivers, Mountains, Forests, Gardening, Birds, Animals, Insects, Precipitation]
+    include: [drizzle, overcast, squall, mist, thaw, frost, gale, sleet, muggy, balmy, brook, meadow, copse, moor, heath, dusk, undergrowth, downpour, sultry, blustery]
+    exclude: []
+
+  argument_persuasion:
+    title: Argument & Persuasion
+    description: How a case is made, and how it fails.
+    icon: scales
+    topics: [rhetoric, logic, debate, philosophy]
+    categories: [Rhetoric, Logic, Debating, Fallacies, Argumentation, Talking]
+    registers: [rhetoric]
+    bands: [everyday, well_read, uncommon]
+    include: [premise, rebut, refute, concede, fallacy, assert, contend, undermine, corroborate, plausible, tenuous, cogent, specious, spurious, hedge, digress, quibble, caveat, dogmatic, equivocate]
+    exclude: []
+
+  time_change:
+    title: Time & Change
+    description: Before, after, and the slow middle.
+    icon: clock
+    categories: [Time, Timekeeping, Periodic occurrences, Seasons, Calendar, Days of the week, Months, Units of time, Change, Age, History]
+    topics: [time, calendar, history]
+    include: [fortnight, dusk, dawn, eventually, gradual, abrupt, fleeting, perennial, interim, hitherto, erstwhile, imminent, lull, wane, wax, dwindle, ephemeral, protracted, stagnate, transient]
+    exclude: []
+
+  body_health:
+    title: Body & Health
+    description: Plain words for how you feel.
+    icon: pulse
+    topics: [medicine, anatomy, physiology, pathology, surgery, dentistry, pharmacology, health, fitness]
+    categories: [Anatomy, Medicine, Diseases, Body parts, Health, Pathology, Sleep, Pain, Symptoms, Injuries, Organs, Bones, Muscles, Skin, Teeth, Blood, Exercise]
+    bands: [core, everyday, well_read]
+    include: [ache, sprain, bruise, nausea, drowsy, queasy, limber, brittle, ailment, remedy, convalesce, fatigue, lethargic, robust, frail, wince, flinch, numb, tender, hoarse]
+    exclude: []
+
+  reading_writing:
+    title: Reading & Writing
+    description: The vocabulary of the page itself.
+    icon: book
+    topics: [literature, writing, publishing, grammar, linguistics, poetry, printing, typography, lexicography, fiction, journalism, narratology, prosody]
+    categories: [Literature, Writing, Grammar, Books, Poetry, Publishing, Literary genres, Narratology, Fiction, Journalism, Typography, Punctuation, Rhetoric]
+    include: [prose, stanza, preface, epilogue, footnote, margin, draft, edit, paraphrase, synopsis, anthology, memoir, verbose, terse, lucid, italic, manuscript, glossary, excerpt, anecdote]
+    exclude: []
+
+  place_building:
+    title: Place & Building
+    description: Streets, rooms, and what holds them up.
+    icon: house
+    topics: [architecture, construction, carpentry, masonry, plumbing, urbanism]
+    categories: [Architecture, Buildings, Rooms, Construction, Housing, Furniture, Roads, Bridges, Doors, Windows, Walls, Building materials, Towns, Cities, Streets, Home]
+    include: [alcove, annexe, attic, cellar, corridor, eaves, facade, gable, hallway, lintel, pantry, porch, rafter, scaffold, terrace, threshold, veranda, alley, cul-de-sac, courtyard]
+    exclude: []

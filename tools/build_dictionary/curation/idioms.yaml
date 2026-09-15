@@ -1,0 +1,35 @@
+# Idiom curation. The pipeline scores Wiktionary's idiomatic multi-word
+# entries automatically (common words only, example present, no vulgar or
+# dated tags) and keeps the best `max_size`. This file is the last mile.
+#
+#   include: phrases forced in, exactly as Wiktionary spells them
+#   exclude: phrases forced out
+#   max_size: how many to ship (sample builds cap lower via --sample)
+
+max_size: 1500
+include:
+  - kick the bucket
+  - once in a blue moon
+  - under the weather
+  - bite the bullet
+  - the ball is in someone's court
+  - blessing in disguise
+  - beat around the bush
+  - break the ice
+  - call it a day
+  - cut corners
+  - hit the hay
+  - let the cat out of the bag
+  - sit on the fence
+  - pull someone's leg
+  - see eye to eye
+  - speak of the devil
+  - last straw
+  - piece of cake
+  - an arm and a leg
+  - get out of hand
+  - go the extra mile
+  - jump on the bandwagon
+  - throw in the towel
+  - lose one's touch
+exclude: []
