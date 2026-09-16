@@ -105,8 +105,42 @@ belongs:
   - wry
   - brusque
   - deft
+  - contemptible
+  - inscrutable
+  - cavort
+  - epoch
+  - depose
+  - ordnance
+  - disbursement
+  - dormer
+  - subsume
+  - expunge
+  - niggle
+  - irk
 
 does_not:
+  # High prevalence or derived forms without teaching value.
+  - fertility
+  - vibrant
+  - brash
+  - fret
+  - fabrication
+  - disgruntled
+  - showstopper
+  - relevance
+  - immunity
+  - chassis
+  - feta
+  - outsize
+  - overstress
+  - commercialise
+  - adjournment
+  - dissemination
+  - imp (verb)
+  - citrate (verb)
+  - ridgeway
+  - actualisation
+  - reselection
   # Known by essentially everyone.
   - noodles
   - month

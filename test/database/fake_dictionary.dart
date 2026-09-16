@@ -28,6 +28,40 @@ class FakeWord {
   String get key => '${DictionaryDb.normalise(headword)}|$pos|1';
 }
 
+/// One phrase to put in a fake dictionary.
+class FakePhrase {
+  const FakePhrase(
+    this.phrase,
+    this.type,
+    this.meaning, {
+    this.usageNote,
+    this.example,
+    this.register = 'everyday',
+    this.origin,
+    this.attribution,
+    this.sourceLanguage,
+    this.slotPattern,
+    this.rank = 100,
+    this.inLearningSet = true,
+  });
+
+  final String phrase;
+  final String type;
+  final String meaning;
+  final String? usageNote;
+  final String? example;
+  final String register;
+  final String? origin;
+  final String? attribution;
+  final String? sourceLanguage;
+  final String? slotPattern;
+  final int rank;
+  final bool inLearningSet;
+
+  String get norm => DictionaryDb.normalise(phrase);
+  String get key => '$norm|$type|1';
+}
+
 /// Builds an in-memory dictionary from the real `schema.sql`, so the tests
 /// exercise the schema the pipeline ships rather than a copy of it.
 ///
@@ -37,6 +71,7 @@ class FakeWord {
 /// empty; [details] overrides them as `(kind, title, description)`.
 DictionaryDb fakeDictionary({
   required List<FakeWord> words,
+  List<FakePhrase> phrases = const <FakePhrase>[],
   Map<String, List<String>> collections = const <String, List<String>>{},
   Map<String, (String, String, String)> details = const <String, (String, String, String)>{},
   String version = 'test',
@@ -44,6 +79,29 @@ DictionaryDb fakeDictionary({
   final Database db = sqlite3.openInMemory();
   db.execute(File('tools/build_dictionary/schema.sql').readAsStringSync());
   db.execute("INSERT INTO meta(key, value) VALUES ('dict_version', ?)", <Object>[version]);
+  for (final FakePhrase p in phrases) {
+    db.execute(
+      'INSERT INTO phrases(phrase_key, phrase, phrase_norm, type, meaning, usage_note, '
+      'example, register, origin, attribution, source_language, slot_pattern, freq_rank, in_learning_set) '
+      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      <Object?>[
+        p.key,
+        p.phrase,
+        p.norm,
+        p.type,
+        p.meaning,
+        p.usageNote,
+        p.example,
+        p.register,
+        p.origin,
+        p.attribution,
+        p.sourceLanguage,
+        p.slotPattern,
+        p.rank,
+        p.inLearningSet ? 1 : 0,
+      ],
+    );
+  }
   for (final FakeWord w in words) {
     db.execute(
       'INSERT INTO words(word_key, headword, headword_norm, pos, sense_index, definition_short, '
@@ -74,5 +132,6 @@ DictionaryDb fakeDictionary({
   }
   db.execute("INSERT INTO words_fts(words_fts) VALUES ('rebuild')");
   db.execute("INSERT INTO words_trigram(words_trigram) VALUES ('rebuild')");
+  db.execute("INSERT INTO phrases_fts(phrases_fts) VALUES ('rebuild')");
   return DictionaryDb.forTesting(db);
 }

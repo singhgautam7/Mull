@@ -6,6 +6,9 @@ No framework: plain asserts, so it needs nothing beyond requirements.txt.
 """
 from build_dictionary import (
     BAND_CUTS,
+    LEARNING_MIN_PREVALENCE,
+    NON_DOMINANT_POS_DISCOUNT,
+    NON_PRIMARY_SENSE_DISCOUNT,
     TOPICS,
     band_of,
     british_headword,
@@ -16,6 +19,9 @@ from build_dictionary import (
     is_uk_spelling_of,
     keep_sense,
     norm,
+    make_slot_pattern,
+    build_phrases,
+    phrase_collections,
     qa_check,
     select_learning_set,
     short_definition,
@@ -157,12 +163,52 @@ def test_collections_make_their_promise_and_respect_size_bounds():
     slugs = [d["slug"] for d in defs]
     assert "better_than_very" in slugs and "feelings_without_names" not in slugs, slugs
     assert len(members["better_than_very"]) == 200
-    # Ranked by prevalence nearest the middle of the learning band, so the
-    # extremes are what the cap removed.
+    # Ranked by teaching value (prevalence vs written Zipf gap), so the
+    # highest teaching value items are kept and lowest are what the cap removed.
     kept = {w["headword"] for w, _ in members["better_than_very"]}
-    assert "intense249" not in kept and "intense75" in kept
+    assert "intense249" in kept and "intense0" not in kept
     assert all(d["kind"] == "band" for d in defs[:4])
     assert all(t.replace("_", "").isalpha() for t in TOPICS)
+
+
+def test_rare_senses_excluded():
+    """Bug 1: Homographs and rare senses take discounts (non-dominant POS discount: 0.70,
+    non-primary sense discount: 0.80). Assert that imp|verb|1, citrate|verb|1, and
+    outsize|noun|1 are excluded from the learning set."""
+    # 1. Prevalence discount arithmetic
+    # imp: verb is non-dominant POS (SUBTLEX: noun 37, verb 4), sense 2 in Kaikki
+    imp_prev = 0.9508
+    imp_verb_eff = imp_prev * NON_DOMINANT_POS_DISCOUNT * NON_PRIMARY_SENSE_DISCOUNT
+    assert imp_verb_eff < LEARNING_MIN_PREVALENCE, f"imp verb eff {imp_verb_eff} >= {LEARNING_MIN_PREVALENCE}"
+
+    # citrate: verb is non-dominant POS (SUBTLEX: noun 7, verb 1)
+    citrate_prev = 0.793
+    citrate_verb_eff = citrate_prev * NON_DOMINANT_POS_DISCOUNT
+    assert citrate_verb_eff < LEARNING_MIN_PREVALENCE, f"citrate verb eff {citrate_verb_eff} >= {LEARNING_MIN_PREVALENCE}"
+
+    # outsize: noun is non-dominant POS (SUBTLEX: adj 16, verb 3, noun 2), non-primary
+    outsize_prev = 0.970
+    outsize_noun_eff = outsize_prev * NON_DOMINANT_POS_DISCOUNT * NON_PRIMARY_SENSE_DISCOUNT
+    assert outsize_noun_eff < LEARNING_MIN_PREVALENCE, f"outsize noun eff {outsize_noun_eff} >= {LEARNING_MIN_PREVALENCE}"
+
+    # 2. Verify through select_learning_set
+    rows = [
+        dict(row("imp", pos="verb", prevalence=imp_prev), prevalence_effective=imp_verb_eff),
+        dict(row("citrate", pos="verb", prevalence=citrate_prev), prevalence_effective=citrate_verb_eff),
+        dict(row("outsize", pos="noun", prevalence=outsize_prev), prevalence_effective=outsize_noun_eff),
+        row("adamant", pos="adj", prevalence=0.94, aoa=14.3, zs=3.5),
+    ]
+    primary = {r["headword_norm"]: r for r in rows}
+    ent_of = {hn: FakeEntry([{"topics": r["topics"]}]) for hn, r in primary.items()}
+    holdout = {
+        "belongs": ["adamant"],
+        "does_not": ["imp (verb)", "citrate (verb)", "outsize (noun)"],
+    }
+    out, _ = select_learning_set(primary, ent_of, alias_norms=set(), holdout=holdout)
+    assert "imp" not in out, f"imp should be excluded: {out}"
+    assert "citrate" not in out, f"citrate should be excluded: {out}"
+    assert "outsize" not in out, f"outsize should be excluded: {out}"
+    assert "adamant" in out, f"adamant should be kept: {out}"
 
 
 def test_llm_stage_batches_caches_and_retries_individually(tmp=None):
@@ -277,6 +323,80 @@ def test_gemini_stage_batches_caches_and_retries_individually():
         assert sorted(calls) == [1] * 6 + [6, 20], calls
         assert len(cache.read_text().splitlines()) == 26
         assert json.loads(cache.read_text().splitlines()[0])["output"]["definition_short"] == "x"
+
+
+def test_slot_pattern_and_phrase_collections():
+    # 1. Slot patterns
+    assert make_slot_pattern("take in", True) == "[take] [someone/something] [in]"
+    assert make_slot_pattern("look forward to", True) == "[look] forward [to] [someone/something]"
+    assert make_slot_pattern("give up", False) == "[give] up"
+
+    # 2. Phrase collections and floor enforcement
+    mock_phrases = []
+    # 150 everyday idioms
+    for i in range(160):
+        mock_phrases.append({
+            "phrase_key": f"idiom{i}|idiom|1", "phrase": f"idiom {i}", "phrase_norm": f"idiom {i}",
+            "type": "idiom", "meaning": "def", "example": "ex", "register": "everyday",
+            "_score": (1, i, 10), "in_learning_set": 1,
+        })
+    # 100 proverbs
+    for i in range(105):
+        mock_phrases.append({
+            "phrase_key": f"proverb{i}|proverb|1", "phrase": f"proverb {i}", "phrase_norm": f"proverb {i}",
+            "type": "proverb", "meaning": "def", "example": "ex", "register": "everyday",
+            "usage_note": "note", "_score": (1, i, 10), "in_learning_set": 1,
+        })
+    # 80 odd origins
+    odd_list = []
+    for i in range(85):
+        p = f"odd {i}"
+        odd_list.append(p)
+        mock_phrases.append({
+            "phrase_key": f"odd{i}|idiom|1", "phrase": p, "phrase_norm": p,
+            "type": "idiom", "meaning": "def", "example": "ex", "register": "everyday",
+            "origin": "A long origin text explaining where this phrase came from.",
+            "_score": (1, i, 10), "in_learning_set": 1,
+        })
+    # 75 binomials
+    for i in range(75):
+        mock_phrases.append({
+            "phrase_key": f"binomial{i}|binomial|1", "phrase": f"binomial {i}", "phrase_norm": f"binomial {i}",
+            "type": "binomial", "meaning": "def", "example": "ex", "register": "everyday",
+            "usage_note": "Fixed order", "_score": (1, i, 10), "in_learning_set": 1,
+        })
+    # 75 borrowed
+    for i in range(75):
+        mock_phrases.append({
+            "phrase_key": f"borrowed{i}|idiom|1", "phrase": f"borrowed {i}", "phrase_norm": f"borrowed {i}",
+            "type": "idiom", "meaning": "def", "example": "ex", "register": "everyday",
+            "source_language": "la", "_score": (1, i, 10), "in_learning_set": 1,
+        })
+    # 50 aphorisms
+    for i in range(50):
+        mock_phrases.append({
+            "phrase_key": f"aphorism{i}|aphorism|1", "phrase": f"aphorism {i}", "phrase_norm": f"aphorism {i}",
+            "type": "aphorism", "meaning": "def", "example": "ex", "register": "literary",
+            "attribution": "Famous Author", "usage_note": "note", "_score": (1, i, 10), "in_learning_set": 1,
+        })
+
+    cur = {"idioms": {"odd_origins": odd_list}}
+    defs, members = phrase_collections(mock_phrases, cur)
+    assert len(defs) == 6
+    assert len(members["idioms_everyday"]) >= 60
+    assert len(members["sayings_worth_knowing"]) >= 60
+    assert len(members["idioms_odd_origins"]) >= 60
+    assert len(members["two_words_new_meaning"]) >= 60
+    assert len(members["borrowed_whole"]) >= 60
+    assert len(members["said_better_by_someone_else"]) >= 40
+
+    # Shortfall raises ValueError
+    bad_cur = {"idioms": {"odd_origins": []}}
+    try:
+        phrase_collections([p for p in mock_phrases if p["type"] != "binomial"], bad_cur)
+        assert False, "Should have raised ValueError on shortfall"
+    except ValueError as e:
+        assert "CRITICAL SHORTFALL" in str(e)
 
 
 if __name__ == "__main__":

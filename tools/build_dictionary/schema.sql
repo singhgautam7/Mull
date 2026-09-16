@@ -61,17 +61,43 @@ CREATE TABLE aliases(
   PRIMARY KEY(alias_norm, word_key)
 );
 
-CREATE TABLE idioms(
-  id          INTEGER PRIMARY KEY,
-  idiom_key   TEXT NOT NULL UNIQUE,
-  phrase      TEXT NOT NULL,
-  phrase_norm TEXT NOT NULL,
-  meaning     TEXT NOT NULL,
-  example     TEXT,
-  register    TEXT NOT NULL,               -- formal | informal | dated | neutral
-  origin      TEXT                         -- Wiktionary etymology, first paragraph; null when none
+CREATE TABLE phrases(
+  id                INTEGER PRIMARY KEY,
+  phrase_key        TEXT NOT NULL UNIQUE,
+  phrase            TEXT NOT NULL,
+  phrase_norm       TEXT NOT NULL,
+  type              TEXT NOT NULL,          -- idiom | proverb | simile | phrasal_verb | binomial | aphorism
+  meaning           TEXT NOT NULL,
+  usage_note        TEXT,                   -- mandatory for proverb, simile, aphorism; optional for others
+  example           TEXT,
+  register          TEXT NOT NULL,          -- everyday | formal | literary | informal | slang | archaic | pretentious
+  origin            TEXT,
+  attribution       TEXT,                   -- author / source for aphorisms; null for folklore
+  source_language   TEXT,                   -- fr | la | de | it | el | etc.
+  slot_pattern      TEXT,                   -- for phrasal verbs: '[verb] [someone] [prep]'
+  freq_rank         INTEGER NOT NULL,
+  in_learning_set   INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX idioms_phrase_norm ON idioms(phrase_norm);
+CREATE INDEX phrases_phrase_norm ON phrases(phrase_norm);
+
+CREATE VIRTUAL TABLE phrases_fts USING fts5(
+  phrase, meaning,
+  content='phrases', content_rowid='id',
+  tokenize='unicode61'
+);
+
+-- Backward compatibility view so existing idiom queries and joins resolve seamlessly.
+CREATE VIEW idioms AS
+  SELECT
+    id,
+    phrase_key AS idiom_key,
+    phrase,
+    phrase_norm,
+    meaning,
+    example,
+    register,
+    origin
+  FROM phrases;
 
 CREATE TABLE collections(
   id          INTEGER PRIMARY KEY,

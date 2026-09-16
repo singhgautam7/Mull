@@ -89,6 +89,59 @@ class Collection {
 }
 
 @immutable
+class Phrase {
+  const Phrase({
+    required this.phraseKey,
+    required this.phrase,
+    required this.phraseNorm,
+    required this.type,
+    required this.meaning,
+    this.usageNote,
+    this.example,
+    required this.register,
+    this.origin,
+    this.attribution,
+    this.sourceLanguage,
+    this.slotPattern,
+    required this.freqRank,
+    required this.inLearningSet,
+  });
+
+  /// `{phrase_norm}|{type}|1`
+  final String phraseKey;
+  final String phrase;
+  final String phraseNorm;
+  final String type;
+  final String meaning;
+  final String? usageNote;
+  final String? example;
+  final String register;
+  final String? origin;
+  final String? attribution;
+  final String? sourceLanguage;
+  final String? slotPattern;
+  final int freqRank;
+  final bool inLearningSet;
+
+  factory Phrase._from(Row r) => Phrase(
+    phraseKey: r['phrase_key'] as String,
+    phrase: r['phrase'] as String,
+    phraseNorm: r['phrase_norm'] as String,
+    type: r['type'] as String,
+    meaning: r['meaning'] as String,
+    usageNote: r['usage_note'] as String?,
+    example: r['example'] as String?,
+    register: r['register'] as String,
+    origin: r['origin'] as String?,
+    attribution: r['attribution'] as String?,
+    sourceLanguage: r['source_language'] as String?,
+    slotPattern: r['slot_pattern'] as String?,
+    freqRank: r['freq_rank'] as int,
+    inLearningSet: (r['in_learning_set'] as int) == 1,
+  );
+}
+
+@immutable
 class Idiom {
   const Idiom({
     required this.idiomKey,
@@ -145,8 +198,10 @@ class DictionaryDb {
               .first['n']
           as int;
 
-  int get idiomCount =>
-      _db.select('SELECT count(*) AS n FROM idioms').first['n'] as int;
+  int get phraseCount =>
+      _db.select('SELECT count(*) AS n FROM phrases').first['n'] as int;
+
+  int get idiomCount => phraseCount;
 
   static const String _cols =
       'word_key, headword, headword_norm, pos, sense_index, definition_short, '
@@ -336,12 +391,29 @@ class DictionaryDb {
     return d[a.length][b.length];
   }
 
+  static const String _phraseCols =
+      'phrase_key, phrase, phrase_norm, type, meaning, usage_note, example, '
+      'register, origin, attribution, source_language, slot_pattern, freq_rank, in_learning_set';
+
+  List<Phrase> searchPhrases(String query, {int limit = 30}) {
+    final String q = normalise(query);
+    if (q.isEmpty) return const <Phrase>[];
+    return _db
+        .select(
+          'SELECT $_phraseCols FROM phrases '
+          "WHERE phrase_norm LIKE '%' || ? || '%' ORDER BY length(phrase_norm) LIMIT ?",
+          <Object>[q, limit],
+        )
+        .map(Phrase._from)
+        .toList();
+  }
+
   List<Idiom> searchIdioms(String query, {int limit = 30}) {
     final String q = normalise(query);
     if (q.isEmpty) return const <Idiom>[];
     return _db
         .select(
-          'SELECT idiom_key, phrase, meaning, example, register FROM idioms '
+          'SELECT phrase_key AS idiom_key, phrase, meaning, example, register FROM phrases '
           "WHERE phrase_norm LIKE '%' || ? || '%' ORDER BY length(phrase_norm) LIMIT ?",
           <Object>[q, limit],
         )
@@ -406,25 +478,60 @@ class DictionaryDb {
       .map((Row r) => r['alias_norm'] as String)
       .toList();
 
+  /// Members of a phrase collection, in position order.
+  List<Phrase> collectionPhrases(String slug) => _db
+      .select(
+        'SELECT p.$_phraseCols FROM collection_words cw '
+        'JOIN collections c ON c.id = cw.collection_id '
+        'JOIN phrases p ON p.phrase_key = cw.word_key '
+        'WHERE c.slug = ? ORDER BY cw.position',
+        <Object>[slug],
+      )
+      .map(Phrase._from)
+      .toList();
+
   /// Members of an idiom collection, in position order. For kind = idiom,
-  /// `collection_words.word_key` holds an `idiom_key`.
+  /// `collection_words.word_key` holds an `idiom_key` / `phrase_key`.
   List<Idiom> collectionIdioms(String slug) => _db
       .select(
-        'SELECT i.idiom_key, i.phrase, i.meaning, i.example, i.register FROM collection_words cw '
+        'SELECT p.phrase_key AS idiom_key, p.phrase, p.meaning, p.example, p.register FROM collection_words cw '
         'JOIN collections c ON c.id = cw.collection_id '
-        'JOIN idioms i ON i.idiom_key = cw.word_key '
+        'JOIN phrases p ON p.phrase_key = cw.word_key '
         'WHERE c.slug = ? ORDER BY cw.position',
         <Object>[slug],
       )
       .map(_idiomFrom)
       .toList();
 
-  Idiom? idiomByKey(String key) {
+  /// Look up a phrase by key. If [key] matches a legacy idiom key
+  /// `{phrase_norm}|idiom|1`, it resolves by phrase_norm to the canonical phrase.
+  Phrase? phraseByKey(String key) {
     final ResultSet rs = _db.select(
-      'SELECT idiom_key, phrase, meaning, example, register FROM idioms WHERE idiom_key = ?',
+      'SELECT $_phraseCols FROM phrases WHERE phrase_key = ?',
       <Object>[key],
     );
-    return rs.isEmpty ? null : _idiomFrom(rs.first);
+    if (rs.isNotEmpty) return Phrase._from(rs.first);
+    if (key.contains('|')) {
+      final String norm = key.split('|').first;
+      final ResultSet byNorm = _db.select(
+        'SELECT $_phraseCols FROM phrases WHERE phrase_norm = ? LIMIT 1',
+        <Object>[norm],
+      );
+      if (byNorm.isNotEmpty) return Phrase._from(byNorm.first);
+    }
+    return null;
+  }
+
+  Idiom? idiomByKey(String key) {
+    final Phrase? p = phraseByKey(key);
+    if (p == null) return null;
+    return Idiom(
+      idiomKey: p.phraseKey,
+      phrase: p.phrase,
+      meaning: p.meaning,
+      example: p.example,
+      register: p.register,
+    );
   }
 
   static Idiom _idiomFrom(Row r) => Idiom(

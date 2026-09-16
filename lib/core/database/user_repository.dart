@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import 'dictionary_db.dart';
 import 'user_db.dart';
 
 /// Collections (bookmarks, reading, user lists), notes, seen state, lookups
@@ -422,4 +423,53 @@ class UserRepository {
             ..limit(limit))
           .watch()
           .map((List<RecentLookup> rows) => rows.map((RecentLookup r) => r.wordKey).toList());
+
+  /// Rule D4 forward migration: remapped phrase types.
+  /// If a user saved a legacy `{phrase_norm}|idiom|1` key and the phrase was
+  /// reclassified (e.g. to proverb or binomial), updates all user tables
+  /// to the new canonical `phrase_key`.
+  Future<int> migrateLegacyPhraseKeys(DictionaryDb dict) async {
+    int count = 0;
+    final List<QueryRow> rows = await _db.customSelect(
+      "SELECT DISTINCT word_key FROM user_collection_words WHERE word_key LIKE '%|idiom|1' "
+      "UNION SELECT DISTINCT word_key FROM notes WHERE word_key LIKE '%|idiom|1' "
+      "UNION SELECT DISTINCT word_key FROM seen WHERE word_key LIKE '%|idiom|1' "
+      "UNION SELECT DISTINCT word_key FROM recent_lookups WHERE word_key LIKE '%|idiom|1'",
+    ).get();
+
+    for (final QueryRow r in rows) {
+      final String oldKey = r.read<String>('word_key');
+      final Phrase? phrase = dict.phraseByKey(oldKey);
+      if (phrase != null && phrase.phraseKey != oldKey) {
+        final String newKey = phrase.phraseKey;
+        await _db.customUpdate(
+          'UPDATE OR REPLACE user_collection_words SET word_key = ? WHERE word_key = ?',
+          variables: <Variable<Object>>[Variable<String>(newKey), Variable<String>(oldKey)],
+          updates: <TableInfo<Table, Object?>>{_db.userCollectionWords},
+        );
+        await _db.customUpdate(
+          'UPDATE OR REPLACE notes SET word_key = ? WHERE word_key = ?',
+          variables: <Variable<Object>>[Variable<String>(newKey), Variable<String>(oldKey)],
+          updates: <TableInfo<Table, Object?>>{_db.notes},
+        );
+        await _db.customUpdate(
+          'UPDATE OR REPLACE seen SET word_key = ? WHERE word_key = ?',
+          variables: <Variable<Object>>[Variable<String>(newKey), Variable<String>(oldKey)],
+          updates: <TableInfo<Table, Object?>>{_db.seen},
+        );
+        await _db.customUpdate(
+          'UPDATE recent_lookups SET word_key = ? WHERE word_key = ?',
+          variables: <Variable<Object>>[Variable<String>(newKey), Variable<String>(oldKey)],
+          updates: <TableInfo<Table, Object?>>{_db.recentLookups},
+        );
+        await _db.customUpdate(
+          'UPDATE seen_events SET word_key = ? WHERE word_key = ?',
+          variables: <Variable<Object>>[Variable<String>(newKey), Variable<String>(oldKey)],
+          updates: <TableInfo<Table, Object?>>{_db.seenEvents},
+        );
+        count++;
+      }
+    }
+    return count;
+  }
 }
