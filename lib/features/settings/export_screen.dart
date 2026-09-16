@@ -30,7 +30,8 @@ class ExportScreen extends ConsumerWidget {
     final DictionaryDb dict = ref.read(dictProvider);
     final Map<String, String> notes = await user.allNotes();
     final List<String> bookmarks = await user.bookmarkedKeys();
-    final List<WordList> lists = await user.lists();
+    // Bookmarks have their own section; every other collection follows.
+    final List<UserCollection> lists = (await user.collections()).where((UserCollection l) => l.slug != UserRepository.bookmarksSlug).toList();
     final StringBuffer out = StringBuffer();
 
     String head(String key) => dict.byKey(key)?.headword ?? key;
@@ -46,9 +47,9 @@ class ExportScreen extends ConsumerWidget {
       for (final MapEntry<String, String> n in notes.entries) {
         out.writeln('### ${head(n.key)}\n\n${n.value}\n');
       }
-      for (final WordList l in lists) {
+      for (final UserCollection l in lists) {
         out.writeln('## ${l.name}\n');
-        for (final String k in await user.listWordKeys(l.id)) {
+        for (final String k in await user.collectionWordKeys(l.slug)) {
           out.writeln('- **${head(k)}**: ${def(k)}');
         }
         out.writeln();
@@ -62,8 +63,8 @@ class ExportScreen extends ConsumerWidget {
       for (final MapEntry<String, String> n in notes.entries) {
         out.writeln('note,,${q(head(n.key))},${n.key},${q(def(n.key))},${q(n.value)}');
       }
-      for (final WordList l in lists) {
-        for (final String k in await user.listWordKeys(l.id)) {
+      for (final UserCollection l in lists) {
+        for (final String k in await user.collectionWordKeys(l.slug)) {
           out.writeln('list,${q(l.name)},${q(head(k))},$k,${q(def(k))},${q(notes[k] ?? '')}');
         }
       }

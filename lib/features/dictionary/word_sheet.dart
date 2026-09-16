@@ -126,8 +126,9 @@ class _WordSheet extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: Space.sm),
-                Row(
+                Wrap(
                   spacing: Space.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
                     if (word.ipa != null) ...<Widget>[
                       Text(
@@ -155,13 +156,10 @@ class _WordSheet extends ConsumerWidget {
                         ),
                       ),
                     if (plural.isNotEmpty)
-                      Flexible(
-                        child: Text(
-                          'plural ${plural.first}',
-                          style: MullType.monoLabel.copyWith(
-                            color: c.onSurfaceVariant,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                      Text(
+                        'plural ${plural.first}',
+                        style: MullType.monoLabel.copyWith(
+                          color: c.onSurfaceVariant,
                         ),
                       ),
                   ],

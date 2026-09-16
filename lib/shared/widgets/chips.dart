@@ -106,10 +106,14 @@ class SegmentedToggle<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     return Container(
-      height: compact ? 34 : 38,
+      // A minimum, not a height: at a large font scale the track grows.
+      constraints: BoxConstraints(minHeight: compact ? 34 : 38),
       padding: const EdgeInsets.all(Space.xs),
       decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
-      child: Row(
+      // The thumb fills the track's height whatever the text scale.
+      child: IntrinsicHeight(
+        child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final (T value, String label) in options)
             Expanded(
@@ -132,10 +136,14 @@ class SegmentedToggle<T> extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       spacing: 6,
                       children: <Widget>[
-                        Text(
-                          label,
-                          style: MullType.titleSmall.copyWith(
-                            color: value == selected ? c.onSurface : c.onSurfaceVariant,
+                        Flexible(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: MullType.titleSmall.copyWith(
+                              color: value == selected ? c.onSurface : c.onSurfaceVariant,
+                            ),
                           ),
                         ),
                         if (counts[value] != null)
@@ -150,6 +158,7 @@ class SegmentedToggle<T> extends StatelessWidget {
               ),
             ),
         ],
+        ),
       ),
     );
   }

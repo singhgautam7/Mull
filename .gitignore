@@ -56,3 +56,7 @@ tools/build_dictionary/work/
 tools/build_dictionary/*.db
 tools/build_dictionary/.venv/
 tools/build_dictionary/__pycache__/
+
+# Environment and API keys
+.env
+tools/build_dictionary/.env

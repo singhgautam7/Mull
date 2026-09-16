@@ -23,7 +23,7 @@ class StatsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final MullColors c = context.colors;
     final MullStats? s = ref.watch(statsProvider).value;
-    final List<DictionaryCollection> collections = ref.watch(collectionsProvider).where((DictionaryCollection x) => x.kind == 'band').toList();
+    final List<Collection> collections = ref.watch(collectionsProvider).where((Collection x) => x.kind == 'band').toList();
     final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
     final DictionaryDb dict = ref.watch(dictProvider);
     if (s == null) return const SettingsScaffold(title: 'Stats', children: <Widget>[]);
@@ -71,7 +71,7 @@ class StatsScreen extends ConsumerWidget {
         label('COLLECTIONS'),
         Row(
           children: <Widget>[
-            for (final DictionaryCollection col in collections)
+            for (final Collection col in collections)
               Expanded(
                 child: Column(
                   children: <Widget>[

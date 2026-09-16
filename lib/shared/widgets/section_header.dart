@@ -32,9 +32,13 @@ class SectionHeader extends StatelessWidget {
       padding: inset
           ? const EdgeInsets.fromLTRB(Space.screen, 2, Space.screen, Space.row)
           : EdgeInsets.zero,
+      // Both sides take their natural width and the free space sits between
+      // them, so the trailing action is flush right. Only when they cannot
+      // both fit do they share the row.
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          Expanded(
+          Flexible(
             child: Text(
               label.toUpperCase(),
               style: MullType.sectionHeader.copyWith(
@@ -42,7 +46,7 @@ class SectionHeader extends StatelessWidget {
               ),
             ),
           ),
-          ?trailing,
+          if (trailing != null) Flexible(child: trailing!),
         ],
       ),
     );

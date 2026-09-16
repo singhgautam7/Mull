@@ -9,6 +9,7 @@ import '../../core/utils/wallpaper_seed.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
 import 'settings_controller.dart';
+import '../../shared/widgets/two_column_grid.dart';
 import 'settings_widgets.dart';
 
 /// HANDOFF 3.11. Light / Dark / System; a 2x2 grid of family cards with
@@ -34,13 +35,7 @@ class ThemeScreen extends ConsumerWidget {
           onChanged: ctl.setThemeMode,
         ),
         const SizedBox(height: Space.lg),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: Space.row,
-          crossAxisSpacing: Space.row,
-          childAspectRatio: 1.35,
+        TwoColumnGrid(
           children: <Widget>[
             for (final ThemeFamily f in ThemeFamily.all)
               _FamilyCard(
@@ -95,8 +90,9 @@ class ThemeScreen extends ConsumerWidget {
               const SizedBox(height: 4),
               Text('The smell of rain falling on dry earth.', style: MullType.body.copyWith(color: c.onSurface)),
               const SizedBox(height: Space.lg),
-              Row(
+              Wrap(
                 spacing: Space.sm,
+                runSpacing: Space.sm,
                 children: <Widget>[
                   AppButton(label: 'Primary', onPressed: () {}),
                   AppButton(label: 'Outlined', type: AppButtonType.outlined, onPressed: () {}),
@@ -130,6 +126,7 @@ class _FamilyCard extends StatelessWidget {
         borderRadius: Radii.cardR,
         child: Container(
           padding: const EdgeInsets.all(14),
+          constraints: const BoxConstraints(minHeight: 116),
           decoration: BoxDecoration(
             color: c.surfaceContainer,
             borderRadius: Radii.cardR,

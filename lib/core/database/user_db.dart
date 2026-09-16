@@ -25,8 +25,9 @@ class Notes extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{wordKey};
 }
 
-/// User lists. "Bookmarks" and "From my reading" are not rows here: bookmarks
-/// have their own table, and reading is [WordLists] row with [isReading].
+/// The lists model before schema 3, with [Bookmarks]. Retained, unread,
+/// until the migration into [UserCollections] has proven itself on real
+/// installs; dropped a release later.
 @DataClassName('WordList')
 class WordLists extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -48,6 +49,39 @@ class ListWords extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{listId, wordKey};
+}
+
+/// Every collection the user owns, as one model. `system` rows (Bookmarks,
+/// From my reading) are auto-populated and cannot be deleted; `user` rows are
+/// created by the user. Built-in bands and topics live in the dictionary and
+/// are joined to these by the provider layer, never here (rule D3).
+@DataClassName('UserCollection')
+class UserCollections extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// The stable id every screen and every mix source uses: `bookmarks`,
+  /// `reading`, or `u{n}` for a user collection.
+  TextColumn get slug => text().unique()();
+
+  /// system | user
+  TextColumn get kind => text()();
+  TextColumn get name => text().withLength(min: 1, max: 80)();
+
+  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  IntColumn get color => integer().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
+@DataClassName('UserCollectionWord')
+class UserCollectionWords extends Table {
+  IntColumn get collectionId =>
+      integer().references(UserCollections, #id, onDelete: KeyAction.cascade)();
+  TextColumn get wordKey => text()();
+  IntColumn get position => integer().withDefault(const Constant(0))();
+  DateTimeColumn get addedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{collectionId, wordKey};
 }
 
 /// One row per word the user has dwelt on. The whole spaced repetition
@@ -145,6 +179,8 @@ class AppState extends Table {
     Notes,
     WordLists,
     ListWords,
+    UserCollections,
+    UserCollectionWords,
     Seen,
     SeenEvents,
     RecentSearches,
@@ -162,22 +198,50 @@ class UserDatabase extends _$UserDatabase {
   UserDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (Migrator m) => m.createAll(),
-    // Dev phase, as in Perch: a schema change drops the local database and
-    // rebuilds it empty. Before release this becomes a real migration path.
     onUpgrade: (Migrator m, int from, int to) async {
-      await customStatement('PRAGMA foreign_keys = OFF');
-      for (final DatabaseSchemaEntity e in allSchemaEntities.toList().reversed) {
-        await m.drop(e);
+      if (from < 3) {
+        await m.createTable(userCollections);
+        await m.createTable(userCollectionWords);
+        await _migrateListsToCollections();
       }
-      await m.createAll();
     },
     beforeOpen: (OpeningDetails details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
   );
+
+  /// Schema 3: bookmarks, "From my reading" and every user list become rows
+  /// of [UserCollections], keyed by `word_key` (rule D4). The old tables are
+  /// copied from, never dropped, so a bug here loses nothing.
+  Future<void> _migrateListsToCollections() async {
+    await customStatement('''
+      INSERT OR IGNORE INTO user_collections(slug, kind, name, color, created_at)
+      SELECT CASE WHEN is_reading THEN 'reading' ELSE 'u' || id END,
+             CASE WHEN is_reading THEN 'system' ELSE 'user' END,
+             name, color, created_at
+      FROM word_lists
+    ''');
+    await customStatement('''
+      INSERT OR IGNORE INTO user_collection_words(collection_id, word_key, position, added_at)
+      SELECT uc.id, lw.word_key, lw.position, lw.added_at
+      FROM list_words lw
+      JOIN word_lists wl ON wl.id = lw.list_id
+      JOIN user_collections uc
+        ON uc.slug = CASE WHEN wl.is_reading THEN 'reading' ELSE 'u' || wl.id END
+    ''');
+    await customStatement('''
+      INSERT OR IGNORE INTO user_collections(slug, kind, name, color, created_at)
+      VALUES ('bookmarks', 'system', 'Bookmarks', NULL, strftime('%s', 'now'))
+    ''');
+    await customStatement('''
+      INSERT OR IGNORE INTO user_collection_words(collection_id, word_key, position, added_at)
+      SELECT (SELECT id FROM user_collections WHERE slug = 'bookmarks'), word_key, 0, created_at
+      FROM bookmarks
+    ''');
+  }
 }

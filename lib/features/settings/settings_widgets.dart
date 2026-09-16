@@ -85,7 +85,8 @@ class SettingsRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 15),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 56),
-        child: Row(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) => Row(
           spacing: 13,
           children: <Widget>[
             if (icon != null)
@@ -107,10 +108,23 @@ class SettingsRow extends StatelessWidget {
             if (trailing != null)
               trailing!
             else ...<Widget>[
-              if (value != null) Text(value!, style: MullType.monoLabel.copyWith(fontSize: 11.5, color: c.onSurfaceVariant)),
+              // Bounded, not flexed: a flex share would leave free space
+              // after a short value and push the chevron off the edge.
+              if (value != null)
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: box.maxWidth * 0.45),
+                  child: Text(
+                    value!,
+                    style: MullType.monoLabel.copyWith(fontSize: 11.5, color: c.onSurfaceVariant),
+                    textAlign: TextAlign.end,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               if (onTap != null) Icon(Icons.chevron_right_rounded, size: 20, color: danger ? c.onDangerContainer : c.onSurfaceMuted),
             ],
           ],
+          ),
         ),
       ),
     );

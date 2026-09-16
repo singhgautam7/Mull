@@ -35,7 +35,8 @@ class DictionaryWord {
     headwordNorm: r['headword_norm'] as String,
     pos: r['pos'] as String,
     senseIndex: r['sense_index'] as int,
-    definitionShort: r['definition_short'] as String,
+    // The pipeline stores '' when the short form would repeat the full one.
+    definitionShort: (r['definition_short'] as String).isEmpty ? r['definition_full'] as String : r['definition_short'] as String,
     definitionFull: r['definition_full'] as String,
     ipa: r['ipa'] as String?,
     freqRank: r['freq_rank'] as int,
@@ -43,9 +44,13 @@ class DictionaryWord {
   );
 }
 
+/// One collection, whichever database it lives in. Bands, topics, idioms
+/// and pairs come from the dictionary; `system` (Bookmarks, From my reading)
+/// and `user` rows come from the user database. Screens read them through
+/// one provider and never ask which is which.
 @immutable
-class DictionaryCollection {
-  const DictionaryCollection({
+class Collection {
+  const Collection({
     required this.id,
     required this.slug,
     required this.title,
@@ -55,19 +60,32 @@ class DictionaryCollection {
     required this.icon,
     required this.sortOrder,
     required this.wordCount,
+    this.color,
   });
 
+  /// The row id in whichever database owns it. Never stored in user data.
   final int id;
+
+  /// The stable id: a dictionary slug, `bookmarks`, `reading`, or `u{n}`.
   final String slug;
   final String title;
   final String description;
 
-  /// band | topic | register | exam | idiom
+  /// band | topic | idiom | pairs | system | user
   final String kind;
   final String? band;
   final String? icon;
   final int sortOrder;
   final int wordCount;
+
+  /// User collections only: an index into `MullColors.tagHues`.
+  final int? color;
+
+  /// Lives in the user database: a system or user collection.
+  bool get isUsers => kind == 'user' || kind == 'system';
+
+  /// Can be a source in a mix.
+  bool get isMixable => kind != 'idiom' && kind != 'pairs';
 }
 
 @immutable
@@ -215,15 +233,18 @@ class DictionaryDb {
       ),
     );
     if (out.length < limit) {
+      // A headword with several parts of speech is several sense-1 rows, so
+      // fetch headroom for the dedupe: a common prefix must fill the page
+      // here, or the FTS rung below scans every definition containing it.
       take(
         _db.select(
           'SELECT $_cols FROM words WHERE headword_norm > ? AND headword_norm < ? '
           'AND sense_index = 1 ORDER BY freq_rank LIMIT ?',
-          <Object>[q, '$q￿', limit],
+          <Object>[q, '$q￿', limit * 3],
         ),
       );
     }
-    if (out.length < limit) {
+    if (out.length < limit && q.length >= 3) {
       take(
         _db.select(
           'SELECT w.$_colsW FROM words_fts f JOIN words w ON w.id = f.rowid '
@@ -328,14 +349,15 @@ class DictionaryDb {
         .toList();
   }
 
-  List<DictionaryCollection> collections() => _db
+  List<Collection> collections() => _db
       .select(
         'SELECT c.id, c.slug, c.title, c.description, c.kind, c.band, c.icon, '
         'c.sort_order, (SELECT count(*) FROM collection_words cw WHERE cw.collection_id = c.id) AS n '
-        'FROM collections c ORDER BY c.sort_order',
+        // The pairs kind needs a two-word card the app does not have yet.
+        "FROM collections c WHERE c.kind != 'pairs' ORDER BY c.sort_order",
       )
       .map(
-        (Row r) => DictionaryCollection(
+        (Row r) => Collection(
           id: r['id'] as int,
           slug: r['slug'] as String,
           title: r['title'] as String,
@@ -384,8 +406,16 @@ class DictionaryDb {
       .map((Row r) => r['alias_norm'] as String)
       .toList();
 
-  List<Idiom> allIdioms() => _db
-      .select('SELECT idiom_key, phrase, meaning, example, register FROM idioms ORDER BY id')
+  /// Members of an idiom collection, in position order. For kind = idiom,
+  /// `collection_words.word_key` holds an `idiom_key`.
+  List<Idiom> collectionIdioms(String slug) => _db
+      .select(
+        'SELECT i.idiom_key, i.phrase, i.meaning, i.example, i.register FROM collection_words cw '
+        'JOIN collections c ON c.id = cw.collection_id '
+        'JOIN idioms i ON i.idiom_key = cw.word_key '
+        'WHERE c.slug = ? ORDER BY cw.position',
+        <Object>[slug],
+      )
       .map(_idiomFrom)
       .toList();
 

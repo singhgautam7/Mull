@@ -9,7 +9,6 @@ import '../../features/dictionary/search_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/linger/linger_screen.dart';
 import '../../features/linger/saved_mixes_screen.dart';
-import '../../features/lists/lists_screen.dart';
 import '../../features/settings/about_screen.dart';
 import '../../features/settings/debug_screen.dart';
 import '../../features/settings/dictionary_info_screen.dart';
@@ -31,7 +30,6 @@ abstract final class Routes {
   static const String more = '/more';
 
   static const String collections = '/collections';
-  static const String lists = '/lists';
   static const String mixes = '/mixes';
   static const String stats = '/more/stats';
   static const String settings = '/more/settings';
@@ -43,17 +41,14 @@ abstract final class Routes {
   static const String permissions = '/more/permissions';
   static const String debug = '/debug';
 
+  /// A dictionary slug or one of the user's (`bookmarks`, `reading`, `u{n}`).
   static String collection(String slug) => '/collection/$slug';
-  static String list(int id) => '/list/$id';
 
   /// Scoped play: the Mull tab plays one collection, mix untouched.
   static String scoped(String slug) => '$mull?scope=$slug';
 
-  /// Play a saved mix from Lists.
+  /// Play a saved mix from the saved mixes page.
   static String playMix(int id) => '$mull?mix=$id';
-
-  /// Scoped play over a user list.
-  static String scopedList(int id) => '$mull?list=$id';
 }
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -84,18 +79,6 @@ GoRouter buildRouter({required bool onboarded}) {
           state: s,
           child: CollectionScreen(slug: s.pathParameters['slug']!),
         ),
-      ),
-      GoRoute(
-        path: '/list/:id',
-        pageBuilder: (BuildContext c, GoRouterState s) => mullPage<void>(
-          state: s,
-          child: CollectionScreen(listId: int.parse(s.pathParameters['id']!)),
-        ),
-      ),
-      GoRoute(
-        path: Routes.lists,
-        pageBuilder: (BuildContext c, GoRouterState s) =>
-            mullPage<void>(state: s, child: const ListsScreen()),
       ),
       GoRoute(
         path: Routes.mixes,
@@ -166,7 +149,6 @@ GoRouter buildRouter({required bool onboarded}) {
                 builder: (BuildContext c, GoRouterState s) => LingerScreen(
                   scope: s.uri.queryParameters['scope'],
                   mixId: int.tryParse(s.uri.queryParameters['mix'] ?? ''),
-                  listId: int.tryParse(s.uri.queryParameters['list'] ?? ''),
                 ),
               ),
             ],

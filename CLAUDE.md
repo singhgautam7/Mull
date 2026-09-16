@@ -25,9 +25,10 @@ flutter test                                             # unit + widget tests
 dart run build_runner build --delete-conflicting-outputs # Drift codegen
 flutter build apk --release --target-platform android-arm64   # 26.9 MB with the sample DB
 flutter test tool/generate_icons_test.dart               # redraw the icon art
+flutter test tool/icon_masks_test.dart                   # preview it masked and themed, build/icon_preview/sheet.png
 dart run flutter_launcher_icons                          # launcher icon
 dart run flutter_native_splash:create                    # splash
-cd tools/build_dictionary && .venv/bin/python build_dictionary.py --sample 5000 --min-collection-size 10
+cd tools/build_dictionary && .venv/bin/python build_dictionary.py --llm   # needs ANTHROPIC_API_KEY; see its README
 cd tools/build_dictionary && .venv/bin/python test_build.py
 ```
 
@@ -85,8 +86,24 @@ full dataset loaded.
 
 ## Collections and the mix
 
-- Collections have two axes: band is derived from `freq_rank`, topic and register are
-  tagged. Never merge the two code paths.
+- Everything is a collection, read through one query (`collectionsProvider`). `band`,
+  `topic`, `idiom` and `pairs` live in the dictionary; `system` (Bookmarks, From my reading)
+  and `user` rows live in the user DB (`user_collections`, `user_collection_words`, schema 3)
+  and are joined in by the provider layer. Their slugs are `bookmarks`, `reading`, `u{n}`;
+  a mix source, a route (`/collection/{slug}`, `/mull?scope={slug}`) and the seen-progress
+  map all take any slug. There is no Lists screen and no separate lists model.
+- The pre-3 tables (`bookmarks`, `word_lists`, `list_words`) were copied into the unified
+  model by the schema 3 migration and are retained, unread, until that migration has proven
+  itself on real installs. Drop them a release later, never in the same release.
+
+- Two datasets in one `words` table: the lookup dictionary (~136k headwords, Wiktionary
+  text, no curation) and the learning set (`in_learning_set = 1`, ~7k words picked by
+  prevalence, frequency, age of acquisition and concreteness, definitions LLM-rewritten and
+  QA-gated). Only learning-set words enter collections and the mix.
+- Collections have two axes: band is derived from `prevalence`, topic collections from the
+  LLM topic tags and the norms (`topic_collections()` in the pipeline). Never merge the two
+  code paths. Idiom collections hold `idiom_key`s in `collection_words`; the `pairs` kind is
+  hidden by the app until Design ships a two-word card.
 - The Mull tab plays a **mix**, never a collection. Scoped play from a collection card is
   a temporary override (`MixSpec.scoped`, `app_state.last_scoped_collection`) and must
   never mutate the active mix.
@@ -118,6 +135,8 @@ implementation:
 | Band / register chip, filter and synonym chips | `BandChip`, `PillChip` |
 | 3dp progress track, 46dp ring | `ProgressTrack`, `ProgressRing` |
 | Section header | `SectionHeader` (+ `SectionNote`) |
+| Two columns of cards whose height follows their text | `TwoColumnGrid` (never a grid delegate with a fixed extent) |
+| The user's own collections as rows | `ListRow`, `YourLists` |
 | Empty / error / loading hairline | `EmptyState`, `ErrorStateView`, `LoadingHairline` |
 | Toast with undo | `AppSnackbar.info` / `AppSnackbar.undo` |
 | Nav glyphs | `MullIcon` |
@@ -139,11 +158,13 @@ lib/core/utils/          wallpaper_seed
 lib/core/providers.dart  the provider graph
 lib/app/                 nav_bar (the pill) · nav_shell · transitions
 lib/features/            home · linger (the Mull tab: screen, word card, mix sheet, rules,
-                         queue builder, saved mixes) · collections (browse, lens screen, cards) ·
-                         dictionary (search, word/idiom/note/add-to-list sheets) · lists ·
+                         queue builder, saved mixes) · collections (browse, lens screen, cards,
+                         create-list sheet) ·
+                         dictionary (search, word/idiom/note/add-to-list sheets) ·
                          stats · settings (more, settings, theme, info pages, export, welcome,
                          debug)
-tool/                    generate_icons_test.dart draws the launcher art
+tool/                    generate_icons_test.dart draws the launcher art; icon_masks_test.dart
+                         previews it under the launcher masks into build/icon_preview/
 lib/shared/widgets/      reusable components from HANDOFF.md
 tools/build_dictionary/  the pipeline, its schema, curation files and self-checks
 assets/db/               dictionary.db.gz + dictionary.version (committed, binary, deliberate)
@@ -191,8 +212,8 @@ specs/                   design handoff (gitignored)
 flutter build apk --release
 ```
 
-Measured: 24.6 MB (arm64, sample dictionary). Add roughly 30 MB once the full
-build (~35 MB gzipped) is committed. No signing config yet.
+Measured: 24.6 MB (arm64) with the old 4 MB sample dictionary; the full dictionary
+asset is ~49 MB gzipped. No signing config yet.
 
 ## Known gotchas
 
@@ -203,12 +224,20 @@ build (~35 MB gzipped) is committed. No signing config yet.
   Adding one needs `flutter_local_notifications` and core library desugaring.
 - List reorder by drag (HANDOFF 3.7) is not implemented; `reorderList` exists in the
   repository for when it is.
-- Sample-only dictionary: the first-run band pick, Home's "See all 19" and every count are
-  from the 5k sample until the full build is committed.
+- The committed dictionary is the full lookup build (~49 MB gzipped, ~127 MB installed).
+  The learning-set definitions need stage C of the pipeline (an API key) to be the
+  rewritten ones; a `--wiktionary-fallback` build keeps Wiktionary text and says so.
 - Pronunciation is a method channel to Android's `TextToSpeech` in `MainActivity.kt`, not a
   plugin: `flutter_tts` applied the Kotlin Gradle Plugin, which Flutter is deprecating.
 - The icon art is drawn to the board's numbers in `tool/generate_icons_test.dart`, with the
   mark set in JetBrains Mono (`tool/fonts/`, OFL). Re-run the tool, then the two generators.
+  The monochrome layer is a stencil (solid page, the spine, mark and ribbon cut out) drawn
+  1.45x larger than the colour book: Android keeps only its alpha and launchers draw themed
+  icons smaller. A monochrome drawn like the colour layers renders as a blank book.
+- Text never has a fixed height. The word card body flexes (a long definition steps the
+  headword down one size, then the body scrolls, the action row is pinned) and
+  `test/ui/font_scale_test.dart` renders every screen and sheet at the largest OS font scale
+  on a 360dp phone; a RenderFlex overflow fails it.
 - Riverpod 3 moved `Override` to `package:flutter_riverpod/misc.dart`.
 - `dynamic_color` 2.x builds `material_ui` ColorSchemes, not Flutter's; Mull reads only
   the `CorePalette` seed via `DynamicColorPlugin.getCorePalette()` (deprecated upstream,

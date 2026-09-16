@@ -41,7 +41,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final List<DictionaryCollection> collections = ref.watch(collectionsProvider).where((DictionaryCollection x) => x.kind == 'band').toList();
+    // The 40px display line at the largest OS scale would break words on a
+    // narrow phone; it grows to 1.5x and no further.
+    final TextScaler display = MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.5);
+    final List<Collection> collections = ref.watch(collectionsProvider).where((Collection x) => x.kind == 'band').toList();
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -50,15 +53,26 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text('0${_step + 1} / 03', style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-              const Spacer(),
-              const SizedBox(height: Space.xl),
-              switch (_step) {
+              // Centred while it fits; scrolls at a large font scale. The
+              // buttons below stay put.
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: box.maxHeight),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          const SizedBox(height: Space.xl),
+                          switch (_step) {
                 0 => Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const _CardStack(),
+                    // An illustration: it does not scale with text.
+                    MediaQuery.withNoTextScaling(child: const _CardStack()),
                     const SizedBox(height: Space.xxl),
-                    Text('A dictionary, and somewhere to put it when you are idle.', style: MullType.display.copyWith(color: c.onSurface)),
+                    Text('A dictionary, and somewhere to put it when you are idle.', style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
                     const SizedBox(height: Space.lg),
                     Text('Look a word up in Search. Or open Mull and swipe through a few.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
                   ],
@@ -66,11 +80,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                 1 => Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Text('Where would you like to start?', style: MullType.display.copyWith(color: c.onSurface)),
+                    Text('Where would you like to start?', style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
                     const SizedBox(height: Space.sm),
                     Text('You can change this at any time.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
                     const SizedBox(height: Space.xl),
-                    for (final DictionaryCollection col in collections)
+                    for (final Collection col in collections)
                       Padding(
                         padding: const EdgeInsets.only(bottom: Space.row),
                         child: InkWell(
@@ -98,7 +112,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                 _ => Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text('One word a day, if you want it.', style: MullType.display.copyWith(color: c.onSurface)),
+                    Text('One word a day, if you want it.', style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
                     const SizedBox(height: Space.sm),
                     Text('A single quiet notification. Nothing else will ever notify you.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
                     const SizedBox(height: Space.xl),
@@ -111,7 +125,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     const SizedBox(height: Space.lg),
                     Text('ARRIVES AT', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
                     const SizedBox(height: Space.sm),
-                    Text(clock(_minutes), style: MullType.display.copyWith(color: c.onSurface)),
+                    Text(clock(_minutes), style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
                     const SizedBox(height: Space.md),
                     Wrap(
                       spacing: Space.sm,
@@ -123,7 +137,13 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   ],
                 ),
               },
-              const Spacer(),
+                          const SizedBox(height: Space.xl),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               Row(
                 spacing: Space.md,
                 children: <Widget>[
@@ -156,8 +176,9 @@ class _CardStack extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    Widget card(String word, String ipa, String def, double dx, double dy, double angle, {bool tint = false}) => Transform.translate(
-      offset: Offset(dx, dy),
+    Widget card(String word, String ipa, String def, double dx, double dy, double angle, {bool tint = false}) => Positioned(
+      left: dx,
+      top: dy,
       child: Transform.rotate(
         angle: angle,
         child: Container(

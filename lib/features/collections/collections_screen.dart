@@ -14,15 +14,19 @@ import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/two_column_grid.dart';
 import 'collection_cards.dart';
+import 'create_list_sheet.dart';
 
-enum _Filter { all, bands, topics, inProgress }
+enum _Filter { all, bands, topics, yours, inProgress }
 
 enum _Sort { kind, progress, size, az }
 
 /// HANDOFF 12, the browse screen. Bands are a ladder (one axis, fixed
-/// order), topics are a grid (unordered, overlapping). Nobody should have to
-/// wonder whether Professional Words is harder than Well Read.
+/// order), topics are a grid (unordered, overlapping), and the user's own
+/// lists sit below in a filled container. Nobody should have to wonder
+/// whether Professional Words is harder than Well Read, and a list created
+/// here appears here.
 class CollectionsScreen extends ConsumerStatefulWidget {
   const CollectionsScreen({super.key});
 
@@ -44,30 +48,32 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final List<DictionaryCollection> all = ref.watch(collectionsProvider);
+    final List<Collection> all = ref.watch(collectionsProvider);
     final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
     final String q = _search.text.trim().toLowerCase();
 
-    Progress of(DictionaryCollection x) => progress[x.slug] ?? const Progress(0, 0);
-    bool visible(DictionaryCollection x) {
+    Progress of(Collection x) => progress[x.slug] ?? const Progress(0, 0);
+    bool visible(Collection x) {
       if (q.isNotEmpty && !x.title.toLowerCase().contains(q) && !x.description.toLowerCase().contains(q)) return false;
       return switch (_filter) {
         _Filter.all => true,
         _Filter.bands => x.kind == 'band',
-        _Filter.topics => x.kind != 'band',
+        _Filter.topics => x.kind != 'band' && !x.isUsers,
+        _Filter.yours => x.isUsers,
         _Filter.inProgress => of(x).started && !of(x).complete,
       };
     }
 
-    int compare(DictionaryCollection a, DictionaryCollection b) => switch (_sort) {
+    int compare(Collection a, Collection b) => switch (_sort) {
       _Sort.kind => a.sortOrder.compareTo(b.sortOrder),
       _Sort.progress => of(b).fraction.compareTo(of(a).fraction),
       _Sort.size => b.wordCount.compareTo(a.wordCount),
       _Sort.az => a.title.compareTo(b.title),
     };
 
-    final List<DictionaryCollection> bands = all.where((DictionaryCollection x) => x.kind == 'band' && visible(x)).toList()..sort(compare);
-    final List<DictionaryCollection> topics = all.where((DictionaryCollection x) => x.kind != 'band' && visible(x)).toList()..sort(compare);
+    final List<Collection> bands = all.where((Collection x) => x.kind == 'band' && visible(x)).toList()..sort(compare);
+    final List<Collection> topics = all.where((Collection x) => x.kind != 'band' && !x.isUsers && visible(x)).toList()..sort(compare);
+    final List<Collection> yours = all.where((Collection x) => x.isUsers && visible(x)).toList()..sort(compare);
 
     return Scaffold(
       body: SafeArea(
@@ -81,6 +87,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                 collapsed: collapsed,
                 onBack: () => context.pop(),
                 actions: <Widget>[
+                  AppIconButton(icon: Icons.add_rounded, semanticLabel: 'New list', onPressed: () => showCreateListSheet(context)),
                   Builder(
                     builder: (BuildContext anchor) => AppIconButton(
                       icon: Icons.swap_vert_rounded,
@@ -146,6 +153,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             (_Filter.all, 'All ${all.length}'),
                             (_Filter.bands, 'Bands'),
                             (_Filter.topics, 'Topics'),
+                            (_Filter.yours, 'Yours'),
                             (_Filter.inProgress, 'In progress'),
                           ])
                             PillChip(label: l, selected: _filter == f, onTap: () => setState(() => _filter = f)),
@@ -176,23 +184,18 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                       SectionHeader(label: 'Topics · ${topics.length}', trailing: const SectionNote('pick by interest')),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: Space.row,
-                            crossAxisSpacing: Space.row,
-                            mainAxisExtent: 168,
-                          ),
-                          itemCount: topics.length,
-                          itemBuilder: (BuildContext context, int i) => TopicCard(
-                            collection: topics[i],
-                            progress: of(topics[i]),
-                            onTap: () => context.push(Routes.collection(topics[i].slug)),
-                          ),
+                        child: TwoColumnGrid(
+                          children: <Widget>[
+                            for (final Collection t in topics)
+                              TopicCard(collection: t, progress: of(t), onTap: () => context.push(Routes.collection(t.slug))),
+                          ],
                         ),
                       ),
+                      const SizedBox(height: Space.section),
+                    ],
+                    if (yours.isNotEmpty) ...<Widget>[
+                      const SectionHeader(label: 'Your lists', trailing: SectionNote('yours to fill')),
+                      YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
                     ],
                   ],
                 ),

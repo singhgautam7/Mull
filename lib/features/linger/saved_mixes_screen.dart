@@ -42,7 +42,7 @@ class SavedMixesScreen extends ConsumerWidget {
               child: saved.isEmpty
                   ? const EmptyState(
                       title: 'No mixes saved yet',
-                      message: 'Change the sources on the Mull tab and save the selection. It will appear here and under Lists.',
+                      message: 'Change the sources on the Mull tab and save the selection. It will appear here and in the mix sheet.',
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),

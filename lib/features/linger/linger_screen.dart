@@ -35,13 +35,10 @@ import 'word_card.dart';
 /// from a collection card plays that collection only and never writes to
 /// the saved mix.
 class LingerScreen extends ConsumerStatefulWidget {
-  const LingerScreen({this.scope, this.mixId, this.listId, super.key});
+  const LingerScreen({this.scope, this.mixId, super.key});
 
-  /// A collection slug: scoped play.
+  /// A collection slug, built-in or the user's own: scoped play.
   final String? scope;
-
-  /// A user list id: scoped play over its words.
-  final int? listId;
 
   /// A saved mix to make active and play.
   final int? mixId;
@@ -62,7 +59,6 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
   final PageController _pager = PageController();
   MixSpec? _mix;
   String? _scope;
-  String? _listName;
   List<String> _queue = <String>[];
   final Set<String> _served = <String>{};
   final Map<String, _CardData> _cards = <String, _CardData>{};
@@ -79,13 +75,18 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
 
   static const Duration _kSoftStop = Duration(minutes: 30);
 
-  UserRepository get _user => ref.read(userRepositoryProvider);
-  MixRepository get _mixes => ref.read(mixRepositoryProvider);
-  DictionaryDb get _dict => ref.read(dictProvider);
+  // Read once: dispose() writes seen state and clears the scope, and ref is
+  // not safe to use once the widget is unmounting.
+  late final UserRepository _user;
+  late final MixRepository _mixes;
+  late final DictionaryDb _dict;
 
   @override
   void initState() {
     super.initState();
+    _user = ref.read(userRepositoryProvider);
+    _mixes = ref.read(mixRepositoryProvider);
+    _dict = ref.read(dictProvider);
     WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
   }
@@ -93,7 +94,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
   @override
   void didUpdateWidget(LingerScreen old) {
     super.didUpdateWidget(old);
-    if (old.scope != widget.scope || old.mixId != widget.mixId || old.listId != widget.listId) unawaited(_load());
+    if (old.scope != widget.scope || old.mixId != widget.mixId) unawaited(_load());
   }
 
   @override
@@ -129,15 +130,10 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
       }
     }
     _scope = widget.scope;
-    _listName = null;
     if (_scope != null) {
       await _mixes.setScoped(_scope!);
+      await _user.setAppState(UserRepository.kLastOpened, _scope);
       _mix = MixSpec.scoped(_scope!, active?.seenPolicy ?? SeenPolicy.light);
-    } else if (widget.listId != null) {
-      final WordList? list = await _user.list(widget.listId!);
-      _listName = list?.name ?? 'List';
-      _mix = MixSpec.list(widget.listId!, _listName!, active?.seenPolicy ?? SeenPolicy.light);
-      await _mixes.clearScoped();
     } else {
       await _mixes.clearScoped();
       _mix = active;
@@ -256,7 +252,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     final MullColors c = context.colors;
     final AppSettings s = ref.watch(settingsProvider);
     final Set<String> bookmarks = ref.watch(bookmarksProvider).value ?? const <String>{};
-    final String? scopeTitle = _scope == null ? _listName : ref.watch(collectionBySlugProvider)[_scope!]?.title;
+    final String? scopeTitle = _scope == null ? null : ref.watch(collectionBySlugProvider)[_scope!]?.title;
     final EdgeInsets pad = MediaQuery.paddingOf(context);
 
     return LingerBackground(
@@ -325,7 +321,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
             Positioned(
               left: Space.screen,
               top: pad.top + 22,
-              child: _scope != null || _listName != null
+              child: _scope != null
                   ? _ScopeChip(
                       title: scopeTitle ?? _scope!,
                       onClose: () => context.go(Routes.mull),
@@ -358,11 +354,11 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     final MixSpec? review = (ref.watch(mixesProvider).value ?? const <MixSpec>[])
         .where((MixSpec m) => m.isPreset && m.name == MixRepository.presetReview)
         .firstOrNull;
-    final List<DictionaryCollection> all = ref.watch(collectionsProvider);
-    final int at = all.indexWhere((DictionaryCollection x) => x.slug == _scope);
-    final DictionaryCollection? next = at >= 0 && at + 1 < all.length && all[at + 1].kind != 'idiom' ? all[at + 1] : null;
+    final List<Collection> all = ref.watch(collectionsProvider);
+    final int at = all.indexWhere((Collection x) => x.slug == _scope);
+    final Collection? next = at >= 0 && at + 1 < all.length && all[at + 1].isMixable ? all[at + 1] : null;
 
-    final bool scoped = _scope != null || _listName != null;
+    final bool scoped = _scope != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 34, 14, 104),
       child: Container(

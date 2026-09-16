@@ -1,9 +1,14 @@
 -- dictionary.db schema. The single source of truth: build_dictionary.py
--- executes this file, and test/database/dictionary_swap_test.dart reads it to
--- build the two fake dictionaries it swaps between.
+-- executes this file, and test/database/fake_dictionary.dart reads it to
+-- build the fake dictionaries the tests swap between.
 --
 -- The app opens this database read-only and never writes to it (rule D3).
 -- User data references rows by word_key, never by id (rule D4).
+--
+-- Two datasets share the words table. The lookup dictionary is every attested
+-- English word from Wiktionary, lightly cleaned. The learning set
+-- (in_learning_set = 1) is the ~5,000-word curated subset the Mull tab plays,
+-- whose sense 1 has an LLM-rewritten, QA-gated definition.
 
 CREATE TABLE meta(
   key   TEXT PRIMARY KEY,
@@ -11,21 +16,28 @@ CREATE TABLE meta(
 );
 
 CREATE TABLE words(
-  id               INTEGER PRIMARY KEY,
-  word_key         TEXT NOT NULL UNIQUE,   -- {headword_norm}|{pos}|{sense_index}
-  headword         TEXT NOT NULL,          -- British spelling
-  headword_norm    TEXT NOT NULL,          -- lowercased, diacritics stripped, no punctuation
-  pos              TEXT NOT NULL,
-  sense_index      INTEGER NOT NULL,
-  definition_short TEXT NOT NULL,          -- under 15 words, clause-boundary cut
-  definition_full  TEXT NOT NULL,
-  ipa              TEXT,                   -- RP preferred, null when none recorded
-  freq_rank        INTEGER NOT NULL,
-  band             TEXT NOT NULL           -- core | everyday | well_read | uncommon
+  id                INTEGER PRIMARY KEY,
+  word_key          TEXT NOT NULL UNIQUE,   -- {headword_norm}|{pos}|{sense_index}
+  headword          TEXT NOT NULL,          -- British spelling
+  headword_norm     TEXT NOT NULL,          -- lowercased, diacritics stripped, no punctuation
+  pos               TEXT NOT NULL,
+  sense_index       INTEGER NOT NULL,
+  definition_short  TEXT NOT NULL,          -- under 15 words, clause-boundary cut; '' when it would equal definition_full
+  definition_full   TEXT NOT NULL,
+  ipa               TEXT,                   -- RP preferred, null when none recorded
+  freq_rank         INTEGER NOT NULL,       -- by SUBTLEX-UK count; unattested words rank last
+  band              TEXT NOT NULL,          -- core | everyday | well_read | uncommon, by prevalence
+  in_learning_set   INTEGER NOT NULL DEFAULT 0,
+  -- Norms are per headword and stored on sense 1 (and learning-set rows) only.
+  prevalence        REAL,                   -- share of UK adults who know the word, 0..1
+  aoa               REAL,                   -- age of acquisition, years
+  zipf_spoken       REAL,                   -- SUBTLEX-UK
+  zipf_written      REAL,                   -- BNC written
+  concreteness      REAL,                   -- 1..5
+  definition_source TEXT NOT NULL DEFAULT 'wiktionary',  -- wiktionary | llm_rewrite
+  generated_at      TEXT                    -- when definition_source = llm_rewrite
 );
 CREATE INDEX words_headword_norm ON words(headword_norm);
-CREATE INDEX words_freq_rank ON words(freq_rank);
-CREATE INDEX words_band ON words(band, freq_rank);
 
 CREATE TABLE examples(
   id       INTEGER PRIMARY KEY,
@@ -50,13 +62,14 @@ CREATE TABLE aliases(
 );
 
 CREATE TABLE idioms(
-  id         INTEGER PRIMARY KEY,
-  idiom_key  TEXT NOT NULL UNIQUE,
-  phrase     TEXT NOT NULL,
+  id          INTEGER PRIMARY KEY,
+  idiom_key   TEXT NOT NULL UNIQUE,
+  phrase      TEXT NOT NULL,
   phrase_norm TEXT NOT NULL,
-  meaning    TEXT NOT NULL,
-  example    TEXT,
-  register   TEXT NOT NULL                 -- formal | informal | dated | neutral
+  meaning     TEXT NOT NULL,
+  example     TEXT,
+  register    TEXT NOT NULL,               -- formal | informal | dated | neutral
+  origin      TEXT                         -- Wiktionary etymology, first paragraph; null when none
 );
 CREATE INDEX idioms_phrase_norm ON idioms(phrase_norm);
 
@@ -65,33 +78,48 @@ CREATE TABLE collections(
   slug        TEXT NOT NULL UNIQUE,
   title       TEXT NOT NULL,
   description TEXT NOT NULL,
-  kind        TEXT NOT NULL,               -- band | topic | register | exam | idiom
+  kind        TEXT NOT NULL,               -- band | topic | idiom | pairs
   band        TEXT,                        -- set when kind = band
   icon        TEXT,                        -- glyph name from the 1.75-stroke set
   sort_order  INTEGER NOT NULL
 );
 
+-- Members of a collection. word_key is a words.word_key for band and topic
+-- collections and an idioms.idiom_key for idiom collections, so there is no
+-- foreign key; the app joins on the table the kind implies.
 CREATE TABLE collection_words(
   collection_id INTEGER NOT NULL REFERENCES collections(id),
-  word_key      TEXT NOT NULL REFERENCES words(word_key),
+  word_key      TEXT NOT NULL,
   position      INTEGER NOT NULL,
-  source        TEXT NOT NULL,             -- band | wiktionary_topic | register | freq_ratio | manual
+  source        TEXT NOT NULL,             -- band | topic | arithmetic | idiom | manual
   PRIMARY KEY(collection_id, word_key)
 );
 CREATE INDEX collection_words_word_key ON collection_words(word_key);
 
--- Raw tags retained for later re-slicing. Nothing reads this in v1; it is what
--- lets a new themed collection be added without reprocessing the source.
+-- "Almost the Same": two words and the sentence that separates them. Needs a
+-- card variant the app does not have yet; the collection of kind pairs is
+-- hidden until it does.
+CREATE TABLE pairs(
+  id       INTEGER PRIMARY KEY,
+  word_a   TEXT NOT NULL REFERENCES words(word_key),
+  word_b   TEXT NOT NULL REFERENCES words(word_key),
+  note     TEXT NOT NULL
+);
+
+-- Register labels (tag:*) on every shipped sense; Wiktionary topics and the
+-- LLM topic and register (topic:*, register:*) on learning-set senses. Nothing
+-- in the app reads this in v1; it is what lets a new themed collection be
+-- added without reprocessing the source.
 CREATE TABLE word_tags(
   word_key TEXT NOT NULL REFERENCES words(word_key),
   tag      TEXT NOT NULL,
   PRIMARY KEY(word_key, tag)
 );
 
--- Full-text search over headword and short definition. External content so
--- the text is stored once; rebuilt by the pipeline, never by the app.
+-- Full-text search over headword and definition. External content so the
+-- text is stored once; rebuilt by the pipeline, never by the app.
 CREATE VIRTUAL TABLE words_fts USING fts5(
-  headword, definition_short,
+  headword, definition_full,
   content='words', content_rowid='id',
   tokenize='unicode61'
 );

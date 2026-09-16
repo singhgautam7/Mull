@@ -16,6 +16,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
+import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_menu.dart';
@@ -25,10 +26,8 @@ import '../../shared/widgets/states.dart';
 import '../dictionary/idiom_sheet.dart';
 import '../dictionary/search_screen.dart';
 import '../dictionary/word_sheet.dart';
-import '../lists/create_list_sheet.dart';
+import 'create_list_sheet.dart';
 import '../settings/settings_controller.dart';
-
-enum _Lens { cards, table }
 
 enum WordSort {
   az('az', 'A–Z'),
@@ -44,22 +43,22 @@ enum WordSort {
   static WordSort fromKey(String k) => values.firstWhere((WordSort s) => s.key == k, orElse: () => WordSort.az);
 }
 
-/// HANDOFF 3.3. One set of words, two lenses. Cards opens the Mull tab scoped
-/// to the collection; Table is the three-column view with Hide defs, sort in
-/// the overflow, count and sort pinned at the bottom. A user list opens in
-/// the same view, with multi-select.
+/// HANDOFF 3.3, less the lens toggle. The table is the three-column view
+/// with "Mull these" (the Mull tab scoped to the collection) and Hide defs
+/// above it, sort in the overflow, count and sort pinned at the bottom. One of the user's own
+/// collections opens in the same view, with multi-select.
 class CollectionScreen extends ConsumerStatefulWidget {
-  const CollectionScreen({this.slug, this.listId, super.key}) : assert(slug != null || listId != null);
+  const CollectionScreen({required this.slug, super.key});
 
-  final String? slug;
-  final int? listId;
+  /// A dictionary slug or one of the user's (`bookmarks`, `reading`, `u{n}`).
+  final String slug;
 
   @override
   ConsumerState<CollectionScreen> createState() => _CollectionScreenState();
 }
 
 class _CollectionScreenState extends ConsumerState<CollectionScreen> {
-  String get _scopeKey => widget.slug ?? 'list:${widget.listId}';
+  String get _scopeKey => widget.slug;
   late bool _hideDefs = ref.read(settingsProvider.notifier).hideDefs(_scopeKey);
   late WordSort _sort = WordSort.fromKey(ref.read(settingsProvider.notifier).sort(_scopeKey));
   String? _revealed;
@@ -68,16 +67,21 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
 
   UserRepository get _user => ref.read(userRepositoryProvider);
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_user.setAppState(UserRepository.kLastOpened, widget.slug));
+  }
+
   void _openCards() {
     unawaited(ref.read(settingsProvider.notifier).setLens(_scopeKey, 'cards'));
-    context.go(widget.slug != null ? Routes.scoped(widget.slug!) : Routes.scopedList(widget.listId!));
+    context.go(Routes.scoped(widget.slug));
   }
 
   Future<void> _deleteSelected(List<String> keys) async {
-    final int id = widget.listId!;
     final List<String> removed = keys.toList();
     for (final String k in removed) {
-      await _user.removeFromList(id, k);
+      await _user.removeFromCollection(widget.slug, k);
     }
     setState(() {
       _selected.clear();
@@ -86,7 +90,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     if (!mounted) return;
     AppSnackbar.undo(context, 'Removed ${removed.length} words', () async {
       for (final String k in removed) {
-        await _user.addToList(id, k);
+        await _user.addToCollection(widget.slug, k);
       }
     });
   }
@@ -98,24 +102,23 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final Set<String> bookmarks = ref.watch(bookmarksProvider).value ?? const <String>{};
     final Map<String, SeenWord> seen = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
 
-    final DictionaryCollection? collection = widget.slug == null ? null : ref.watch(collectionBySlugProvider)[widget.slug!];
-    final WordList? list = widget.listId == null
-        ? null
-        : (ref.watch(listsProvider).value ?? const <WordList>[]).where((WordList l) => l.id == widget.listId).firstOrNull;
-    final List<String> listKeys = widget.listId == null ? const <String>[] : ref.watch(_listKeysProvider(widget.listId!)).value ?? const <String>[];
-    final String title = collection?.title ?? list?.name ?? '';
+    final Collection? collection = ref.watch(collectionBySlugProvider)[widget.slug];
+    // The user's own collections are live; "recently added" is their order.
+    final bool own = collection?.isUsers ?? false;
+    final List<String> ownKeys = own ? ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[] : const <String>[];
+    final String title = collection?.title ?? '';
 
     if (collection?.kind == 'idiom') return _idioms(context, dict, collection!);
 
-    List<DictionaryWord> words = collection != null ? dict.collectionWords(collection.slug) : dict.byKeys(listKeys);
-    if (list != null) {
-      final Map<String, int> order = <String, int>{for (int i = 0; i < listKeys.length; i++) listKeys[i]: i};
+    List<DictionaryWord> words = own ? dict.byKeys(ownKeys) : dict.collectionWords(widget.slug);
+    if (own) {
+      final Map<String, int> order = <String, int>{for (int i = 0; i < ownKeys.length; i++) ownKeys[i]: i};
       words.sort((DictionaryWord a, DictionaryWord b) => order[a.wordKey]!.compareTo(order[b.wordKey]!));
     }
     words = switch (_sort) {
       WordSort.az => words..sort((DictionaryWord a, DictionaryWord b) => a.headword.compareTo(b.headword)),
       WordSort.frequency => words..sort((DictionaryWord a, DictionaryWord b) => a.freqRank.compareTo(b.freqRank)),
-      WordSort.recent => list != null ? words : words,
+      WordSort.recent => words,
       WordSort.bookmarked => words
         ..sort((DictionaryWord a, DictionaryWord b) {
           final int ba = bookmarks.contains(a.wordKey) ? 0 : 1;
@@ -147,7 +150,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                     _selected.clear();
                   });
                 },
-                onDelete: list == null ? null : () => _deleteSelected(_selected.toList()),
+                onDelete: own ? () => _deleteSelected(_selected.toList()) : null,
               )
             else
               AppHeader(
@@ -158,7 +161,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                     builder: (BuildContext anchor) => AppIconButton(
                       icon: Icons.more_horiz_rounded,
                       semanticLabel: 'More',
-                      onPressed: () => unawaited(_overflow(anchor, list)),
+                      onPressed: () => unawaited(_overflow(anchor, collection)),
                     ),
                   ),
                 ],
@@ -168,13 +171,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
               child: Row(
                 spacing: Space.md,
                 children: <Widget>[
-                  Expanded(
-                    child: SegmentedToggle<_Lens>(
-                      options: const <(_Lens, String)>[(_Lens.cards, 'Cards'), (_Lens.table, 'Table')],
-                      selected: _Lens.table,
-                      onChanged: (_Lens l) => l == _Lens.cards ? _openCards() : null,
-                    ),
-                  ),
+                  Expanded(child: AppButton(label: 'Mull these', fullWidth: true, onPressed: words.isEmpty ? null : _openCards)),
                   PillChip(
                     label: _hideDefs ? 'Definitions hidden' : 'Hide defs',
                     selected: _hideDefs,
@@ -231,7 +228,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                   onLongPress: () async {
                                     // Row long-press: one haptic tick, the bookmark dot fades in at the word.
                                     if (ref.read(settingsProvider).haptics) unawaited(HapticFeedback.lightImpact());
-                                    if (list != null) {
+                                    if (own) {
                                       setState(() {
                                         _selecting = true;
                                         _selected.add(w.wordKey);
@@ -275,22 +272,23 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     );
   }
 
-  Future<void> _overflow(BuildContext anchor, WordList? list) async {
+  Future<void> _overflow(BuildContext anchor, Collection? collection) async {
+    final bool own = collection?.isUsers ?? false;
     final String? action = await showAppMenu<String>(
       context: context,
       anchorContext: anchor,
       entries: <AppMenuEntry<String>>[
         for (final WordSort s in WordSort.values)
-          if (list != null || s != WordSort.recent)
+          if (own || s != WordSort.recent)
             AppMenuEntry<String>(value: 'sort:${s.key}', label: 'Sort: ${s.label}', radio: true, selected: _sort == s),
-        if (list != null && !list.isReading) ...<AppMenuEntry<String>>[
+        if (own) ...<AppMenuEntry<String>>[
           const AppMenuEntry<String>.divider(),
           const AppMenuEntry<String>(value: 'select', label: 'Select words', icon: Icons.checklist_rounded),
+        ],
+        // System collections keep their names and cannot be deleted.
+        if (collection?.kind == 'user') ...<AppMenuEntry<String>>[
           const AppMenuEntry<String>(value: 'rename', label: 'Rename', icon: Icons.edit_outlined),
           const AppMenuEntry<String>(value: 'delete', label: 'Delete list', icon: Icons.delete_outline_rounded, danger: true),
-        ] else if (list != null) ...<AppMenuEntry<String>>[
-          const AppMenuEntry<String>.divider(),
-          const AppMenuEntry<String>(value: 'select', label: 'Select words', icon: Icons.checklist_rounded),
         ],
       ],
     );
@@ -304,18 +302,18 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       case 'select':
         setState(() => _selecting = true);
       case 'rename':
-        await showCreateListSheet(context, renameId: list!.id, initialName: list.name, initialColor: list.color);
+        await showCreateListSheet(context, renameSlug: widget.slug, initialName: collection!.title, initialColor: collection.color);
       case 'delete':
-        final bool ok = await confirmDialog(context, title: 'Delete ${list!.name}?', message: 'The words stay in the dictionary. Only the list is removed.', confirmLabel: 'Delete');
+        final bool ok = await confirmDialog(context, title: 'Delete ${collection!.title}?', message: 'The words stay in the dictionary. Only the list is removed.', confirmLabel: 'Delete');
         if (ok) {
-          await _user.deleteList(list.id);
+          await _user.deleteCollection(widget.slug);
           if (mounted) context.pop();
         }
     }
   }
 
-  Widget _idioms(BuildContext context, DictionaryDb dict, DictionaryCollection collection) {
-    final List<Idiom> idioms = dict.allIdioms();
+  Widget _idioms(BuildContext context, DictionaryDb dict, Collection collection) {
+    final List<Idiom> idioms = dict.collectionIdioms(collection.slug);
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -337,10 +335,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     );
   }
 }
-
-final StreamProvider<List<String>> Function(int) _listKeysProvider = StreamProvider.family<List<String>, int>(
-  (Ref ref, int id) => ref.watch(userRepositoryProvider).watchListWordKeys(id),
-);
 
 /// Multi-select: the header turns `primaryContainer`, shows "{n} selected"
 /// and bookmark/delete actions.

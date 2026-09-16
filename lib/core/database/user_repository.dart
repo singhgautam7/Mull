@@ -2,24 +2,198 @@ import 'package:drift/drift.dart';
 
 import 'user_db.dart';
 
-/// Bookmarks, notes, lists, seen state, lookups and app state. Owns the user
-/// connection and nothing else (rule D3); every word is a `word_key` string
-/// (rule D4).
+/// Collections (bookmarks, reading, user lists), notes, seen state, lookups
+/// and app state. Owns the user connection and nothing else (rule D3); every
+/// word is a `word_key` string (rule D4).
 class UserRepository {
   UserRepository(this._db);
 
   final UserDatabase _db;
 
-  /// The name of the list search results land in.
+  // ---------------------------------------------------------------- collections
+
+  /// The two system collections. Auto-populated, never deleted.
+  static const String bookmarksSlug = 'bookmarks';
+  static const String readingSlug = 'reading';
   static const String readingListName = 'From my reading';
+
+  static const Map<String, String> _systemNames = <String, String>{
+    bookmarksSlug: 'Bookmarks',
+    readingSlug: readingListName,
+  };
+
+  /// Creates the system rows if they are missing. Called once the user
+  /// database is open, and again after a reset.
+  Future<void> ensureSystemCollections() async {
+    for (final String slug in _systemNames.keys) {
+      await _idOf(slug);
+    }
+  }
+
+  /// The row id behind a slug. A missing system row is created on demand so
+  /// a bookmark can never land nowhere.
+  Future<int?> _idOf(String slug) async {
+    final UserCollection? row = await (_db.select(_db.userCollections)
+          ..where((UserCollections c) => c.slug.equals(slug)))
+        .getSingleOrNull();
+    if (row != null) return row.id;
+    final String? name = _systemNames[slug];
+    if (name == null) return null;
+    return _db
+        .into(_db.userCollections)
+        .insert(
+          UserCollectionsCompanion.insert(
+            slug: slug,
+            kind: 'system',
+            name: name,
+            createdAt: DateTime.now(),
+          ),
+        );
+  }
+
+  /// System rows first (Bookmarks, then From my reading), then user
+  /// collections in creation order.
+  Stream<List<UserCollection>> watchCollections() => (_db.select(_db.userCollections)
+        ..orderBy(<OrderingTerm Function(UserCollections)>[
+          (UserCollections c) => OrderingTerm.desc(c.kind.equals('system')),
+          (UserCollections c) => OrderingTerm.asc(c.slug.equals(readingSlug)),
+          (UserCollections c) => OrderingTerm.asc(c.createdAt),
+        ]))
+      .watch();
+
+  Future<List<UserCollection>> collections() => watchCollections().first;
+
+  Future<UserCollection?> collection(String slug) => (_db.select(_db.userCollections)
+        ..where((UserCollections c) => c.slug.equals(slug)))
+      .getSingleOrNull();
+
+  /// Returns the new collection's slug.
+  Future<String> createCollection(String name, {int? color, DateTime? now}) async {
+    final DateTime at = now ?? DateTime.now();
+    final String slug = 'u${at.microsecondsSinceEpoch}';
+    await _db
+        .into(_db.userCollections)
+        .insert(
+          UserCollectionsCompanion.insert(
+            slug: slug,
+            kind: 'user',
+            name: name,
+            color: Value<int?>(color),
+            createdAt: at,
+          ),
+        );
+    return slug;
+  }
+
+  Future<void> renameCollection(String slug, String name) =>
+      (_db.update(_db.userCollections)..where((UserCollections c) => c.slug.equals(slug)))
+          .write(UserCollectionsCompanion(name: Value<String>(name)));
+
+  Future<void> setCollectionColor(String slug, int? color) =>
+      (_db.update(_db.userCollections)..where((UserCollections c) => c.slug.equals(slug)))
+          .write(UserCollectionsCompanion(color: Value<int?>(color)));
+
+  /// System collections cannot be deleted; the call is a no-op for them.
+  Future<void> deleteCollection(String slug) => (_db.delete(_db.userCollections)
+        ..where((UserCollections c) => c.slug.equals(slug) & c.kind.equals('user')))
+      .go();
+
+  Future<void> addToCollection(String slug, String wordKey, {DateTime? now}) async {
+    final int? id = await _idOf(slug);
+    if (id == null) return;
+    await _db
+        .into(_db.userCollectionWords)
+        .insert(
+          UserCollectionWordsCompanion.insert(
+            collectionId: id,
+            wordKey: wordKey,
+            addedAt: now ?? DateTime.now(),
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+  }
+
+  Future<void> removeFromCollection(String slug, String wordKey) async {
+    final int? id = await _idOf(slug);
+    if (id == null) return;
+    await (_db.delete(_db.userCollectionWords)
+          ..where(
+            (UserCollectionWords w) => w.collectionId.equals(id) & w.wordKey.equals(wordKey),
+          ))
+        .go();
+  }
+
+  JoinedSelectStatement<HasResultSet, dynamic> _wordsJoin() =>
+      _db.select(_db.userCollectionWords).join(<Join<HasResultSet, dynamic>>[
+        innerJoin(
+          _db.userCollections,
+          _db.userCollections.id.equalsExp(_db.userCollectionWords.collectionId),
+        ),
+      ])
+        ..orderBy(<OrderingTerm>[
+          OrderingTerm.asc(_db.userCollectionWords.position),
+          OrderingTerm.desc(_db.userCollectionWords.addedAt),
+        ]);
+
+  /// Word keys of one collection: by position, then newest first.
+  Future<List<String>> collectionWordKeys(String slug) => collectionWordKeysFor(<String>[slug]);
+
+  /// Word keys of every collection in [slugs], deduplicated. Slugs that name
+  /// a dictionary collection are simply not here; the queue builder unions
+  /// the two.
+  Future<List<String>> collectionWordKeysFor(Iterable<String> slugs) async {
+    final List<String> list = slugs.toList();
+    if (list.isEmpty) return const <String>[];
+    final List<TypedResult> rows = await (_wordsJoin()
+          ..where(_db.userCollections.slug.isIn(list)))
+        .get();
+    return <String>{
+      for (final TypedResult r in rows) r.readTable(_db.userCollectionWords).wordKey,
+    }.toList();
+  }
+
+  /// Every collection's word keys, live, by slug.
+  Stream<Map<String, List<String>>> watchCollectionWordKeys() =>
+      _wordsJoin().watch().map((List<TypedResult> rows) {
+        final Map<String, List<String>> m = <String, List<String>>{};
+        for (final TypedResult r in rows) {
+          m
+              .putIfAbsent(r.readTable(_db.userCollections).slug, () => <String>[])
+              .add(r.readTable(_db.userCollectionWords).wordKey);
+        }
+        return m;
+      });
+
+  /// Slugs of the collections holding a word.
+  Future<Set<String>> collectionsContaining(String wordKey) async {
+    final List<TypedResult> rows = await (_wordsJoin()
+          ..where(_db.userCollectionWords.wordKey.equals(wordKey)))
+        .get();
+    return <String>{for (final TypedResult r in rows) r.readTable(_db.userCollections).slug};
+  }
+
+  /// For list reorder by drag (HANDOFF 3.7), when it lands.
+  Future<void> reorderCollection(String slug, List<String> orderedKeys) async {
+    final int? id = await _idOf(slug);
+    if (id == null) return;
+    await _db.batch((Batch b) {
+      for (int i = 0; i < orderedKeys.length; i++) {
+        b.update(
+          _db.userCollectionWords,
+          UserCollectionWordsCompanion(position: Value<int>(i)),
+          where: (UserCollectionWords w) =>
+              w.collectionId.equals(id) & w.wordKey.equals(orderedKeys[i]),
+        );
+      }
+    });
+  }
 
   // ---------------------------------------------------------------- bookmarks
 
+  /// Bookmarks are the `bookmarks` system collection; these are its verbs.
+
   Future<bool> isBookmarked(String wordKey) async =>
-      (await (_db.select(_db.bookmarks)
-                ..where((Bookmarks b) => b.wordKey.equals(wordKey)))
-              .getSingleOrNull()) !=
-      null;
+      (await collectionsContaining(wordKey)).contains(bookmarksSlug);
 
   /// Returns the new state.
   Future<bool> toggleBookmark(String wordKey, {DateTime? now}) async {
@@ -31,34 +205,22 @@ class UserRepository {
     return true;
   }
 
-  Future<void> addBookmark(String wordKey, {DateTime? now}) => _db
-      .into(_db.bookmarks)
-      .insert(
-        BookmarksCompanion.insert(
-          wordKey: wordKey,
-          createdAt: now ?? DateTime.now(),
-        ),
-        mode: InsertMode.insertOrIgnore,
-      );
+  Future<void> addBookmark(String wordKey, {DateTime? now}) =>
+      addToCollection(bookmarksSlug, wordKey, now: now);
 
-  Future<void> removeBookmark(String wordKey) =>
-      (_db.delete(_db.bookmarks)
-            ..where((Bookmarks b) => b.wordKey.equals(wordKey)))
-          .go();
+  Future<void> removeBookmark(String wordKey) => removeFromCollection(bookmarksSlug, wordKey);
 
-  Future<List<String>> bookmarkedKeys() async =>
-      (await (_db.select(_db.bookmarks)
-                ..orderBy(<OrderingTerm Function(Bookmarks)>[
-                  (Bookmarks b) => OrderingTerm.desc(b.createdAt),
-                ]))
-              .get())
-          .map((Bookmark b) => b.wordKey)
-          .toList();
+  /// Newest first.
+  Future<List<String>> bookmarkedKeys() => collectionWordKeys(bookmarksSlug);
 
-  Stream<Set<String>> watchBookmarkedKeys() => _db
-      .select(_db.bookmarks)
+  Stream<Set<String>> watchBookmarkedKeys() => (_wordsJoin()
+        ..where(_db.userCollections.slug.equals(bookmarksSlug)))
       .watch()
-      .map((List<Bookmark> rows) => rows.map((Bookmark b) => b.wordKey).toSet());
+      .map(
+        (List<TypedResult> rows) => <String>{
+          for (final TypedResult r in rows) r.readTable(_db.userCollectionWords).wordKey,
+        },
+      );
 
   // ---------------------------------------------------------------- notes
 
@@ -106,134 +268,6 @@ class UserRepository {
   }
 
   Future<void> clearNotes() => _db.delete(_db.notes).go();
-
-  // ---------------------------------------------------------------- lists
-
-  Stream<List<WordList>> watchLists() => (_db.select(_db.wordLists)
-        ..orderBy(<OrderingTerm Function(WordLists)>[
-          (WordLists l) => OrderingTerm.desc(l.isReading),
-          (WordLists l) => OrderingTerm.asc(l.createdAt),
-        ]))
-      .watch();
-
-  Future<List<WordList>> lists() => (_db.select(_db.wordLists)
-        ..orderBy(<OrderingTerm Function(WordLists)>[
-          (WordLists l) => OrderingTerm.desc(l.isReading),
-          (WordLists l) => OrderingTerm.asc(l.createdAt),
-        ]))
-      .get();
-
-  Future<WordList?> list(int id) => (_db.select(_db.wordLists)
-        ..where((WordLists l) => l.id.equals(id)))
-      .getSingleOrNull();
-
-  /// "From my reading" exists from first run; search results land in it.
-  Future<WordList> readingList() async {
-    final WordList? existing = await (_db.select(_db.wordLists)
-          ..where((WordLists l) => l.isReading.equals(true)))
-        .getSingleOrNull();
-    if (existing != null) return existing;
-    final int id = await _db
-        .into(_db.wordLists)
-        .insert(
-          WordListsCompanion.insert(
-            name: readingListName,
-            isReading: const Value<bool>(true),
-            createdAt: DateTime.now(),
-          ),
-        );
-    return (await list(id))!;
-  }
-
-  Future<int> createList(String name, {int? color, DateTime? now}) => _db
-      .into(_db.wordLists)
-      .insert(
-        WordListsCompanion.insert(
-          name: name,
-          color: Value<int?>(color),
-          createdAt: now ?? DateTime.now(),
-        ),
-      );
-
-  Future<void> renameList(int id, String name) =>
-      (_db.update(_db.wordLists)..where((WordLists l) => l.id.equals(id)))
-          .write(WordListsCompanion(name: Value<String>(name)));
-
-  Future<void> setListColor(int id, int? color) =>
-      (_db.update(_db.wordLists)..where((WordLists l) => l.id.equals(id)))
-          .write(WordListsCompanion(color: Value<int?>(color)));
-
-  Future<void> deleteList(int id) =>
-      (_db.delete(_db.wordLists)..where((WordLists l) => l.id.equals(id))).go();
-
-  Future<void> addToList(int listId, String wordKey, {DateTime? now}) => _db
-      .into(_db.listWords)
-      .insert(
-        ListWordsCompanion.insert(
-          listId: listId,
-          wordKey: wordKey,
-          addedAt: now ?? DateTime.now(),
-        ),
-        mode: InsertMode.insertOrIgnore,
-      );
-
-  Future<void> removeFromList(int listId, String wordKey) =>
-      (_db.delete(_db.listWords)
-            ..where(
-              (ListWords l) =>
-                  l.listId.equals(listId) & l.wordKey.equals(wordKey),
-            ))
-          .go();
-
-  Future<List<String>> listWordKeys(int listId) async =>
-      (await (_db.select(_db.listWords)
-                ..where((ListWords l) => l.listId.equals(listId))
-                ..orderBy(<OrderingTerm Function(ListWords)>[
-                  (ListWords l) => OrderingTerm.asc(l.position),
-                  (ListWords l) => OrderingTerm.desc(l.addedAt),
-                ]))
-              .get())
-          .map((ListWord l) => l.wordKey)
-          .toList();
-
-  Stream<List<String>> watchListWordKeys(int listId) => (_db.select(_db.listWords)
-        ..where((ListWords l) => l.listId.equals(listId))
-        ..orderBy(<OrderingTerm Function(ListWords)>[
-          (ListWords l) => OrderingTerm.asc(l.position),
-          (ListWords l) => OrderingTerm.desc(l.addedAt),
-        ]))
-      .watch()
-      .map((List<ListWord> rows) => rows.map((ListWord l) => l.wordKey).toList());
-
-  /// Which lists hold a word.
-  Future<Set<int>> listsContaining(String wordKey) async =>
-      (await (_db.select(_db.listWords)
-                ..where((ListWords l) => l.wordKey.equals(wordKey)))
-              .get())
-          .map((ListWord l) => l.listId)
-          .toSet();
-
-  /// Word count per list id.
-  Stream<Map<int, int>> watchListCounts() =>
-      _db.select(_db.listWords).watch().map((List<ListWord> rows) {
-        final Map<int, int> m = <int, int>{};
-        for (final ListWord r in rows) {
-          m[r.listId] = (m[r.listId] ?? 0) + 1;
-        }
-        return m;
-      });
-
-  Future<void> reorderList(int listId, List<String> orderedKeys) =>
-      _db.batch((Batch b) {
-        for (int i = 0; i < orderedKeys.length; i++) {
-          b.update(
-            _db.listWords,
-            ListWordsCompanion(position: Value<int>(i)),
-            where: (ListWords l) =>
-                l.listId.equals(listId) & l.wordKey.equals(orderedKeys[i]),
-          );
-        }
-      });
 
   // ---------------------------------------------------------------- seen
 
@@ -317,15 +351,24 @@ class UserRepository {
         await _db.delete(t).go();
       }
     });
+    await ensureSystemCollections();
   }
 
   // ---------------------------------------------------------------- app state
+
+  /// The slug of the collection opened most recently.
+  static const String kLastOpened = 'last_opened_collection';
 
   Future<String?> appState(String key) async =>
       (await (_db.select(_db.appState)
                 ..where((AppState a) => a.key.equals(key)))
               .getSingleOrNull())
           ?.value;
+
+  Stream<String?> watchAppState(String key) => (_db.select(_db.appState)
+        ..where((AppState a) => a.key.equals(key)))
+      .watchSingleOrNull()
+      .map((AppStateRow? r) => r?.value);
 
   Future<void> setAppState(String key, String? value) async {
     if (value == null) {

@@ -25,7 +25,7 @@ void main() {
   test('the search ladder resolves exact, alias, prefix, fts and typos', () {
     // Pick real words from the data so the test tracks whatever was built.
     final Database raw = sqlite3.open('${dir.path}/dictionary.db', mode: OpenMode.readOnly);
-    final String head = raw.select('SELECT headword FROM words WHERE band = ? ORDER BY freq_rank LIMIT 1', <Object>['everyday']).first['headword'] as String;
+    final String head = raw.select('SELECT headword FROM words WHERE band = ? AND length(headword) >= 5 ORDER BY freq_rank LIMIT 1', <Object>['everyday']).first['headword'] as String;
     final ResultSet alias = raw.select("SELECT a.alias_norm, w.headword FROM aliases a JOIN words w ON w.word_key = a.word_key WHERE a.kind = 'us_spelling' LIMIT 1");
     raw.close();
 

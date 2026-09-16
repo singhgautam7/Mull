@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
+import '../../core/database/user_repository.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -19,13 +21,15 @@ import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/dashed_border.dart';
 import '../../shared/widgets/progress.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/two_column_grid.dart';
 import '../collections/collection_cards.dart';
 import '../dictionary/word_sheet.dart';
-import '../lists/create_list_sheet.dart';
-import '../lists/lists_screen.dart';
+import '../collections/create_list_sheet.dart';
 
 /// HANDOFF 3.1. Greeting, word of the day, Continue, Recently looked up,
-/// Collections, Your lists. On scroll the greeting collapses to "Home".
+/// Collections (a shortlist: last opened, in progress, then built-ins), Your
+/// lists. Both collection sections read the one unified query, so a list
+/// made here is here. On scroll the greeting collapses to "Home".
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -40,20 +44,19 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final MullColors c = context.colors;
     final DictionaryWord? wotd = ref.watch(wordOfTheDayProvider);
-    final List<DictionaryCollection> collections = ref.watch(collectionsProvider);
+    final List<Collection> collections = ref.watch(collectionsProvider);
     final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
     final List<String> recent = ref.watch(recentLookupsProvider).value ?? const <String>[];
-    final List<WordList> lists = ref.watch(listsProvider).value ?? const <WordList>[];
-    final Map<int, int> counts = ref.watch(listCountsProvider).value ?? const <int, int>{};
-    final int bookmarks = ref.watch(bookmarksProvider).value?.length ?? 0;
+    final List<Collection> grid = ref.watch(homeCollectionsProvider);
+    final List<Collection> yours = collections.where((Collection x) => x.isUsers).toList();
     final DictionaryDb dict = ref.watch(dictProvider);
 
     // Continue: the most recently started, unfinished collection.
     final Map<String, SeenWord> seen = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
     final Map<String, List<String>> keys = ref.watch(collectionKeysProvider);
-    DictionaryCollection? cont;
+    Collection? cont;
     DateTime? latest;
-    for (final DictionaryCollection col in collections) {
+    for (final Collection col in collections) {
       final Progress p = progress[col.slug] ?? const Progress(0, 0);
       if (!p.started || p.complete) continue;
       for (final String k in keys[col.slug] ?? const <String>[]) {
@@ -64,7 +67,6 @@ class HomeScreen extends ConsumerWidget {
         }
       }
     }
-    final List<DictionaryCollection> grid = collections.where((DictionaryCollection x) => x.kind != 'band').take(5).toList();
 
     return Scaffold(
       body: SafeArea(
@@ -87,12 +89,11 @@ class HomeScreen extends ConsumerWidget {
                           anchorContext: anchor,
                           entries: const <AppMenuEntry<String>>[
                             AppMenuEntry<String>(value: 'collections', label: 'All collections', icon: Icons.grid_view_rounded),
-                            AppMenuEntry<String>(value: 'lists', label: 'Lists', icon: Icons.list_alt_rounded),
                             AppMenuEntry<String>(value: 'stats', label: 'Stats', icon: Icons.bar_chart_rounded),
                           ],
                         );
                         if (!context.mounted || a == null) return;
-                        unawaited(context.push<void>(switch (a) { 'collections' => Routes.collections, 'lists' => Routes.lists, _ => Routes.stats }));
+                        unawaited(context.push<void>(a == 'collections' ? Routes.collections : Routes.stats));
                       },
                     ),
                   ),
@@ -135,18 +136,17 @@ class HomeScreen extends ConsumerWidget {
                         ),
                       )
                     else
-                      SizedBox(
-                        height: 52,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                          itemCount: recent.length,
-                          separatorBuilder: (BuildContext _, int _) => const SizedBox(width: Space.sm),
-                          itemBuilder: (BuildContext context, int i) {
-                            final DictionaryWord? w = dict.byKey(recent[i]);
-                            if (w == null) return const SizedBox.shrink();
-                            return _RecentChip(word: w);
-                          },
+                      // A row, not a fixed-height list: the chips are as
+                      // tall as their text.
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                        child: Row(
+                          spacing: Space.sm,
+                          children: <Widget>[
+                            for (final String key in recent)
+                              if (dict.byKey(key) case final DictionaryWord w) _RecentChip(word: w),
+                          ],
                         ),
                       ),
                     const SizedBox(height: Space.section),
@@ -159,51 +159,28 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                      child: GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: Space.row,
-                          crossAxisSpacing: Space.row,
-                          mainAxisExtent: 96,
-                        ),
-                        itemCount: grid.length + 1,
-                        itemBuilder: (BuildContext context, int i) {
-                          if (i == grid.length) return _NewListCard(onTap: () => showCreateListSheet(context));
-                          return TopicCard(
-                            collection: grid[i],
-                            progress: progress[grid[i].slug] ?? const Progress(0, 0),
-                            compact: true,
-                            onTap: () => context.push(Routes.collection(grid[i].slug)),
-                          );
-                        },
+                      child: TwoColumnGrid(
+                        children: <Widget>[
+                          for (final Collection x in grid)
+                            TopicCard(
+                              collection: x,
+                              progress: progress[x.slug] ?? const Progress(0, 0),
+                              compact: true,
+                              onTap: () => context.push(Routes.collection(x.slug)),
+                            ),
+                          _NewListCard(onTap: () => showCreateListSheet(context)),
+                        ],
                       ),
                     ),
                     const SizedBox(height: Space.section),
                     SectionHeader(
                       label: 'Your lists',
                       trailing: InkWell(
-                        onTap: () => context.push(Routes.lists),
-                        child: Text('Lists', style: MullType.monoLabel.copyWith(color: c.accent)),
+                        onTap: () => context.push(Routes.collections),
+                        child: Text('See all', style: MullType.monoLabel.copyWith(color: c.accent)),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                      child: Container(
-                        decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR),
-                        clipBehavior: Clip.antiAlias,
-                        child: Column(
-                          children: <Widget>[
-                            ListRow(title: 'Bookmarks', subtitle: plural(bookmarks, 'word'), swatch: c.primary, onTap: () => context.push(Routes.lists)),
-                            for (final WordList l in lists) ...<Widget>[
-                              Divider(color: c.divider, height: 1),
-                              ListRow(title: l.name, subtitle: plural(counts[l.id] ?? 0, 'word'), swatch: c.tagColor(l.color), onTap: () => context.push(Routes.list(l.id))),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
+                    YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
                   ],
                 ),
               ),
@@ -240,10 +217,22 @@ class _WordOfTheDay extends StatelessWidget {
             children: <Widget>[
               const SectionHeader(label: 'Word of the day', accent: true, inset: false),
               const SizedBox(height: Space.sm),
-              Text(word.headword, style: MullType.headwordL.copyWith(fontSize: 42, color: c.onSurface)),
+              // 42 at most, stepping down by grapheme count like the card,
+              // and never scaled: a headword is never broken mid-word.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  word.headword,
+                  style: MullType.headwordAt(math.max(1, MullType.headwordStep(word.headword))).copyWith(fontSize: MullType.headwordStep(word.headword) <= 1 ? 42 : null, color: c.onSurface),
+                  textScaler: TextScaler.noScaling,
+                  softWrap: false,
+                ),
+              ),
               const SizedBox(height: 4),
-              Row(
+              Wrap(
                 spacing: Space.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
                   if (word.ipa != null) Text(word.ipa!, style: MullType.monoTabular.copyWith(color: c.onSurfaceVariant)),
                   Text(posLabel(word.pos), style: MullType.label.copyWith(fontStyle: FontStyle.italic, color: c.onSurfaceMuted)),
@@ -267,7 +256,7 @@ class _WordOfTheDay extends StatelessWidget {
 class _Continue extends StatelessWidget {
   const _Continue({required this.collection, required this.progress});
 
-  final DictionaryCollection collection;
+  final Collection collection;
   final Progress progress;
 
   @override
@@ -327,22 +316,24 @@ class _RecentChip extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             spacing: Space.sm,
             children: <Widget>[
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(word.headword, style: MullType.titleSmall.copyWith(color: c.onSurface)),
-                  Text('${posLabel(word.pos)} · ${word.definitionShort}', style: MullType.monoLabel.copyWith(fontSize: 10, color: c.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
+              // Bounded, or the one-line definition would never ellipsise
+              // inside a horizontal scroll.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 220),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(word.headword, style: MullType.titleSmall.copyWith(color: c.onSurface)),
+                    Text('${posLabel(word.pos)} · ${word.definitionShort}', style: MullType.monoLabel.copyWith(fontSize: 10, color: c.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
               Semantics(
                 button: true,
                 label: 'Add ${word.headword} to From my reading',
                 child: InkWell(
-                  onTap: () async {
-                    final WordList reading = await ref.read(userRepositoryProvider).readingList();
-                    await ref.read(userRepositoryProvider).addToList(reading.id, word.wordKey);
-                  },
+                  onTap: () => ref.read(userRepositoryProvider).addToCollection(UserRepository.readingSlug, word.wordKey),
                   customBorder: const CircleBorder(),
                   child: Container(
                     width: 26,

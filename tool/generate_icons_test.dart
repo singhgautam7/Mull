@@ -100,6 +100,62 @@ void main() {
     canvas.restore();
   }
 
+  void drawStencil(ui.Canvas canvas) {
+    const ui.Rect cover = ui.Rect.fromLTWH(46 * s, 42.5 * s, 52 * s, 64 * s);
+    final ui.RRect coverR = ui.RRect.fromRectAndCorners(
+      cover,
+      topLeft: const ui.Radius.circular(3 * s),
+      bottomLeft: const ui.Radius.circular(3 * s),
+      topRight: const ui.Radius.circular(8 * s),
+      bottomRight: const ui.Radius.circular(8 * s),
+    );
+    const double rl = 60.25 * s, rt = 37.5 * s, rw = 9 * s, rh = 21 * s;
+    final ui.Path ribbonPath = ui.Path()
+      ..moveTo(rl, rt)
+      ..lineTo(rl + rw, rt)
+      ..lineTo(rl + rw, rt + rh)
+      ..lineTo(rl + rw / 2, rt + rh * 0.76)
+      ..lineTo(rl, rt + rh)
+      ..close();
+    final ui.Paint solid = ui.Paint()..color = const ui.Color(0xFFFFFFFF);
+    final ui.Paint clear = ui.Paint()..blendMode = ui.BlendMode.clear;
+    final ui.Paint clearStroke = ui.Paint()
+      ..blendMode = ui.BlendMode.clear
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = 1.6 * s;
+
+    canvas.saveLayer(const ui.Rect.fromLTWH(0, 0, out, out), ui.Paint());
+    // Launchers draw a themed icon smaller than the colour one, so the
+    // stencil is drawn larger: the launcher's own inset brings it back to
+    // the colour book's size, and the cut-outs survive the downscale.
+    canvas.translate(out / 2, out / 2);
+    canvas.scale(1.45);
+    canvas.translate(-out / 2, -out / 2);
+    canvas.drawPath(ribbonPath, solid);
+    canvas.drawRRect(coverR, solid);
+    // The spine, as a gap half its width, so the cover still reads as one
+    // object.
+    canvas.drawRect(const ui.Rect.fromLTWH((46 + 7) * s, 42.5 * s, 3.5 * s, 64 * s), clear);
+    // The ribbon inside the cover.
+    canvas.save();
+    canvas.clipRRect(coverR);
+    canvas.drawPath(ribbonPath, clear);
+    canvas.restore();
+    // The mark, a touch heavier than the colour version so the cut-out
+    // survives the launcher's downscale.
+    const double areaLeft = (46 + 7) * s, areaWidth = 45 * s;
+    for (final ui.Paint paint in <ui.Paint>[clear, clearStroke]) {
+      final ui.ParagraphBuilder pb = ui.ParagraphBuilder(
+        ui.ParagraphStyle(fontFamily: 'JetBrains Mono', fontSize: 20 * s, fontWeight: ui.FontWeight.w500, textAlign: ui.TextAlign.center),
+      )
+        ..pushStyle(ui.TextStyle(fontFamily: 'JetBrains Mono', foreground: paint))
+        ..addText('/m/');
+      final ui.Paragraph p = pb.build()..layout(const ui.ParagraphConstraints(width: areaWidth));
+      canvas.drawParagraph(p, ui.Offset(areaLeft, cover.center.dy - p.height / 2));
+    }
+    canvas.restore();
+  }
+
   Future<void> save(String name, void Function(ui.Canvas canvas) paint) async {
     final ui.PictureRecorder rec = ui.PictureRecorder();
     final ui.Canvas canvas = ui.Canvas(rec, const ui.Rect.fromLTWH(0, 0, out, out));
@@ -122,17 +178,12 @@ void main() {
     // group sits inside the 88px safe circle, so any mask keeps it whole.
     await save('background', (ui.Canvas c) => c.drawRect(const ui.Rect.fromLTWH(0, 0, out, out), ui.Paint()..color = ground));
     await save('foreground', (ui.Canvas c) => drawBook(c, pageColor: page, spineColor: spineTeal, ribbon: ribbonTeal, slashColor: slash, mColor: mInk));
-    // Themed monochrome: spine and ribbon flatten to one tint, the page stays
-    // the light plane. Android tints this by alpha, so it is drawn as a mask.
-    await save('monochrome', (ui.Canvas c) => drawBook(
-      c,
-      pageColor: const ui.Color(0xFFFFFFFF),
-      spineColor: const ui.Color(0x80000000),
-      ribbon: const ui.Color(0x80000000),
-      slashColor: const ui.Color(0x8C000000),
-      mColor: const ui.Color(0xFF000000),
-      shadow: false,
-    ));
+    // Themed monochrome. Android keeps only the alpha of this layer and
+    // tints it one colour over a container colour, so the layer is a
+    // stencil: the page is solid, and the spine, the mark and the ribbon
+    // are cut out of it so they read in the container colour. Only the
+    // ribbon's tip above the cover is solid.
+    await save('monochrome', drawStencil);
     // Splash: Android 12 masks the icon to a circle, so the book sits smaller
     // on the same ground.
     await save('splash', (ui.Canvas c) => drawBook(

@@ -1146,6 +1146,737 @@ class ListWordsCompanion extends UpdateCompanion<ListWord> {
   }
 }
 
+class $UserCollectionsTable extends UserCollections
+    with TableInfo<$UserCollectionsTable, UserCollection> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UserCollectionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _slugMeta = const VerificationMeta('slug');
+  @override
+  late final GeneratedColumn<String> slug = GeneratedColumn<String>(
+    'slug',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 80,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumn<int> color = GeneratedColumn<int>(
+    'color',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    slug,
+    kind,
+    name,
+    color,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'user_collections';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UserCollection> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('slug')) {
+      context.handle(
+        _slugMeta,
+        slug.isAcceptableOrUnknown(data['slug']!, _slugMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_slugMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('color')) {
+      context.handle(
+        _colorMeta,
+        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  UserCollection map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UserCollection(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      slug: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}slug'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      color: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}color'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $UserCollectionsTable createAlias(String alias) {
+    return $UserCollectionsTable(attachedDatabase, alias);
+  }
+}
+
+class UserCollection extends DataClass implements Insertable<UserCollection> {
+  final int id;
+
+  /// The stable id every screen and every mix source uses: `bookmarks`,
+  /// `reading`, or `u{n}` for a user collection.
+  final String slug;
+
+  /// system | user
+  final String kind;
+  final String name;
+
+  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  final int? color;
+  final DateTime createdAt;
+  const UserCollection({
+    required this.id,
+    required this.slug,
+    required this.kind,
+    required this.name,
+    this.color,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['slug'] = Variable<String>(slug);
+    map['kind'] = Variable<String>(kind);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || color != null) {
+      map['color'] = Variable<int>(color);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  UserCollectionsCompanion toCompanion(bool nullToAbsent) {
+    return UserCollectionsCompanion(
+      id: Value(id),
+      slug: Value(slug),
+      kind: Value(kind),
+      name: Value(name),
+      color: color == null && nullToAbsent
+          ? const Value.absent()
+          : Value(color),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory UserCollection.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UserCollection(
+      id: serializer.fromJson<int>(json['id']),
+      slug: serializer.fromJson<String>(json['slug']),
+      kind: serializer.fromJson<String>(json['kind']),
+      name: serializer.fromJson<String>(json['name']),
+      color: serializer.fromJson<int?>(json['color']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'slug': serializer.toJson<String>(slug),
+      'kind': serializer.toJson<String>(kind),
+      'name': serializer.toJson<String>(name),
+      'color': serializer.toJson<int?>(color),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  UserCollection copyWith({
+    int? id,
+    String? slug,
+    String? kind,
+    String? name,
+    Value<int?> color = const Value.absent(),
+    DateTime? createdAt,
+  }) => UserCollection(
+    id: id ?? this.id,
+    slug: slug ?? this.slug,
+    kind: kind ?? this.kind,
+    name: name ?? this.name,
+    color: color.present ? color.value : this.color,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  UserCollection copyWithCompanion(UserCollectionsCompanion data) {
+    return UserCollection(
+      id: data.id.present ? data.id.value : this.id,
+      slug: data.slug.present ? data.slug.value : this.slug,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      name: data.name.present ? data.name.value : this.name,
+      color: data.color.present ? data.color.value : this.color,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserCollection(')
+          ..write('id: $id, ')
+          ..write('slug: $slug, ')
+          ..write('kind: $kind, ')
+          ..write('name: $name, ')
+          ..write('color: $color, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, slug, kind, name, color, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UserCollection &&
+          other.id == this.id &&
+          other.slug == this.slug &&
+          other.kind == this.kind &&
+          other.name == this.name &&
+          other.color == this.color &&
+          other.createdAt == this.createdAt);
+}
+
+class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
+  final Value<int> id;
+  final Value<String> slug;
+  final Value<String> kind;
+  final Value<String> name;
+  final Value<int?> color;
+  final Value<DateTime> createdAt;
+  const UserCollectionsCompanion({
+    this.id = const Value.absent(),
+    this.slug = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.name = const Value.absent(),
+    this.color = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  UserCollectionsCompanion.insert({
+    this.id = const Value.absent(),
+    required String slug,
+    required String kind,
+    required String name,
+    this.color = const Value.absent(),
+    required DateTime createdAt,
+  }) : slug = Value(slug),
+       kind = Value(kind),
+       name = Value(name),
+       createdAt = Value(createdAt);
+  static Insertable<UserCollection> custom({
+    Expression<int>? id,
+    Expression<String>? slug,
+    Expression<String>? kind,
+    Expression<String>? name,
+    Expression<int>? color,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (slug != null) 'slug': slug,
+      if (kind != null) 'kind': kind,
+      if (name != null) 'name': name,
+      if (color != null) 'color': color,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  UserCollectionsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? slug,
+    Value<String>? kind,
+    Value<String>? name,
+    Value<int?>? color,
+    Value<DateTime>? createdAt,
+  }) {
+    return UserCollectionsCompanion(
+      id: id ?? this.id,
+      slug: slug ?? this.slug,
+      kind: kind ?? this.kind,
+      name: name ?? this.name,
+      color: color ?? this.color,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (slug.present) {
+      map['slug'] = Variable<String>(slug.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (color.present) {
+      map['color'] = Variable<int>(color.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserCollectionsCompanion(')
+          ..write('id: $id, ')
+          ..write('slug: $slug, ')
+          ..write('kind: $kind, ')
+          ..write('name: $name, ')
+          ..write('color: $color, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $UserCollectionWordsTable extends UserCollectionWords
+    with TableInfo<$UserCollectionWordsTable, UserCollectionWord> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UserCollectionWordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _collectionIdMeta = const VerificationMeta(
+    'collectionId',
+  );
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+    'collection_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES user_collections (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _wordKeyMeta = const VerificationMeta(
+    'wordKey',
+  );
+  @override
+  late final GeneratedColumn<String> wordKey = GeneratedColumn<String>(
+    'word_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _positionMeta = const VerificationMeta(
+    'position',
+  );
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+    'position',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _addedAtMeta = const VerificationMeta(
+    'addedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> addedAt = GeneratedColumn<DateTime>(
+    'added_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    collectionId,
+    wordKey,
+    position,
+    addedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'user_collection_words';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UserCollectionWord> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('collection_id')) {
+      context.handle(
+        _collectionIdMeta,
+        collectionId.isAcceptableOrUnknown(
+          data['collection_id']!,
+          _collectionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('word_key')) {
+      context.handle(
+        _wordKeyMeta,
+        wordKey.isAcceptableOrUnknown(data['word_key']!, _wordKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_wordKeyMeta);
+    }
+    if (data.containsKey('position')) {
+      context.handle(
+        _positionMeta,
+        position.isAcceptableOrUnknown(data['position']!, _positionMeta),
+      );
+    }
+    if (data.containsKey('added_at')) {
+      context.handle(
+        _addedAtMeta,
+        addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_addedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {collectionId, wordKey};
+  @override
+  UserCollectionWord map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UserCollectionWord(
+      collectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}collection_id'],
+      )!,
+      wordKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}word_key'],
+      )!,
+      position: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position'],
+      )!,
+      addedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}added_at'],
+      )!,
+    );
+  }
+
+  @override
+  $UserCollectionWordsTable createAlias(String alias) {
+    return $UserCollectionWordsTable(attachedDatabase, alias);
+  }
+}
+
+class UserCollectionWord extends DataClass
+    implements Insertable<UserCollectionWord> {
+  final int collectionId;
+  final String wordKey;
+  final int position;
+  final DateTime addedAt;
+  const UserCollectionWord({
+    required this.collectionId,
+    required this.wordKey,
+    required this.position,
+    required this.addedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['collection_id'] = Variable<int>(collectionId);
+    map['word_key'] = Variable<String>(wordKey);
+    map['position'] = Variable<int>(position);
+    map['added_at'] = Variable<DateTime>(addedAt);
+    return map;
+  }
+
+  UserCollectionWordsCompanion toCompanion(bool nullToAbsent) {
+    return UserCollectionWordsCompanion(
+      collectionId: Value(collectionId),
+      wordKey: Value(wordKey),
+      position: Value(position),
+      addedAt: Value(addedAt),
+    );
+  }
+
+  factory UserCollectionWord.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UserCollectionWord(
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      wordKey: serializer.fromJson<String>(json['wordKey']),
+      position: serializer.fromJson<int>(json['position']),
+      addedAt: serializer.fromJson<DateTime>(json['addedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'collectionId': serializer.toJson<int>(collectionId),
+      'wordKey': serializer.toJson<String>(wordKey),
+      'position': serializer.toJson<int>(position),
+      'addedAt': serializer.toJson<DateTime>(addedAt),
+    };
+  }
+
+  UserCollectionWord copyWith({
+    int? collectionId,
+    String? wordKey,
+    int? position,
+    DateTime? addedAt,
+  }) => UserCollectionWord(
+    collectionId: collectionId ?? this.collectionId,
+    wordKey: wordKey ?? this.wordKey,
+    position: position ?? this.position,
+    addedAt: addedAt ?? this.addedAt,
+  );
+  UserCollectionWord copyWithCompanion(UserCollectionWordsCompanion data) {
+    return UserCollectionWord(
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      wordKey: data.wordKey.present ? data.wordKey.value : this.wordKey,
+      position: data.position.present ? data.position.value : this.position,
+      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserCollectionWord(')
+          ..write('collectionId: $collectionId, ')
+          ..write('wordKey: $wordKey, ')
+          ..write('position: $position, ')
+          ..write('addedAt: $addedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(collectionId, wordKey, position, addedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UserCollectionWord &&
+          other.collectionId == this.collectionId &&
+          other.wordKey == this.wordKey &&
+          other.position == this.position &&
+          other.addedAt == this.addedAt);
+}
+
+class UserCollectionWordsCompanion extends UpdateCompanion<UserCollectionWord> {
+  final Value<int> collectionId;
+  final Value<String> wordKey;
+  final Value<int> position;
+  final Value<DateTime> addedAt;
+  final Value<int> rowid;
+  const UserCollectionWordsCompanion({
+    this.collectionId = const Value.absent(),
+    this.wordKey = const Value.absent(),
+    this.position = const Value.absent(),
+    this.addedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UserCollectionWordsCompanion.insert({
+    required int collectionId,
+    required String wordKey,
+    this.position = const Value.absent(),
+    required DateTime addedAt,
+    this.rowid = const Value.absent(),
+  }) : collectionId = Value(collectionId),
+       wordKey = Value(wordKey),
+       addedAt = Value(addedAt);
+  static Insertable<UserCollectionWord> custom({
+    Expression<int>? collectionId,
+    Expression<String>? wordKey,
+    Expression<int>? position,
+    Expression<DateTime>? addedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (collectionId != null) 'collection_id': collectionId,
+      if (wordKey != null) 'word_key': wordKey,
+      if (position != null) 'position': position,
+      if (addedAt != null) 'added_at': addedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UserCollectionWordsCompanion copyWith({
+    Value<int>? collectionId,
+    Value<String>? wordKey,
+    Value<int>? position,
+    Value<DateTime>? addedAt,
+    Value<int>? rowid,
+  }) {
+    return UserCollectionWordsCompanion(
+      collectionId: collectionId ?? this.collectionId,
+      wordKey: wordKey ?? this.wordKey,
+      position: position ?? this.position,
+      addedAt: addedAt ?? this.addedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (wordKey.present) {
+      map['word_key'] = Variable<String>(wordKey.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (addedAt.present) {
+      map['added_at'] = Variable<DateTime>(addedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UserCollectionWordsCompanion(')
+          ..write('collectionId: $collectionId, ')
+          ..write('wordKey: $wordKey, ')
+          ..write('position: $position, ')
+          ..write('addedAt: $addedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $SeenTable extends Seen with TableInfo<$SeenTable, SeenWord> {
   @override
   final GeneratedDatabase attachedDatabase;
@@ -3243,6 +3974,11 @@ abstract class _$UserDatabase extends GeneratedDatabase {
   late final $NotesTable notes = $NotesTable(this);
   late final $WordListsTable wordLists = $WordListsTable(this);
   late final $ListWordsTable listWords = $ListWordsTable(this);
+  late final $UserCollectionsTable userCollections = $UserCollectionsTable(
+    this,
+  );
+  late final $UserCollectionWordsTable userCollectionWords =
+      $UserCollectionWordsTable(this);
   late final $SeenTable seen = $SeenTable(this);
   late final $SeenEventsTable seenEvents = $SeenEventsTable(this);
   late final $RecentSearchesTable recentSearches = $RecentSearchesTable(this);
@@ -3260,6 +3996,8 @@ abstract class _$UserDatabase extends GeneratedDatabase {
     notes,
     wordLists,
     listWords,
+    userCollections,
+    userCollectionWords,
     seen,
     seenEvents,
     recentSearches,
@@ -3277,6 +4015,13 @@ abstract class _$UserDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('list_words', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'user_collections',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('user_collection_words', kind: UpdateKind.delete)],
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
@@ -4187,6 +4932,655 @@ typedef $$ListWordsTableProcessedTableManager =
       (ListWord, $$ListWordsTableReferences),
       ListWord,
       PrefetchHooks Function({bool listId})
+    >;
+typedef $$UserCollectionsTableCreateCompanionBuilder =
+    UserCollectionsCompanion Function({
+      Value<int> id,
+      required String slug,
+      required String kind,
+      required String name,
+      Value<int?> color,
+      required DateTime createdAt,
+    });
+typedef $$UserCollectionsTableUpdateCompanionBuilder =
+    UserCollectionsCompanion Function({
+      Value<int> id,
+      Value<String> slug,
+      Value<String> kind,
+      Value<String> name,
+      Value<int?> color,
+      Value<DateTime> createdAt,
+    });
+
+final class $$UserCollectionsTableReferences
+    extends
+        BaseReferences<_$UserDatabase, $UserCollectionsTable, UserCollection> {
+  $$UserCollectionsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static MultiTypedResultKey<
+    $UserCollectionWordsTable,
+    List<UserCollectionWord>
+  >
+  _userCollectionWordsRefsTable(_$UserDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.userCollectionWords,
+        aliasName: 'user_collections__id__user_collection_words__collection_id',
+      );
+
+  $$UserCollectionWordsTableProcessedTableManager get userCollectionWordsRefs {
+    final manager = $$UserCollectionWordsTableTableManager(
+      $_db,
+      $_db.userCollectionWords,
+    ).filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _userCollectionWordsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$UserCollectionsTableFilterComposer
+    extends Composer<_$UserDatabase, $UserCollectionsTable> {
+  $$UserCollectionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get slug => $composableBuilder(
+    column: $table.slug,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> userCollectionWordsRefs(
+    Expression<bool> Function($$UserCollectionWordsTableFilterComposer f) f,
+  ) {
+    final $$UserCollectionWordsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.userCollectionWords,
+      getReferencedColumn: (t) => t.collectionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserCollectionWordsTableFilterComposer(
+            $db: $db,
+            $table: $db.userCollectionWords,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$UserCollectionsTableOrderingComposer
+    extends Composer<_$UserDatabase, $UserCollectionsTable> {
+  $$UserCollectionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get slug => $composableBuilder(
+    column: $table.slug,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$UserCollectionsTableAnnotationComposer
+    extends Composer<_$UserDatabase, $UserCollectionsTable> {
+  $$UserCollectionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get slug =>
+      $composableBuilder(column: $table.slug, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  Expression<T> userCollectionWordsRefs<T extends Object>(
+    Expression<T> Function($$UserCollectionWordsTableAnnotationComposer a) f,
+  ) {
+    final $$UserCollectionWordsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.userCollectionWords,
+          getReferencedColumn: (t) => t.collectionId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$UserCollectionWordsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.userCollectionWords,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+}
+
+class $$UserCollectionsTableTableManager
+    extends
+        RootTableManager<
+          _$UserDatabase,
+          $UserCollectionsTable,
+          UserCollection,
+          $$UserCollectionsTableFilterComposer,
+          $$UserCollectionsTableOrderingComposer,
+          $$UserCollectionsTableAnnotationComposer,
+          $$UserCollectionsTableCreateCompanionBuilder,
+          $$UserCollectionsTableUpdateCompanionBuilder,
+          (UserCollection, $$UserCollectionsTableReferences),
+          UserCollection,
+          PrefetchHooks Function({bool userCollectionWordsRefs})
+        > {
+  $$UserCollectionsTableTableManager(
+    _$UserDatabase db,
+    $UserCollectionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UserCollectionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UserCollectionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$UserCollectionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> slug = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int?> color = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => UserCollectionsCompanion(
+                id: id,
+                slug: slug,
+                kind: kind,
+                name: name,
+                color: color,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String slug,
+                required String kind,
+                required String name,
+                Value<int?> color = const Value.absent(),
+                required DateTime createdAt,
+              }) => UserCollectionsCompanion.insert(
+                id: id,
+                slug: slug,
+                kind: kind,
+                name: name,
+                color: color,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$UserCollectionsTable, UserCollection>(table),
+                  $$UserCollectionsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({userCollectionWordsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (userCollectionWordsRefs) db.userCollectionWords,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (userCollectionWordsRefs)
+                    await $_getPrefetchedData<
+                      UserCollection,
+                      $UserCollectionsTable,
+                      UserCollectionWord
+                    >(
+                      currentTable: table,
+                      referencedTable: $$UserCollectionsTableReferences
+                          ._userCollectionWordsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$UserCollectionsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).userCollectionWordsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where(
+                            (e) => e.collectionId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$UserCollectionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$UserDatabase,
+      $UserCollectionsTable,
+      UserCollection,
+      $$UserCollectionsTableFilterComposer,
+      $$UserCollectionsTableOrderingComposer,
+      $$UserCollectionsTableAnnotationComposer,
+      $$UserCollectionsTableCreateCompanionBuilder,
+      $$UserCollectionsTableUpdateCompanionBuilder,
+      (UserCollection, $$UserCollectionsTableReferences),
+      UserCollection,
+      PrefetchHooks Function({bool userCollectionWordsRefs})
+    >;
+typedef $$UserCollectionWordsTableCreateCompanionBuilder =
+    UserCollectionWordsCompanion Function({
+      required int collectionId,
+      required String wordKey,
+      Value<int> position,
+      required DateTime addedAt,
+      Value<int> rowid,
+    });
+typedef $$UserCollectionWordsTableUpdateCompanionBuilder =
+    UserCollectionWordsCompanion Function({
+      Value<int> collectionId,
+      Value<String> wordKey,
+      Value<int> position,
+      Value<DateTime> addedAt,
+      Value<int> rowid,
+    });
+
+final class $$UserCollectionWordsTableReferences
+    extends
+        BaseReferences<
+          _$UserDatabase,
+          $UserCollectionWordsTable,
+          UserCollectionWord
+        > {
+  $$UserCollectionWordsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $UserCollectionsTable _collectionIdTable(_$UserDatabase db) =>
+      db.userCollections.createAlias(
+        'user_collection_words__collection_id__user_collections__id',
+      );
+
+  $$UserCollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager = $$UserCollectionsTableTableManager(
+      $_db,
+      $_db.userCollections,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$UserCollectionWordsTableFilterComposer
+    extends Composer<_$UserDatabase, $UserCollectionWordsTable> {
+  $$UserCollectionWordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get wordKey => $composableBuilder(
+    column: $table.wordKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get addedAt => $composableBuilder(
+    column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$UserCollectionsTableFilterComposer get collectionId {
+    final $$UserCollectionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.userCollections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserCollectionsTableFilterComposer(
+            $db: $db,
+            $table: $db.userCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$UserCollectionWordsTableOrderingComposer
+    extends Composer<_$UserDatabase, $UserCollectionWordsTable> {
+  $$UserCollectionWordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get wordKey => $composableBuilder(
+    column: $table.wordKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get addedAt => $composableBuilder(
+    column: $table.addedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$UserCollectionsTableOrderingComposer get collectionId {
+    final $$UserCollectionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.userCollections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserCollectionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.userCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$UserCollectionWordsTableAnnotationComposer
+    extends Composer<_$UserDatabase, $UserCollectionWordsTable> {
+  $$UserCollectionWordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get wordKey =>
+      $composableBuilder(column: $table.wordKey, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
+
+  $$UserCollectionsTableAnnotationComposer get collectionId {
+    final $$UserCollectionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.userCollections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$UserCollectionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.userCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$UserCollectionWordsTableTableManager
+    extends
+        RootTableManager<
+          _$UserDatabase,
+          $UserCollectionWordsTable,
+          UserCollectionWord,
+          $$UserCollectionWordsTableFilterComposer,
+          $$UserCollectionWordsTableOrderingComposer,
+          $$UserCollectionWordsTableAnnotationComposer,
+          $$UserCollectionWordsTableCreateCompanionBuilder,
+          $$UserCollectionWordsTableUpdateCompanionBuilder,
+          (UserCollectionWord, $$UserCollectionWordsTableReferences),
+          UserCollectionWord,
+          PrefetchHooks Function({bool collectionId})
+        > {
+  $$UserCollectionWordsTableTableManager(
+    _$UserDatabase db,
+    $UserCollectionWordsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UserCollectionWordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UserCollectionWordsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$UserCollectionWordsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> collectionId = const Value.absent(),
+                Value<String> wordKey = const Value.absent(),
+                Value<int> position = const Value.absent(),
+                Value<DateTime> addedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UserCollectionWordsCompanion(
+                collectionId: collectionId,
+                wordKey: wordKey,
+                position: position,
+                addedAt: addedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required int collectionId,
+                required String wordKey,
+                Value<int> position = const Value.absent(),
+                required DateTime addedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => UserCollectionWordsCompanion.insert(
+                collectionId: collectionId,
+                wordKey: wordKey,
+                position: position,
+                addedAt: addedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$UserCollectionWordsTable, UserCollectionWord>(
+                    table,
+                  ),
+                  $$UserCollectionWordsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (collectionId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.collectionId,
+                        referencedTable: $$UserCollectionWordsTableReferences
+                            ._collectionIdTable(db),
+                        referencedColumn: $$UserCollectionWordsTableReferences
+                            ._collectionIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$UserCollectionWordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$UserDatabase,
+      $UserCollectionWordsTable,
+      UserCollectionWord,
+      $$UserCollectionWordsTableFilterComposer,
+      $$UserCollectionWordsTableOrderingComposer,
+      $$UserCollectionWordsTableAnnotationComposer,
+      $$UserCollectionWordsTableCreateCompanionBuilder,
+      $$UserCollectionWordsTableUpdateCompanionBuilder,
+      (UserCollectionWord, $$UserCollectionWordsTableReferences),
+      UserCollectionWord,
+      PrefetchHooks Function({bool collectionId})
     >;
 typedef $$SeenTableCreateCompanionBuilder = SeenCompanion Function({
   required String wordKey,
@@ -5901,6 +7295,10 @@ class $UserDatabaseManager {
       $$WordListsTableTableManager(_db, _db.wordLists);
   $$ListWordsTableTableManager get listWords =>
       $$ListWordsTableTableManager(_db, _db.listWords);
+  $$UserCollectionsTableTableManager get userCollections =>
+      $$UserCollectionsTableTableManager(_db, _db.userCollections);
+  $$UserCollectionWordsTableTableManager get userCollectionWords =>
+      $$UserCollectionWordsTableTableManager(_db, _db.userCollectionWords);
   $$SeenTableTableManager get seen => $$SeenTableTableManager(_db, _db.seen);
   $$SeenEventsTableTableManager get seenEvents =>
       $$SeenEventsTableTableManager(_db, _db.seenEvents);

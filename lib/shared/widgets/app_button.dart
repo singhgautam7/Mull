@@ -61,18 +61,24 @@ class AppButton extends StatelessWidget {
       spacing: Space.sm,
       children: <Widget>[
         if (icon != null) Icon(icon, size: compact ? 16 : 18, color: skin.fg),
-        Text(
-          label,
-          style: (compact ? MullType.label.weight(600) : MullType.titleMedium)
-              .copyWith(color: skin.fg),
+        // Flexible so a long label at a large font scale ellipsises
+        // rather than pushing past the pill.
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: (compact ? MullType.label.weight(600) : MullType.titleMedium)
+                .copyWith(color: skin.fg),
+          ),
         ),
       ],
     );
 
     final bool dashed = type == AppButtonType.dotted && !disabled;
-    Widget button = SizedBox(
-      height: height,
-      width: fullWidth ? double.infinity : null,
+    // A minimum height, not a fixed one: the pill grows with its text.
+    Widget button = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height, minWidth: fullWidth ? double.infinity : 0),
       child: Material(
         color: skin.bg,
         shape: StadiumBorder(
@@ -84,7 +90,7 @@ class AppButton extends StatelessWidget {
         child: InkWell(
           onTap: disabled ? null : onPressed,
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: compact ? 13 : 22),
+            padding: EdgeInsets.symmetric(horizontal: compact ? 13 : 22, vertical: 4),
             child: content,
           ),
         ),

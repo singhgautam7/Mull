@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -49,8 +50,8 @@ void main() {
       final DictionaryDb dict = DictionaryDb.open(path);
       expect(dict.version, isNot('unknown'));
       expect(dict.entryCount, greaterThan(1000));
-      expect(dict.collections().where((DictionaryCollection c) => c.kind == 'band').length, 4);
-      expect(dict.collections().where((DictionaryCollection c) => c.kind == 'topic').length, greaterThanOrEqualTo(3));
+      expect(dict.collections().where((Collection c) => c.kind == 'band').length, 4);
+      expect(dict.collections().where((Collection c) => c.kind == 'topic').length, greaterThanOrEqualTo(3));
       dict.close();
 
       // Same version: a second call is a no-op, the file is untouched.
@@ -85,6 +86,14 @@ void main() {
       }
       expect(find.text('01 / 03'), findsOneWidget);
       expect(find.byType(InstallScreen), findsNothing);
+
+      // Tear the tree down here, under real timers, so the user database's
+      // query streams can close before the binding checks for pending ones.
+      await tester.pumpWidget(const SizedBox());
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+      }
     });
   });
 }

@@ -7,6 +7,7 @@ import '../../core/theme/palette.dart';
 
 /// A 3dp track, `divider` under `primary`. Proportional, and below 1% it
 /// still paints a 6dp stub so progress reads at 40 words and at 2000.
+/// Painted, not laid out, so a card can measure its intrinsic height.
 class ProgressTrack extends StatelessWidget {
   const ProgressTrack({required this.fraction, this.onContainer = false, super.key});
 
@@ -18,28 +19,40 @@ class ProgressTrack extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints box) {
-        final double f = fraction.clamp(0, 1);
-        final double w = f == 0 ? 0 : math.max(6, box.maxWidth * f);
-        return Container(
-          height: 3,
-          decoration: BoxDecoration(
-            color: onContainer ? c.onPrimaryContainer.withValues(alpha: 0.18) : c.divider,
-            borderRadius: const BorderRadius.all(Radius.circular(2)),
-          ),
-          alignment: Alignment.centerLeft,
-          child: Container(
-            width: w,
-            decoration: BoxDecoration(
-              color: onContainer ? c.onPrimaryContainer : c.primary,
-              borderRadius: const BorderRadius.all(Radius.circular(2)),
-            ),
-          ),
-        );
-      },
+    return SizedBox(
+      height: 3,
+      width: double.infinity,
+      child: CustomPaint(
+        painter: _TrackPainter(
+          fraction.clamp(0, 1),
+          onContainer ? c.onPrimaryContainer.withValues(alpha: 0.18) : c.divider,
+          onContainer ? c.onPrimaryContainer : c.primary,
+        ),
+      ),
     );
   }
+}
+
+class _TrackPainter extends CustomPainter {
+  _TrackPainter(this.fraction, this.track, this.fill);
+
+  final double fraction;
+  final Color track;
+  final Color fill;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const Radius r = Radius.circular(2);
+    canvas.drawRRect(RRect.fromRectAndRadius(Offset.zero & size, r), Paint()..color = track);
+    if (fraction > 0) {
+      final double w = math.max(6, size.width * fraction);
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, size.height), r), Paint()..color = fill);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TrackPainter old) =>
+      old.fraction != fraction || old.track != track || old.fill != fill;
 }
 
 /// 46dp, 4dp stroke, `divider` track, `primary` arc from -90 degrees, round

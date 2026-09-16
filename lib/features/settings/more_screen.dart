@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/database/mix_repository.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -13,9 +14,10 @@ import '../../shared/widgets/app_header.dart';
 import 'settings_controller.dart';
 import 'settings_widgets.dart';
 
-/// Perch's structure, Mull's entries. Settings, Lists, Collections; YOUR DATA
-/// (Stats, Export, Permissions); ABOUT MULL (Privacy, Dictionary info,
-/// About). Version line centred below.
+/// Perch's structure, Mull's entries. Settings, Collections, Mixes; YOUR
+/// DATA (Stats, Export, Permissions); ABOUT MULL (Privacy, Dictionary info,
+/// About). Version line centred below. Lists are collections now, so the
+/// saved mixes take that row.
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
@@ -36,8 +38,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final AppSettings s = ref.watch(settingsProvider);
-    final int lists = (ref.watch(listsProvider).value?.length ?? 0) + 1;
     final int collections = ref.watch(collectionsProvider).length;
+    final int mixes = (ref.watch(mixesProvider).value ?? const <MixSpec>[]).where((MixSpec m) => !m.isPreset).length;
     final int entries = ref.watch(dictProvider).headwordCount;
 
     return Scaffold(
@@ -55,8 +57,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     label: 'General',
                     children: <Widget>[
                       SettingsRow(icon: Icons.tune_rounded, label: 'Settings', value: '${s.dynamicColor ? 'Wallpaper' : s.family.name} · ${_modeLabel(s.themeMode)}', onTap: () => context.push(Routes.settings)),
-                      SettingsRow(icon: Icons.list_alt_rounded, label: 'Lists', value: '$lists', onTap: () => context.push(Routes.lists)),
                       SettingsRow(icon: Icons.grid_view_rounded, label: 'Collections', value: '$collections', onTap: () => context.push(Routes.collections)),
+                      SettingsRow(icon: Icons.shuffle_rounded, label: 'Mixes', value: '$mixes', onTap: () => context.push(Routes.mixes)),
                     ],
                   ),
                   SettingsGroup(

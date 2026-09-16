@@ -1,12 +1,17 @@
 # Idiom curation. The pipeline scores Wiktionary's idiomatic multi-word
 # entries automatically (common words only, example present, no vulgar or
-# dated tags) and keeps the best `max_size`. This file is the last mile.
+# dated tags) and keeps the best `max_size` in the idioms table.
 #
-#   include: phrases forced in, exactly as Wiktionary spells them
-#   exclude: phrases forced out
-#   max_size: how many to ship (sample builds cap lower via --sample)
+#   include:     phrases forced in, exactly as Wiktionary spells them
+#   exclude:     phrases forced out
+#   max_size:    how many to ship (sample builds cap lower via --sample)
+#   everyday:    size of the "Idioms: Everyday" collection (highest-frequency first)
+#   odd_origins: the "Idioms: Odd Origins" collection, hand-picked. Each must
+#                exist in Wiktionary with a usable etymology, which becomes the
+#                card's `origin`. The report lists any that cannot be resolved.
 
 max_size: 1500
+everyday: 150
 include:
   - kick the bucket
   - once in a blue moon
@@ -33,3 +38,101 @@ include:
   - throw in the towel
   - lose one's touch
 exclude: []
+
+odd_origins:
+  - kick the bucket
+  - let the cat out of the bag
+  - bite the bullet
+  - spill the beans
+  - rule of thumb
+  - break the ice
+  - under the weather
+  - pull someone's leg
+  - bury the hatchet
+  - the ball is in someone's court
+  - cut to the chase
+  - pass the buck
+  - by and large
+  - hair of the dog
+  - dead ringer
+  - pull out all the stops
+  - go the whole hog
+  - three sheets to the wind
+  - bite the dust
+  - fly off the handle
+  - hands down
+  - in the limelight
+  - jump the shark
+  - on the wagon
+  - once in a blue moon
+  - paint the town red
+  - pipe dream
+  - raise Cain
+  - sour grapes
+  - spitting image
+  - throw in the towel
+  - to boot
+  - upper hand
+  - wet blanket
+  - lion's share
+  - eat humble pie
+  - burn the midnight oil
+  - by the skin of one's teeth
+  - dressed to the nines
+  - go Dutch
+  - in a nutshell
+  - on tenterhooks
+  - over the moon
+  - put a sock in it
+  - straight from the horse's mouth
+  - swan song
+  - take the mickey
+  - writing on the wall
+  - throw the baby out with the bathwater
+  - warts and all
+  - baker's dozen
+  - cut the mustard
+  - Bob's your uncle
+  - hoist by one's own petard
+  - pardon my French
+  - beyond the pale
+  - kangaroo court
+  - red tape
+  - ride shotgun
+  - big cheese
+  - cock-and-bull story
+  - mind one's Ps and Qs
+  - Hobson's choice
+  - eleventh hour
+  - devil's advocate
+  - forbidden fruit
+  - separate the wheat from the chaff
+  - with flying colours
+  - whole shebang
+  - the bee's knees
+  - strike while the iron is hot
+  - fly in the ointment
+  - point-blank
+  - give someone the cold shoulder
+  - real McCoy
+  - toe the line
+  - namby-pamby
+  - go the extra mile
+  - dark horse
+  - wet behind the ears
+  - wolf in sheep's clothing
+  - turn a blind eye
+  - cross the Rubicon
+  - powers that be
+  - spick-and-span
+  - curry favour
+  - salt of the earth
+  - fall on one's sword
+  - worth one's salt
+  - stiff upper lip
+  - ring true
+  - willy-nilly
+  - kick the can down the road
+  - steal someone's thunder
+  - up to scratch
+  - square meal

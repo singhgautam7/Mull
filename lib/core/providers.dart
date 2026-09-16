@@ -26,18 +26,18 @@ final Provider<MixRepository> mixRepositoryProvider = Provider<MixRepository>(
 );
 
 /// Installs the shipped dictionary if this build carries a newer one, opens
-/// it read-only, and makes sure the four preset mixes and the reading list
-/// exist. Loading while this runs is the first-run install state.
+/// it read-only, and makes sure the four preset mixes and the two system
+/// collections exist. Loading while this runs is the first-run install state.
 final FutureProvider<DictionaryDb> dictionaryProvider = FutureProvider<DictionaryDb>((Ref ref) async {
   final String path = await ref.watch(installerProvider).ensureInstalled();
   final DictionaryDb dict = DictionaryDb.open(path);
   ref.onDispose(dict.close);
-  final List<DictionaryCollection> collections = dict.collections();
+  final List<Collection> collections = dict.collections();
   await ref.read(mixRepositoryProvider).ensurePresets(
-    bandSlugs: <String>[for (final DictionaryCollection c in collections) if (c.kind == 'band') c.slug],
-    topicSlugs: <String>[for (final DictionaryCollection c in collections) if (c.kind == 'topic') c.slug],
+    bandSlugs: <String>[for (final Collection c in collections) if (c.kind == 'band') c.slug],
+    topicSlugs: <String>[for (final Collection c in collections) if (c.kind == 'topic') c.slug],
   );
-  await ref.read(userRepositoryProvider).readingList();
+  await ref.read(userRepositoryProvider).ensureSystemCollections();
   return dict;
 });
 
@@ -50,25 +50,87 @@ final Provider<QueueBuilder> queueBuilderProvider = Provider<QueueBuilder>(
   (Ref ref) => QueueBuilder(ref.watch(dictProvider), ref.watch(userRepositoryProvider)),
 );
 
-/// Every collection, in sort order. Stable for the life of the dictionary.
-final Provider<List<DictionaryCollection>> collectionsProvider = Provider<List<DictionaryCollection>>(
-  (Ref ref) => ref.watch(dictProvider).collections(),
+/// The user's own collections (system and user kinds) and their word keys,
+/// live from the user database.
+final StreamProvider<List<UserCollection>> userCollectionsProvider = StreamProvider<List<UserCollection>>(
+  (Ref ref) => ref.watch(userRepositoryProvider).watchCollections(),
 );
 
-final Provider<Map<String, DictionaryCollection>> collectionBySlugProvider =
-    Provider<Map<String, DictionaryCollection>>(
-      (Ref ref) => <String, DictionaryCollection>{
-        for (final DictionaryCollection c in ref.watch(collectionsProvider)) c.slug: c,
+final StreamProvider<Map<String, List<String>>> userCollectionKeysProvider =
+    StreamProvider<Map<String, List<String>>>(
+      (Ref ref) => ref.watch(userRepositoryProvider).watchCollectionWordKeys(),
+    );
+
+/// Every collection, both databases, in sort order: bands, topics, idioms,
+/// then the user's own. The one read every screen and the mix sheet use.
+final Provider<List<Collection>> collectionsProvider = Provider<List<Collection>>((Ref ref) {
+  final List<Collection> builtIn = ref.watch(dictProvider).collections();
+  final List<UserCollection> own = ref.watch(userCollectionsProvider).value ?? const <UserCollection>[];
+  final Map<String, List<String>> keys = ref.watch(userCollectionKeysProvider).value ?? const <String, List<String>>{};
+  final int base = builtIn.isEmpty ? 0 : builtIn.last.sortOrder + 1;
+  return <Collection>[
+    ...builtIn,
+    for (final (int i, UserCollection c) in own.indexed)
+      Collection(
+        id: c.id,
+        slug: c.slug,
+        title: c.name,
+        description: switch (c.slug) {
+          UserRepository.bookmarksSlug => 'Words you kept.',
+          UserRepository.readingSlug => 'Added from search.',
+          _ => 'Your own words.',
+        },
+        kind: c.kind,
+        band: null,
+        icon: null,
+        sortOrder: base + i,
+        wordCount: keys[c.slug]?.length ?? 0,
+        color: c.color,
+      ),
+  ];
+});
+
+/// The collections a mix can draw from: everything but idioms and pairs.
+final Provider<List<Collection>> mixSourceCollectionsProvider = Provider<List<Collection>>(
+  (Ref ref) => ref.watch(collectionsProvider).where((Collection c) => c.isMixable).toList(),
+);
+
+final Provider<Map<String, Collection>> collectionBySlugProvider =
+    Provider<Map<String, Collection>>(
+      (Ref ref) => <String, Collection>{
+        for (final Collection c in ref.watch(collectionsProvider)) c.slug: c,
       },
     );
 
-/// Word keys per collection slug, read once. Progress is this against seen.
+/// Word keys per collection slug: the dictionary's read once, the user's
+/// live. Progress is this against seen.
 final Provider<Map<String, List<String>>> collectionKeysProvider = Provider<Map<String, List<String>>>((Ref ref) {
   final DictionaryDb dict = ref.watch(dictProvider);
   return <String, List<String>>{
-    for (final DictionaryCollection c in ref.watch(collectionsProvider))
-      c.slug: dict.collectionWordKeys(<String>[c.slug]),
+    for (final Collection c in dict.collections()) c.slug: dict.collectionWordKeys(<String>[c.slug]),
+    ...ref.watch(userCollectionKeysProvider).value ?? const <String, List<String>>{},
   };
+});
+
+/// The slug of the collection opened most recently, for Home's shortlist.
+final StreamProvider<String?> lastOpenedCollectionProvider = StreamProvider<String?>(
+  (Ref ref) => ref.watch(userRepositoryProvider).watchAppState(UserRepository.kLastOpened),
+);
+
+/// Home's shortlist: last opened, then in progress, then a couple of
+/// built-ins, five in all.
+final Provider<List<Collection>> homeCollectionsProvider = Provider<List<Collection>>((Ref ref) {
+  final List<Collection> all = ref.watch(collectionsProvider);
+  final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
+  final String? last = ref.watch(lastOpenedCollectionProvider).value;
+  Progress of(Collection c) => progress[c.slug] ?? const Progress(0, 0);
+  final List<Collection> out = <Collection>[
+    ...all.where((Collection c) => c.slug == last),
+    ...all.where((Collection c) => of(c).started && !of(c).complete),
+    ...all.where((Collection c) => c.kind == 'topic' || c.kind == 'band'),
+  ];
+  final Set<String> seen = <String>{};
+  return out.where((Collection c) => seen.add(c.slug)).take(5).toList();
 });
 
 final StreamProvider<Map<String, SeenWord>> seenMapProvider = StreamProvider<Map<String, SeenWord>>(
@@ -111,14 +173,6 @@ final Provider<DictionaryWord?> wordOfTheDayProvider = Provider<DictionaryWord?>
   // A stride coprime with most sizes, so consecutive days are not neighbours.
   return dict.byKey(keys[(day * 7919) % keys.length]);
 });
-
-final StreamProvider<List<WordList>> listsProvider = StreamProvider<List<WordList>>(
-  (Ref ref) => ref.watch(userRepositoryProvider).watchLists(),
-);
-
-final StreamProvider<Map<int, int>> listCountsProvider = StreamProvider<Map<int, int>>(
-  (Ref ref) => ref.watch(userRepositoryProvider).watchListCounts(),
-);
 
 final StreamProvider<List<String>> recentLookupsProvider = StreamProvider<List<String>>(
   (Ref ref) => ref.watch(userRepositoryProvider).watchRecentLookups(),

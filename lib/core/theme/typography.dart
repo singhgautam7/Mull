@@ -64,13 +64,24 @@ abstract final class MullType {
 
   /// The headword rule: pick the step by grapheme count, never by measuring,
   /// so it is stable between renders. It never shrinks for font scale.
-  static TextStyle headword(String word) {
+  static TextStyle headword(String word) => headwordAt(headwordStep(word));
+
+  /// 0 = XL (8 or fewer graphemes), 1 = L (to 13), 2 = M (to 19), 3 = S.
+  static int headwordStep(String word) {
     final int n = word.characters.length;
-    if (n <= 8) return headwordXL;
-    if (n <= 13) return headwordL;
-    if (n <= 19) return headwordM;
-    return headwordS;
+    if (n <= 8) return 0;
+    if (n <= 13) return 1;
+    if (n <= 19) return 2;
+    return 3;
   }
+
+  /// The style for a step; anything past S is S, the only step that wraps.
+  static TextStyle headwordAt(int step) => switch (step) {
+    0 => headwordXL,
+    1 => headwordL,
+    2 => headwordM,
+    _ => headwordS,
+  };
 
   /// Empty states, first run.
   static TextStyle get display => _display(40, 1.05);

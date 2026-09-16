@@ -16,30 +16,17 @@ class MixSpec {
     required this.seenPolicy,
     this.shuffle = true,
     this.includeBookmarkedOnly = false,
-  }) : _scope = null,
-       listId = null;
+  }) : _scope = null;
 
-  /// Scoped play over a user list.
-  const MixSpec.list(int id, String listName, SeenPolicy policy)
-    : id = null,
-      name = listName,
-      isPreset = false,
-      sources = const <String>[],
-      _scope = null,
-      listId = id,
-      seenPolicy = policy,
-      shuffle = true,
-      includeBookmarkedOnly = false;
-
-  /// Scoped play from a collection card: an ephemeral spec that is never
-  /// written to the database and never touches the active mix.
+  /// Scoped play from a collection card, built-in or the user's own: an
+  /// ephemeral spec that is never written to the database and never touches
+  /// the active mix.
   const MixSpec.scoped(String collectionSlug, SeenPolicy policy)
     : id = null,
       name = collectionSlug,
       isPreset = false,
       sources = const <String>[],
       _scope = collectionSlug,
-      listId = null,
       seenPolicy = policy,
       shuffle = true,
       includeBookmarkedOnly = false;
@@ -55,10 +42,7 @@ class MixSpec {
   final bool includeBookmarkedOnly;
   final String? _scope;
 
-  /// Scoped play over a user list: the pool is the list's words.
-  final int? listId;
-
-  bool get isScoped => _scope != null || listId != null;
+  bool get isScoped => _scope != null;
 
   /// The collections the pool is drawn from.
   List<String> get effectiveSources =>

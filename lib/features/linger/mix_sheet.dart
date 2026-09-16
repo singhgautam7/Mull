@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/database/dictionary_db.dart';
 import '../../core/database/mix_repository.dart';
+import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -46,8 +46,8 @@ class MixChoice {
 }
 
 /// HANDOFF 11.2, the mix sheet. Presets in a row, HOW FAMILIAR, sources by
-/// band then topic, a live pool readout, "Mull these" and, once the
-/// selection differs from the active preset, "Save as mix".
+/// band, topic, then the user's own lists, a live pool readout, "Mull these"
+/// and, once the selection differs from the active preset, "Save as mix".
 Future<MixChoice?> showMixSheet(BuildContext context, {required MixSpec active}) {
   return showAppBottomSheet<MixChoice>(
     context: context,
@@ -81,8 +81,7 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
   }
 
   Future<void> _recount() async {
-    final DictionaryDb dict = ref.read(dictProvider);
-    final List<String> keys = dict.collectionWordKeys(_sources);
+    final List<String> keys = await ref.read(queueBuilderProvider).poolFor(_sources.toList());
     final Map<String, SeenWord> seen = await ref.read(userRepositoryProvider).seenStates(keys);
     if (mounted) {
       setState(() {
@@ -142,7 +141,7 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final List<MixSpec> mixes = ref.watch(mixesProvider).value ?? const <MixSpec>[];
-    final List<DictionaryCollection> collections = ref.watch(collectionsProvider);
+    final List<Collection> collections = ref.watch(mixSourceCollectionsProvider);
     final List<MixSpec> presets = mixes.where((MixSpec m) => m.isPreset).toList();
     final List<MixSpec> saved = mixes.where((MixSpec m) => !m.isPreset).toList();
     final MixSpec? preset = _presetId == null ? null : mixes.where((MixSpec m) => m.id == _presetId).firstOrNull;
@@ -190,10 +189,13 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
         ),
         if (!(preset?.includeBookmarkedOnly ?? false)) ...<Widget>[
           sectionLabel('SOURCES · BANDS'),
-          for (final DictionaryCollection col in collections.where((DictionaryCollection x) => x.kind == 'band'))
+          for (final Collection col in collections.where((Collection x) => x.kind == 'band'))
             _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
           sectionLabel('SOURCES · TOPICS'),
-          for (final DictionaryCollection col in collections.where((DictionaryCollection x) => x.kind == 'topic'))
+          for (final Collection col in collections.where((Collection x) => x.kind == 'topic'))
+            _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
+          sectionLabel('SOURCES · YOUR LISTS'),
+          for (final Collection col in collections.where((Collection x) => x.isUsers))
             _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
         ],
         const SizedBox(height: Space.xl),
@@ -243,7 +245,7 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
 class _SourceRow extends StatelessWidget {
   const _SourceRow({required this.collection, required this.checked, required this.onTap});
 
-  final DictionaryCollection collection;
+  final Collection collection;
   final bool checked;
   final VoidCallback onTap;
 

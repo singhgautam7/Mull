@@ -17,12 +17,18 @@ class QueueBuilder {
   final UserRepository _user;
 
   /// Every word key the mix can draw from, deduplicated. A word in three
-  /// source collections is here once.
+  /// source collections is here once. A source slug names either a
+  /// dictionary collection or one of the user's own; each database answers
+  /// for the slugs it knows.
   Future<List<String>> pool(MixSpec mix) async {
     if (mix.includeBookmarkedOnly) return _user.bookmarkedKeys();
-    if (mix.listId != null) return _user.listWordKeys(mix.listId!);
-    return _dict.collectionWordKeys(mix.effectiveSources);
+    return poolFor(mix.effectiveSources);
   }
+
+  Future<List<String>> poolFor(List<String> sources) async => <String>{
+    ..._dict.collectionWordKeys(sources),
+    ...await _user.collectionWordKeysFor(sources),
+  }.toList();
 
   /// One batch of [size] keys. [exclude] is what the session has already
   /// served, so extending the queue never repeats a card.
