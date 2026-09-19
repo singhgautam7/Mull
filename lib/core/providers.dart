@@ -66,10 +66,22 @@ final StreamProvider<Map<String, List<String>>> userCollectionKeysProvider =
 final Provider<List<Collection>> collectionsProvider = Provider<List<Collection>>((Ref ref) {
   final List<Collection> builtIn = ref.watch(dictProvider).collections();
   final List<UserCollection> own = ref.watch(userCollectionsProvider).value ?? const <UserCollection>[];
-  final Map<String, List<String>> keys = ref.watch(userCollectionKeysProvider).value ?? const <String, List<String>>{};
+  final Map<String, List<String>> keys = ref.watch(collectionKeysProvider);
   final int base = builtIn.isEmpty ? 0 : builtIn.last.sortOrder + 1;
   return <Collection>[
-    ...builtIn,
+    for (final Collection c in builtIn)
+      Collection(
+        id: c.id,
+        slug: c.slug,
+        title: c.title,
+        description: c.description,
+        kind: c.kind,
+        band: c.band,
+        icon: c.icon,
+        sortOrder: c.sortOrder,
+        wordCount: keys[c.slug]?.length ?? c.wordCount,
+        color: c.color,
+      ),
     for (final (int i, UserCollection c) in own.indexed)
       Collection(
         id: c.id,
@@ -106,10 +118,54 @@ final Provider<Map<String, Collection>> collectionBySlugProvider =
 /// live. Progress is this against seen.
 final Provider<Map<String, List<String>>> collectionKeysProvider = Provider<Map<String, List<String>>>((Ref ref) {
   final DictionaryDb dict = ref.watch(dictProvider);
-  return <String, List<String>>{
-    for (final Collection c in dict.collections()) c.slug: dict.collectionWordKeys(<String>[c.slug]),
-    ...ref.watch(userCollectionKeysProvider).value ?? const <String, List<String>>{},
-  };
+  final Map<String, List<String>> userKeys = ref.watch(userCollectionKeysProvider).value ?? const <String, List<String>>{};
+  final Map<String, List<String>> result = <String, List<String>>{};
+  for (final Collection c in dict.collections()) {
+    final List<String> builtIn = dict.collectionWordKeys(<String>[c.slug]);
+    final List<String>? extra = userKeys[c.slug];
+    if (extra != null && extra.isNotEmpty) {
+      final Set<String> combined = <String>{...builtIn, ...extra};
+      result[c.slug] = combined.toList();
+    } else {
+      result[c.slug] = builtIn;
+    }
+  }
+  for (final MapEntry<String, List<String>> entry in userKeys.entries) {
+    if (!result.containsKey(entry.key)) {
+      result[entry.key] = entry.value;
+    }
+  }
+  return result;
+});
+
+/// Tracks which collections contain words and which contain phrases.
+final Provider<({Set<String> withWords, Set<String> withPhrases})> shelfKindsProvider =
+    Provider<({Set<String> withWords, Set<String> withPhrases})>((Ref ref) {
+  final DictionaryDb dict = ref.watch(dictProvider);
+  final List<Collection> all = ref.watch(collectionsProvider);
+  final Map<String, List<String>> allKeys = ref.watch(collectionKeysProvider);
+
+  final Set<String> withWords = <String>{};
+  final Set<String> withPhrases = <String>{};
+
+  for (final Collection c in all) {
+    if (c.kind == 'band') {
+      withWords.add(c.slug);
+    } else if (c.kind == 'idiom') {
+      withPhrases.add(c.slug);
+    }
+    final List<String> keys = allKeys[c.slug] ?? const <String>[];
+    if (keys.isNotEmpty) {
+      if (!withWords.contains(c.slug) && dict.byKeys(keys).isNotEmpty) {
+        withWords.add(c.slug);
+      }
+      if (!withPhrases.contains(c.slug) && dict.phrasesByKeys(keys).isNotEmpty) {
+        withPhrases.add(c.slug);
+      }
+    }
+  }
+
+  return (withWords: withWords, withPhrases: withPhrases);
 });
 
 /// The slug of the collection opened most recently, for Home's shortlist.

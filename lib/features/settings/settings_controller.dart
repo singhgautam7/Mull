@@ -7,6 +7,9 @@ import '../../core/theme/palette.dart';
 /// Which spelling the headword shows when the dictionary carries both.
 enum Spelling { british, american }
 
+/// How search results are drawn. RECENT is a history list and stays compact.
+enum SearchStyle { card, table }
+
 /// Device-level settings that must be known before the first frame, kept in
 /// SharedPreferences. User data (notes, lists, mixes) lives in the user
 /// database, not here.
@@ -18,6 +21,7 @@ class AppSettings {
     this.amoled = false,
     this.dynamicColor = false,
     this.textScale = 1.0,
+    this.searchStyle = SearchStyle.card,
     this.spelling = Spelling.british,
     this.ttsRate = 0.9,
     this.showSynonyms = true,
@@ -37,6 +41,7 @@ class AppSettings {
 
   /// 0.85 to 1.3, applied on top of the OS text scale.
   final double textScale;
+  final SearchStyle searchStyle;
   final Spelling spelling;
 
   /// Pronunciation speed, 0.5 to 1.2.
@@ -68,6 +73,7 @@ class AppSettings {
     bool? amoled,
     bool? dynamicColor,
     double? textScale,
+    SearchStyle? searchStyle,
     Spelling? spelling,
     double? ttsRate,
     bool? showSynonyms,
@@ -81,6 +87,7 @@ class AppSettings {
     amoled: amoled ?? this.amoled,
     dynamicColor: dynamicColor ?? this.dynamicColor,
     textScale: textScale ?? this.textScale,
+    searchStyle: searchStyle ?? this.searchStyle,
     spelling: spelling ?? this.spelling,
     ttsRate: ttsRate ?? this.ttsRate,
     showSynonyms: showSynonyms ?? this.showSynonyms,
@@ -95,6 +102,7 @@ class AppSettings {
   static const String kAmoled = 'theme.amoled';
   static const String kDynamic = 'theme.dynamic';
   static const String kTextScale = 'text.scale';
+  static const String kSearchStyle = 'search.style';
   static const String kSpelling = 'dictionary.spelling';
   static const String kTtsRate = 'dictionary.ttsRate';
   static const String kSynonyms = 'linger.synonyms';
@@ -112,6 +120,7 @@ class AppSettings {
     amoled: prefs.getBool(kAmoled) ?? false,
     dynamicColor: prefs.getBool(kDynamic) ?? false,
     textScale: prefs.getDouble(kTextScale) ?? 1.0,
+    searchStyle: prefs.getString(kSearchStyle) == SearchStyle.table.name ? SearchStyle.table : SearchStyle.card,
     spelling: prefs.getString(kSpelling) == Spelling.american.name
         ? Spelling.american
         : Spelling.british,
@@ -162,6 +171,11 @@ class SettingsController extends Notifier<AppSettings> {
     await _prefs.setDouble(AppSettings.kTextScale, value);
   }
 
+  Future<void> setSearchStyle(SearchStyle value) async {
+    state = state.copyWith(searchStyle: value);
+    await _prefs.setString(AppSettings.kSearchStyle, value.name);
+  }
+
   Future<void> setSpelling(Spelling value) async {
     state = state.copyWith(spelling: value);
     await _prefs.setString(AppSettings.kSpelling, value.name);
@@ -201,9 +215,12 @@ class SettingsController extends Notifier<AppSettings> {
   bool hideDefs(String scope) => _prefs.getBool('hideDefs.$scope') ?? false;
   Future<void> setHideDefs(String scope, {required bool value}) =>
       _prefs.setBool('hideDefs.$scope', value);
-  String sort(String scope) => _prefs.getString('sort.$scope') ?? 'az';
+  String sort(String scope) => _prefs.getString('sort.$scope') ?? 'name';
   Future<void> setSort(String scope, String sort) =>
       _prefs.setString('sort.$scope', sort);
+  bool sortAscending(String scope) => _prefs.getBool('sortAsc.$scope') ?? true;
+  Future<void> setSortAscending(String scope, {required bool value}) =>
+      _prefs.setBool('sortAsc.$scope', value);
 }
 
 final NotifierProvider<SettingsController, AppSettings> settingsProvider =

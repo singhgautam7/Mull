@@ -104,7 +104,7 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
                 spacing: Space.sm,
                 children: <Widget>[
                   Icon(Icons.add_rounded, size: 18, color: c.accent),
-                  Text('New list', style: MullType.titleMedium.copyWith(color: c.accent)),
+                  Text('New shelf', style: MullType.titleMedium.copyWith(color: c.accent)),
                 ],
               ),
             ),

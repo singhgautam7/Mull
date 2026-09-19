@@ -13,7 +13,7 @@ import '../../shared/widgets/fields.dart';
 Future<String?> showCreateListSheet(BuildContext context, {String? renameSlug, String? initialName, int? initialColor}) {
   return showAppBottomSheet<String>(
     context: context,
-    title: renameSlug == null ? 'New list' : 'Rename list',
+    title: renameSlug == null ? 'New shelf' : 'Rename shelf',
     builder: (BuildContext ctx) => _CreateListSheet(renameSlug: renameSlug, initialName: initialName, initialColor: initialColor),
   );
 }
@@ -77,7 +77,7 @@ class _CreateListSheetState extends ConsumerState<_CreateListSheet> {
         ColorSwatchRow(selected: _color, onChanged: (int? v) => setState(() => _color = v)),
         const SizedBox(height: Space.xl),
         AppButton(
-          label: widget.renameSlug == null ? 'Create list' : 'Rename',
+          label: widget.renameSlug == null ? 'Create shelf' : 'Rename',
           fullWidth: true,
           onPressed: _name.text.trim().isEmpty ? null : _submit,
         ),

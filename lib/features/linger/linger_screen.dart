@@ -20,8 +20,8 @@ import '../../core/utils/format.dart';
 import '../../core/utils/pronunciation.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_menu.dart';
-import '../../shared/widgets/app_snackbar.dart';
 import '../../shared/widgets/linger_background.dart';
+import '../dictionary/add_to_list_sheet.dart';
 import '../dictionary/note_sheet.dart';
 import '../dictionary/word_sheet.dart';
 import '../settings/settings_controller.dart';
@@ -227,23 +227,41 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     }
   }
 
+  void _goToNextCard() {
+    if (_index < _queue.length && _pager.hasClients) {
+      _pager.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _goToPreviousCard() {
+    if (_index > 0 && _pager.hasClients) {
+      _pager.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   Future<void> _overflow(BuildContext anchor, DictionaryWord word) async {
     final String? action = await showAppMenu<String>(
       context: context,
       anchorContext: anchor,
       entries: const <AppMenuEntry<String>>[
-        AppMenuEntry<String>(value: 'entry', label: 'Open full entry', icon: Icons.menu_book_rounded),
-        AppMenuEntry<String>(value: 'progress', label: 'Progress', icon: Icons.donut_large_rounded),
+        AppMenuEntry<String>(value: 'share', label: 'Share', icon: Icons.ios_share_rounded),
+        AppMenuEntry<String>(value: 'collection', label: 'Add to shelf', icon: Icons.playlist_add_rounded),
       ],
     );
     if (!mounted) return;
     switch (action) {
-      case 'entry':
-        await showWordSheet(context, wordKey: word.wordKey);
-      case 'progress':
-        final int total = (await ref.read(queueBuilderProvider).pool(_mix!)).length;
-        final Map<String, SeenWord> seen = await _user.seenStates(await ref.read(queueBuilderProvider).pool(_mix!));
-        if (mounted) AppSnackbar.info(context, '${grouped(seen.length)} of ${grouped(total)} seen in ${_mix!.name}');
+      case 'share':
+        unawaited(SharePlus.instance.share(
+          ShareParams(text: '${word.headword}: ${word.definitionFull}'),
+        ));
+      case 'collection':
+        await showAddToListSheet(context, wordKey: word.wordKey, headword: word.headword);
     }
   }
 
@@ -296,6 +314,9 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                                   headwordOverride: s.spelling == Spelling.american ? _dict.usSpelling(data.word.wordKey) : null,
                                   softStop: _softStopShown && i == _index,
                                   onSpeak: () => unawaited(ref.read(pronunciationProvider).speak(data.word.headword, rate: s.ttsRate)),
+                                  onOpenEntry: () => showWordSheet(context, wordKey: data.word.wordKey),
+                                  onNextCard: _goToNextCard,
+                                  onPreviousCard: _goToPreviousCard,
                                   onNote: () async {
                                     await showNoteSheet(context, wordKey: data.word.wordKey, headword: data.word.headword);
                                     final String? n = await _user.note(data.word.wordKey);
@@ -306,9 +327,6 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                                     if (s.haptics) unawaited(HapticFeedback.lightImpact());
                                     await _user.toggleBookmark(data.word.wordKey);
                                   },
-                                  onShare: () => unawaited(SharePlus.instance.share(
-                                    ShareParams(text: '${data.word.headword}: ${data.word.definitionFull}'),
-                                  )),
                                   onOverflow: (BuildContext anchor) => unawaited(_overflow(anchor, data.word)),
                                 ),
                               ),

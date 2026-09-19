@@ -13,11 +13,12 @@ class NavDestination {
   final String label;
 }
 
-/// Home · Mull · Search · More. Evenly spaced, nothing between them. There is
+/// Home · Mull · Shelves · Search · More. Evenly spaced, nothing between them. There is
 /// no FAB and no centre button: Mull is a destination, not an action.
 const List<NavDestination> kDestinations = <NavDestination>[
   NavDestination(MullGlyph.home, 'Home'),
   NavDestination(MullGlyph.mull, 'Mull'),
+  NavDestination(MullGlyph.collections, 'Shelves'),
   NavDestination(MullGlyph.search, 'Search'),
   NavDestination(MullGlyph.more, 'More'),
 ];

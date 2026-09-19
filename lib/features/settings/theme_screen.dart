@@ -22,7 +22,13 @@ class ThemeScreen extends ConsumerWidget {
     final MullColors c = context.colors;
     final AppSettings s = ref.watch(settingsProvider);
     final SettingsController ctl = ref.read(settingsProvider.notifier);
-    final Tone tone = s.toneFor(MediaQuery.platformBrightnessOf(context));
+    final Brightness brightness = MediaQuery.platformBrightnessOf(context);
+    final Tone tone = s.toneFor(brightness);
+    final bool darkInEffect = switch (s.themeMode) {
+      ThemeMode.light => false,
+      ThemeMode.dark => true,
+      ThemeMode.system => brightness == Brightness.dark,
+    };
     final Color? seed = ref.watch(wallpaperSeedProvider).value;
     final MullColors? dynamic = seed == null ? null : ThemeFamily.fromSeed(seed).colors(tone);
 
@@ -34,6 +40,44 @@ class ThemeScreen extends ConsumerWidget {
           selected: s.themeMode,
           onChanged: ctl.setThemeMode,
         ),
+        if (darkInEffect && (s.dynamicColor || s.family.hasAmoled)) ...<Widget>[
+          const SizedBox(height: Space.md),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.md),
+            decoration: BoxDecoration(
+              color: c.surfaceContainer,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: c.outline),
+            ),
+            child: Row(
+              spacing: Space.md,
+              children: <Widget>[
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF000000),
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: c.outline),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('True black (AMOLED)', style: MullType.titleMedium.copyWith(color: c.onSurface)),
+                      Text('Appears only while dark is active', style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: s.amoled,
+                  onChanged: (bool v) => ctl.setAmoled(value: v),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: Space.lg),
         TwoColumnGrid(
           children: <Widget>[

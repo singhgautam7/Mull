@@ -28,7 +28,7 @@ String familiarityLabel(SeenPolicy p) => switch (p) {
 };
 
 String presetDescription(String name) => switch (name) {
-  MixRepository.presetAnything => "Everything in the dictionary's collections, in no particular order.",
+  MixRepository.presetAnything => "Everything in the dictionary's shelves, in no particular order.",
   MixRepository.presetQuickWins => 'Short words, short definitions, nothing rare.',
   MixRepository.presetStretchMe => 'Longer words you are unlikely to know yet.',
   MixRepository.presetReview => 'Only words you have already seen.',
@@ -194,7 +194,7 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
           sectionLabel('SOURCES · TOPICS'),
           for (final Collection col in collections.where((Collection x) => x.kind == 'topic'))
             _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
-          sectionLabel('SOURCES · YOUR LISTS'),
+          sectionLabel('SOURCES · YOUR SHELVES'),
           for (final Collection col in collections.where((Collection x) => x.isUsers))
             _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
         ],

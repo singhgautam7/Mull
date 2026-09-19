@@ -15,8 +15,10 @@ import '../../core/utils/format.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_header.dart';
+import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/fields.dart';
+import '../../shared/widgets/how_to_use_sheet.dart';
 import '../../shared/widgets/states.dart';
 import 'mix_sheet.dart';
 
@@ -37,7 +39,35 @@ class SavedMixesScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            AppHeader(title: 'Your mixes', onBack: () => context.pop()),
+            AppHeader(
+              title: 'Your mixes',
+              onBack: () => context.pop(),
+              actions: <Widget>[
+                Builder(
+                  builder: (BuildContext anchor) => AppIconButton(
+                    icon: Icons.more_horiz_rounded,
+                    semanticLabel: 'More',
+                    onPressed: () async {
+                      final String? action = await showAppMenu<String>(
+                        context: context,
+                        anchorContext: anchor,
+                        minWidth: 180,
+                        entries: const <AppMenuEntry<String>>[
+                          AppMenuEntry<String>(
+                            value: 'how_to_use',
+                            label: 'How to use',
+                            icon: Icons.help_outline_rounded,
+                          ),
+                        ],
+                      );
+                      if (action == 'how_to_use' && context.mounted) {
+                        await showHowToUseMixesSheet(context);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
             Expanded(
               child: saved.isEmpty
                   ? const EmptyState(

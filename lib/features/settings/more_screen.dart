@@ -56,17 +56,17 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   SettingsGroup(
                     label: 'General',
                     children: <Widget>[
-                      SettingsRow(icon: Icons.tune_rounded, label: 'Settings', value: '${s.dynamicColor ? 'Wallpaper' : s.family.name} · ${_modeLabel(s.themeMode)}', onTap: () => context.push(Routes.settings)),
-                      SettingsRow(icon: Icons.grid_view_rounded, label: 'Collections', value: '$collections', onTap: () => context.push(Routes.collections)),
+                      SettingsRow(icon: Icons.grid_view_rounded, label: 'Shelves', value: '$collections', onTap: () => context.push(Routes.collections)),
                       SettingsRow(icon: Icons.shuffle_rounded, label: 'Mixes', value: '$mixes', onTap: () => context.push(Routes.mixes)),
+                      SettingsRow(icon: Icons.tune_rounded, label: 'Settings', value: '${s.dynamicColor ? 'Wallpaper' : s.family.name} · ${_modeLabel(s.themeMode)}', onTap: () => context.push(Routes.settings)),
                     ],
                   ),
                   SettingsGroup(
                     label: 'Your data',
                     children: <Widget>[
                       SettingsRow(icon: Icons.bar_chart_rounded, label: 'Stats', onTap: () => context.push(Routes.stats)),
-                      SettingsRow(icon: Icons.ios_share_rounded, label: 'Export', value: 'Markdown · CSV', onTap: () => context.push(Routes.export)),
                       SettingsRow(icon: Icons.key_outlined, label: 'Permissions', value: 'Notifications', onTap: () => context.push(Routes.permissions)),
+                      SettingsRow(icon: Icons.storage_rounded, label: 'Data', onTap: () => context.push(Routes.data)),
                     ],
                   ),
                   SettingsGroup(

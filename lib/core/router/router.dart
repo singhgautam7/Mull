@@ -10,6 +10,7 @@ import '../../features/home/home_screen.dart';
 import '../../features/linger/linger_screen.dart';
 import '../../features/linger/saved_mixes_screen.dart';
 import '../../features/settings/about_screen.dart';
+import '../../features/settings/data_screen.dart';
 import '../../features/settings/debug_screen.dart';
 import '../../features/settings/dictionary_info_screen.dart';
 import '../../features/settings/export_screen.dart';
@@ -34,6 +35,7 @@ abstract final class Routes {
   static const String stats = '/more/stats';
   static const String settings = '/more/settings';
   static const String theme = '/more/settings/theme';
+  static const String data = '/more/data';
   static const String dictionary = '/more/dictionary';
   static const String about = '/more/about';
   static const String privacy = '/more/privacy';
@@ -46,6 +48,10 @@ abstract final class Routes {
 
   /// Scoped play: the Mull tab plays one collection, mix untouched.
   static String scoped(String slug) => '$mull?scope=$slug';
+
+  /// Add words/phrases to collection via search screen.
+  static String searchAdd(String slug, {String? segment}) =>
+      segment != null ? '/search/add/$slug?segment=$segment' : '/search/add/$slug';
 
   /// Play a saved mix from the saved mixes page.
   static String playMix(int id) => '$mull?mix=$id';
@@ -68,11 +74,6 @@ GoRouter buildRouter({required bool onboarded}) {
             mullPage<void>(state: s, child: const DebugScreen()),
       ),
       // Pages sit above the shell with their own back, as in Perch.
-      GoRoute(
-        path: Routes.collections,
-        pageBuilder: (BuildContext c, GoRouterState s) =>
-            mullPage<void>(state: s, child: const CollectionsScreen()),
-      ),
       GoRoute(
         path: '/collection/:slug',
         pageBuilder: (BuildContext c, GoRouterState s) => mullPage<void>(
@@ -116,6 +117,11 @@ GoRouter buildRouter({required bool onboarded}) {
             mullPage<void>(state: s, child: const PrivacyScreen()),
       ),
       GoRoute(
+        path: Routes.data,
+        pageBuilder: (BuildContext c, GoRouterState s) =>
+            mullPage<void>(state: s, child: const DataScreen()),
+      ),
+      GoRoute(
         path: Routes.export,
         pageBuilder: (BuildContext c, GoRouterState s) =>
             mullPage<void>(state: s, child: const ExportScreen()),
@@ -125,10 +131,27 @@ GoRouter buildRouter({required bool onboarded}) {
         pageBuilder: (BuildContext c, GoRouterState s) =>
             mullPage<void>(state: s, child: const PermissionsScreen()),
       ),
+      GoRoute(
+        path: '/search/add/:slug',
+        pageBuilder: (BuildContext c, GoRouterState s) {
+          final String slug = s.pathParameters['slug']!;
+          final String? seg = s.uri.queryParameters['segment'];
+          final SearchSegment initialSegment =
+              seg == 'phrases' ? SearchSegment.idioms : SearchSegment.words;
+          return mullPage<void>(
+            state: s,
+            child: SearchScreen(
+              addToCollectionSlug: slug,
+              initialSegment: initialSegment,
+            ),
+          );
+        },
+      ),
       StatefulShellRoute.indexedStack(
         builder: (BuildContext context, GoRouterState state, StatefulNavigationShell shell) {
           return NavShell(
             index: shell.currentIndex,
+            tabCount: shell.route.branches.length,
             onSelect: (int i) => shell.goBranch(i, initialLocation: i == shell.currentIndex),
             child: shell,
           );
@@ -150,6 +173,14 @@ GoRouter buildRouter({required bool onboarded}) {
                   scope: s.uri.queryParameters['scope'],
                   mixId: int.tryParse(s.uri.queryParameters['mix'] ?? ''),
                 ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: Routes.collections,
+                builder: (BuildContext c, GoRouterState s) => const CollectionsScreen(),
               ),
             ],
           ),

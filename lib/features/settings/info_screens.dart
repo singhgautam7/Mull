@@ -44,7 +44,7 @@ class DictionaryInfoScreen extends ConsumerWidget {
         Text('SOURCES AND LICENCES', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
         const SizedBox(height: Space.lg),
         const InfoParagraph(title: 'Wiktionary (English), via Kaikki.org', text: 'Definitions, senses, examples, pronunciation and idioms. Text is available under CC BY-SA 4.0. Modifications: senses trimmed to a short form for the cards, examples selected, British spellings preferred.'),
-        const InfoParagraph(title: 'SUBTLEX-UK and the British National Corpus', text: 'Word frequencies, which decide the bands and the spoken-versus-written balance of the themed collections.'),
+        const InfoParagraph(title: 'SUBTLEX-UK and the British National Corpus', text: 'Word frequencies, which decide the bands and the spoken-versus-written balance of the themed shelves.'),
         const InfoParagraph(title: 'Open English WordNet 2024', text: 'Synonyms only. CC BY 4.0.'),
         Text(
           'Mull is distributed under the same terms as the text it carries. The full licence travels with the app and with any export you make.',
@@ -72,7 +72,7 @@ class AboutScreen extends StatelessWidget {
         Text('A dictionary, and somewhere to put it when you are idle.', style: MullType.display.copyWith(fontSize: 28, color: c.onSurface)),
         const SizedBox(height: Space.xl),
         const InfoParagraph(title: 'Privacy', text: 'Mull is local-first. There are no accounts and no network calls. The dictionary is unpacked once on your phone and everything you make stays on it.'),
-        const InfoParagraph(title: 'How to', text: 'Look a word up in Search. Or open Mull and swipe through a mix of collections one card at a time. Bookmark what you like, add a note, keep lists.'),
+        const InfoParagraph(title: 'How to', text: 'Look a word up in Search. Or open Mull and swipe through a mix of shelves one card at a time. Bookmark what you like, add a note, organize on shelves.'),
         const InfoParagraph(title: 'Made with', text: 'Wiktionary, SUBTLEX-UK, the British National Corpus and Open English WordNet. See Dictionary info for the licences.'),
         Text('Mull 0.1.0 · build 1', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
       ],

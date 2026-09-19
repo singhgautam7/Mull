@@ -82,7 +82,7 @@ class ExportScreen extends ConsumerWidget {
     return SettingsScaffold(
       title: 'Export',
       children: <Widget>[
-        const InfoParagraph(text: 'Your bookmarks, notes and lists, with each word\'s short definition, as one file. It goes wherever the share sheet sends it and nowhere else.'),
+        const InfoParagraph(text: 'Your bookmarks, notes and shelves, with each word\'s short definition, as one file. It goes wherever the share sheet sends it and nowhere else.'),
         Row(
           spacing: Space.sm,
           children: <Widget>[

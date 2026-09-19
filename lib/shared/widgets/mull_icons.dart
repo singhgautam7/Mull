@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/tokens.dart';
 
-/// The four destination glyphs, drawn rather than taken from an icon font
+/// The five destination glyphs, drawn rather than taken from an icon font
 /// because their geometry is specified: 1.75 stroke, rounded, in a 20x16 box.
 /// Home = rounded rectangle over a short underline; Mull = one upright card;
-/// Search = magnifier; More = two sliders (Perch's glyph).
-enum MullGlyph { home, mull, search, more }
+/// Collections = stacked cards; Search = magnifier; More = two sliders.
+enum MullGlyph { home, mull, collections, search, more }
 
 class MullIcon extends StatelessWidget {
   const MullIcon(this.glyph, {required this.color, this.background, super.key});
@@ -14,7 +14,7 @@ class MullIcon extends StatelessWidget {
   final MullGlyph glyph;
   final Color color;
 
-  /// What the More knobs are punched out of.
+  /// What the More knobs and Collections front card are punched out of.
   final Color? background;
 
   @override
@@ -26,6 +26,7 @@ class MullIcon extends StatelessWidget {
         child: switch (glyph) {
           MullGlyph.home => _Home(color: color),
           MullGlyph.mull => _Card(color: color),
+          MullGlyph.collections => _Collections(color: color, background: background ?? Theme.of(context).colorScheme.surface),
           MullGlyph.search => CustomPaint(size: const Size(20, 16), painter: _SearchPainter(color)),
           MullGlyph.more => _More(color: color, background: background ?? Theme.of(context).colorScheme.surface),
         },
@@ -141,3 +142,46 @@ class _More extends StatelessWidget {
     );
   }
 }
+
+class _Collections extends StatelessWidget {
+  const _Collections({required this.color, required this.background});
+
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 20,
+    height: 16,
+    child: Stack(
+      children: <Widget>[
+        Positioned(
+          right: 1,
+          top: 0,
+          child: Container(
+            width: 12,
+            height: 14,
+            decoration: BoxDecoration(
+              border: Border.all(color: color, width: IconSpec.stroke),
+              borderRadius: const BorderRadius.all(Radius.circular(3)),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 1,
+          bottom: 0,
+          child: Container(
+            width: 12,
+            height: 14,
+            decoration: BoxDecoration(
+              color: background,
+              border: Border.all(color: color, width: IconSpec.stroke),
+              borderRadius: const BorderRadius.all(Radius.circular(3)),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+

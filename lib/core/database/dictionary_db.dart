@@ -225,6 +225,16 @@ class DictionaryDb {
         .toList();
   }
 
+  List<Phrase> phrasesByKeys(Iterable<String> keys) {
+    final List<String> list = keys.toList();
+    if (list.isEmpty) return const <Phrase>[];
+    final String marks = List<String>.filled(list.length, '?').join(',');
+    return _db
+        .select('SELECT $_phraseCols FROM phrases WHERE phrase_key IN ($marks)', list)
+        .map(Phrase._from)
+        .toList();
+  }
+
   /// Every sense of a headword, grouped by part of speech in dictionary order.
   List<DictionaryWord> senses(String headwordNorm) => _db
       .select(

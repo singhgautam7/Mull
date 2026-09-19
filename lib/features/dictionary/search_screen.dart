@@ -12,19 +12,29 @@ import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/app_icon_button.dart';
+import '../../shared/widgets/app_snackbar.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/states.dart';
+import '../settings/settings_controller.dart';
 import 'idiom_sheet.dart';
 import 'word_sheet.dart';
 
 enum SearchSegment { words, idioms }
 
-/// HANDOFF 3.4. Field focused on entry, real-time results, Words/Idioms
-/// carrying counts. Before typing: RECENT searches. Results are dense rows
-/// with the matched run tinted; idioms render as cards.
+/// HANDOFF 3.4. Field focused on entry, real-time results, Words/Phrases
+/// carrying counts. Before typing: RECENT searches. Results are cards or
+/// dense rows (Settings > Appearance > Search results) with the matched run
+/// tinted.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({
+    this.addToCollectionSlug,
+    this.initialSegment = SearchSegment.words,
+    super.key,
+  });
+
+  final String? addToCollectionSlug;
+  final SearchSegment initialSegment;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -37,7 +47,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<DictionaryWord> _words = const <DictionaryWord>[];
   List<Idiom> _idioms = const <Idiom>[];
   String? _suggestion;
-  SearchSegment _segment = SearchSegment.words;
+  late SearchSegment _segment = widget.initialSegment;
   bool _slow = false;
   List<String> _recent = const <String>[];
   Timer? _recordTimer;
@@ -45,6 +55,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    _segment = widget.initialSegment;
     unawaited(_loadRecent());
   }
 
@@ -100,71 +111,87 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final bool typing = _query.trim().isNotEmpty;
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const AppHeader(title: 'Search'),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                decoration: BoxDecoration(
-                  color: c.surfaceContainer,
-                  borderRadius: Radii.fullR,
-                  border: Border.all(color: c.outline),
-                ),
-                child: Row(
-                  spacing: 11,
-                  children: <Widget>[
-                    Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
-                    Expanded(
-                      child: TextField(
-                        controller: _field,
-                        focusNode: _focus,
-                        autofocus: true,
-                        textInputAction: TextInputAction.search,
-                        onChanged: _run,
-                        style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                          hintText: 'Search words and idioms',
-                          hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
+    final Collection? targetCol = widget.addToCollectionSlug != null
+        ? ref.watch(collectionBySlugProvider)[widget.addToCollectionSlug!]
+        : null;
+    final String title = widget.addToCollectionSlug != null
+        ? 'Add to ${targetCol?.title ?? 'Shelf'}'
+        : 'Search';
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              AppHeader(
+                title: title,
+                onBack: (widget.addToCollectionSlug != null || Navigator.of(context).canPop())
+                    ? () => Navigator.of(context).pop()
+                    : null,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: c.surfaceContainer,
+                    borderRadius: Radii.fullR,
+                    border: Border.all(color: c.outline),
+                  ),
+                  child: Row(
+                    spacing: 11,
+                    children: <Widget>[
+                      Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
+                      Expanded(
+                        child: TextField(
+                          controller: _field,
+                          focusNode: _focus,
+                          autofocus: widget.addToCollectionSlug == null,
+                          textInputAction: TextInputAction.search,
+                          onChanged: _run,
+                          style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            hintText: 'Search words and phrases',
+                            hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
+                          ),
                         ),
                       ),
-                    ),
-                    if (typing)
-                      AppIconButton(
-                        icon: Icons.close_rounded,
-                        size: 30,
-                        glyphSize: 16,
-                        filled: false,
-                        semanticLabel: 'Clear',
-                        onPressed: () => _set(''),
-                      ),
-                  ],
+                      if (typing)
+                        AppIconButton(
+                          icon: Icons.close_rounded,
+                          size: 30,
+                          glyphSize: 16,
+                          filled: false,
+                          semanticLabel: 'Clear',
+                          onPressed: () => _set(''),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-              child: SegmentedToggle<SearchSegment>(
-                options: const <(SearchSegment, String)>[
-                  (SearchSegment.words, 'Words'),
-                  (SearchSegment.idioms, 'Idioms'),
-                ],
-                selected: _segment,
-                counts: typing ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length} : const <Object?, int>{},
-                onChanged: (SearchSegment s) => setState(() => _segment = s),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                child: SegmentedToggle<SearchSegment>(
+                  options: const <(SearchSegment, String)>[
+                    (SearchSegment.words, 'Words'),
+                    (SearchSegment.idioms, 'Phrases'),
+                  ],
+                  selected: _segment,
+                  counts: typing ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length} : const <Object?, int>{},
+                  onChanged: (SearchSegment s) => setState(() => _segment = s),
+                ),
               ),
-            ),
-            LoadingHairline(visible: _slow),
-            Expanded(child: typing ? _results(c) : _recentList(c)),
-          ],
+              LoadingHairline(visible: _slow),
+              Expanded(child: typing ? _results(c) : _recentList(c)),
+            ],
+          ),
         ),
       ),
     );
@@ -197,22 +224,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _results(MullColors c) {
-    if (_segment == SearchSegment.words) {
-      if (_words.isEmpty) return _noResults(c);
+    final bool words = _segment == SearchSegment.words;
+    if (words ? _words.isEmpty : _idioms.isEmpty) return _noResults(c);
+    final int n = words ? _words.length : _idioms.length;
+    SearchResult at(int i) => words ? SearchResult.word(_words[i]) : SearchResult.idiom(_idioms[i]);
+    void open(int i) => words ? unawaited(_openWord(_words[i])) : unawaited(showIdiomSheet(context, idiom: _idioms[i]));
+
+    Future<void> handleTap(int i) async {
+      if (widget.addToCollectionSlug != null) {
+        final String slug = widget.addToCollectionSlug!;
+        final String key = words ? _words[i].wordKey : _idioms[i].idiomKey;
+        final List<String> currentKeys = ref.read(collectionKeysProvider)[slug] ?? const <String>[];
+        final bool alreadyExists = currentKeys.contains(key) ||
+            ref.read(dictProvider).collectionIdioms(slug).any((Idiom idm) => idm.idiomKey == key);
+        if (alreadyExists) {
+          if (mounted) {
+            AppSnackbar.info(
+              context,
+              words
+                  ? 'Word already exists in the shelf'
+                  : 'Phrase already exists in the shelf',
+            );
+          }
+          return;
+        }
+        await ref.read(userRepositoryProvider).addToCollection(slug, key);
+        if (mounted) {
+          final Collection? col = ref.read(collectionBySlugProvider)[slug];
+          AppSnackbar.info(context, 'Added to ${col?.title ?? 'shelf'}');
+        }
+      } else {
+        open(i);
+      }
+    }
+
+    if (ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle)) == SearchStyle.table) {
       return ListView.builder(
         padding: const EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe),
-        itemCount: _words.length,
-        itemBuilder: (BuildContext context, int i) =>
-            SearchResultRow(word: _words[i], query: _query, onTap: () => unawaited(_openWord(_words[i]))),
+        itemCount: n,
+        itemBuilder: (BuildContext context, int i) => SearchResultRow(result: at(i), query: _query, onTap: () => handleTap(i)),
       );
     }
-    if (_idioms.isEmpty) return _noResults(c);
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.bottomSafe),
-      itemCount: _idioms.length,
+      itemCount: n,
       separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
-      itemBuilder: (BuildContext context, int i) =>
-          IdiomCard(idiom: _idioms[i], query: _query, onTap: () => showIdiomSheet(context, idiom: _idioms[i])),
+      itemBuilder: (BuildContext context, int i) => SearchResultCard(result: at(i), query: _query, onTap: () => handleTap(i)),
     );
   }
 
@@ -246,12 +303,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
-/// One line, 44dp: headword (fixed 104dp, matched run tinted `accent`), then
-/// part of speech italic + short definition in `onSurfaceVariant`.
-class SearchResultRow extends StatelessWidget {
-  const SearchResultRow({required this.word, required this.query, required this.onTap, super.key});
+/// One result, whichever table it came from. The card and the row draw the
+/// same object; neither knows whether it holds a word or a phrase.
+class SearchResult {
+  const SearchResult({required this.title, required this.definition, required this.chip, this.pos});
 
-  final DictionaryWord word;
+  SearchResult.word(DictionaryWord w)
+      : this(title: w.headword, pos: posLabel(w.pos), definition: w.definitionShort, chip: bandLabel(w.band));
+
+  SearchResult.idiom(Idiom i) : this(title: i.phrase, definition: i.meaning, chip: i.register);
+
+  SearchResult.phrase(Phrase p)
+      : this(title: p.phrase, definition: p.meaning, chip: p.register);
+
+  final String title;
+
+  /// Null for a phrase.
+  final String? pos;
+  final String definition;
+
+  /// Band for a word, register for a phrase; both are a [BandChip].
+  final String chip;
+}
+
+/// One line, 44dp minimum: title (fixed 104dp, matched run tinted `accent`),
+/// then part of speech italic + short definition in `onSurfaceVariant`.
+class SearchResultRow extends StatelessWidget {
+  const SearchResultRow({required this.result, required this.query, required this.onTap, super.key});
+
+  final SearchResult result;
   final String query;
   final VoidCallback onTap;
 
@@ -261,7 +341,7 @@ class SearchResultRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        height: 44,
+        constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -269,14 +349,15 @@ class SearchResultRow extends StatelessWidget {
           children: <Widget>[
             SizedBox(
               width: 104,
-              child: highlighted(word.headword, query, MullType.titleMedium.copyWith(color: c.onSurface), c.accent),
+              child: highlighted(result.title, query, MullType.titleMedium.copyWith(color: c.onSurface), c.accent, maxLines: 1),
             ),
             Expanded(
               child: Text.rich(
                 TextSpan(
                   children: <InlineSpan>[
-                    TextSpan(text: '${posLabel(word.pos)} · ', style: const TextStyle(fontStyle: FontStyle.italic)),
-                    TextSpan(text: word.definitionShort),
+                    if (result.pos != null)
+                      TextSpan(text: '${result.pos} · ', style: const TextStyle(fontStyle: FontStyle.italic)),
+                    TextSpan(text: result.definition),
                   ],
                 ),
                 style: MullType.bodySmall.copyWith(fontSize: 12.5, color: c.onSurfaceVariant),
@@ -291,37 +372,72 @@ class SearchResultRow extends StatelessWidget {
   }
 }
 
-/// A card, not a row: radius 20, `surfaceContainer`, phrase in `sheetTitle`
+/// A card, not a row: radius 20, `surfaceContainer`, title in `sheetTitle`
 /// with the matched run highlighted `primaryContainer`, meaning in `body`, a
-/// register chip below.
-class IdiomCard extends StatelessWidget {
-  const IdiomCard({required this.idiom, required this.query, required this.onTap, super.key});
+/// band or register chip below. A phrase is never mistaken for a headword.
+class SearchResultCard extends StatelessWidget {
+  const SearchResultCard({
+    required this.result,
+    required this.query,
+    required this.onTap,
+    this.onLongPress,
+    this.selecting = false,
+    this.selected = false,
+    super.key,
+  });
 
-  final Idiom idiom;
+  final SearchResult result;
   final String query;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final bool selecting;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: Radii.cardR,
       child: Container(
         padding: const EdgeInsets.all(Space.lg),
         decoration: BoxDecoration(
-          color: c.surfaceContainer,
+          color: selected ? c.surfaceContainer : c.surfaceContainer,
           borderRadius: Radii.cardR,
-          border: Border.all(color: c.outline),
+          border: Border.all(
+            color: selected ? c.primary : c.outline,
+            width: selected ? 1.5 : 1,
+          ),
         ),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            highlighted(idiom.phrase, query, MullType.sheetTitle.copyWith(color: c.onSurface), c.onPrimaryContainer, background: c.primaryContainer),
-            const SizedBox(height: 6),
-            Text(idiom.meaning, style: MullType.body.copyWith(color: c.onSurfaceVariant), maxLines: 2, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: Space.sm),
-            BandChip(idiom.register),
+            if (selecting) ...<Widget>[
+              Container(
+                width: 22,
+                height: 22,
+                margin: const EdgeInsets.only(right: Space.md, top: 2),
+                decoration: BoxDecoration(
+                  color: selected ? c.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: selected ? c.primary : c.outline, width: 1.5),
+                ),
+                child: selected ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
+              ),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  highlighted(result.title, query, MullType.sheetTitle.copyWith(color: c.onSurface), c.onPrimaryContainer, background: c.primaryContainer),
+                  const SizedBox(height: 6),
+                  Text(result.definition, style: MullType.body.copyWith(color: c.onSurfaceVariant), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: Space.sm),
+                  BandChip(result.chip),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -330,10 +446,11 @@ class IdiomCard extends StatelessWidget {
 }
 
 /// [text] with the first case-insensitive occurrence of [query] tinted.
-Widget highlighted(String text, String query, TextStyle style, Color tint, {Color? background}) {
+/// Wraps freely unless [maxLines] bounds it.
+Widget highlighted(String text, String query, TextStyle style, Color tint, {Color? background, int? maxLines}) {
   final String q = query.trim().toLowerCase();
   final int i = q.isEmpty ? -1 : text.toLowerCase().indexOf(q);
-  if (i < 0) return Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
+  if (i < 0) return Text(text, style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
   return Text.rich(
     TextSpan(
       children: <InlineSpan>[
@@ -343,7 +460,7 @@ Widget highlighted(String text, String query, TextStyle style, Color tint, {Colo
       ],
     ),
     style: style,
-    maxLines: 2,
+    maxLines: maxLines,
     overflow: TextOverflow.ellipsis,
   );
 }

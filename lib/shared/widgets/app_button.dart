@@ -22,6 +22,12 @@ enum AppButtonType {
   /// The danger well: `dangerContainer` with `onDangerContainer` label.
   /// There are no filled red buttons in Mull.
   danger,
+
+  /// Subtle ghost button with no border and muted label.
+  muted;
+
+  /// Alias for [outlined].
+  static const AppButtonType outline = AppButtonType.outlined;
 }
 
 /// The one button. Height, radius, padding and label style all come from
@@ -34,6 +40,7 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.fullWidth = false,
     this.compact = false,
+    this.padding,
     super.key,
   });
 
@@ -47,6 +54,9 @@ class AppButton extends StatelessWidget {
 
   /// The 32dp inline form.
   final bool compact;
+
+  /// Optional custom padding inside the pill.
+  final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +100,7 @@ class AppButton extends StatelessWidget {
         child: InkWell(
           onTap: disabled ? null : onPressed,
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: compact ? 13 : 22, vertical: 4),
+            padding: padding ?? EdgeInsets.symmetric(horizontal: compact ? 13 : 22, vertical: 4),
             child: content,
           ),
         ),
@@ -110,9 +120,10 @@ class AppButton extends StatelessWidget {
     return switch (type) {
       AppButtonType.primary => _Skin(bg: c.primary, fg: c.onPrimary),
       AppButtonType.secondary => _Skin(bg: c.surfaceContainerHigh, fg: c.onSurface),
-      AppButtonType.outlined => _Skin(bg: Colors.transparent, fg: c.onSurface, border: c.outline),
+      AppButtonType.outlined => _Skin(bg: c.surface, fg: c.onSurface, border: c.accent),
       AppButtonType.dotted => _Skin(bg: Colors.transparent, fg: c.onSurfaceVariant, border: c.outline),
       AppButtonType.danger => _Skin(bg: c.dangerContainer, fg: c.onDangerContainer),
+      AppButtonType.muted => _Skin(bg: Colors.transparent, fg: c.onSurfaceMuted),
     };
   }
 }

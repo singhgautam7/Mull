@@ -54,7 +54,7 @@ class SectionHeader extends StatelessWidget {
 }
 
 /// A `monoLabel` note that sits at the right of a section header:
-/// `one axis`, `pick by interest`.
+/// `easiest first`, `pick by interest`.
 class SectionNote extends StatelessWidget {
   const SectionNote(this.text, {super.key});
 

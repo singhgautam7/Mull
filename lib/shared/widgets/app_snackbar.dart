@@ -7,168 +7,332 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 
-/// The toast: inverse surface, 180 ms in from the bottom edge, 140 ms out,
-/// four-second undo window on anything destructive. Bookmarks and note saves
-/// never raise one.
+/// The toast message specification.
 class SnackMessage {
-  const SnackMessage({required this.text, this.actionLabel, this.onAction});
+  const SnackMessage({
+    required this.text,
+    this.actionLabel,
+    this.onAction,
+    this.isError = false,
+    this.duration,
+  });
 
   final String text;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final bool isError;
+  final Duration? duration;
 
-  Duration get duration => actionLabel == null ? const Duration(seconds: 3) : const Duration(seconds: 4);
+  Duration get effectiveDuration =>
+      duration ??
+      (actionLabel != null || isError
+          ? const Duration(seconds: 5)
+          : const Duration(seconds: 4));
 }
 
-class _Entry {
-  _Entry(this.message) : id = ++_seq;
-
-  static int _seq = 0;
-  final SnackMessage message;
-  final int id;
-}
-
+/// A top-positioned, timed snackbar with a countdown progress indicator,
+/// circular card radius, dismiss close button, and swipe-to-dismiss gestures.
 abstract final class AppSnackbar {
-  static final ValueNotifier<List<_Entry>> _entries = ValueNotifier<List<_Entry>>(const <_Entry>[]);
-  static OverlayEntry? _layer;
+  static OverlayEntry? _currentEntry;
+  static _AppSnackBarController? _currentController;
+  static Timer? _currentTimer;
+
+  static void dismiss() {
+    _currentTimer?.cancel();
+    _currentTimer = null;
+
+    final _AppSnackBarController? controller = _currentController;
+    final OverlayEntry? entry = _currentEntry;
+    _currentController = null;
+    _currentEntry = null;
+
+    if (controller != null && entry != null) {
+      controller.animateOut().then((_) {
+        if (entry.mounted) entry.remove();
+      });
+    } else {
+      entry?.remove();
+    }
+  }
 
   static void show(BuildContext context, SnackMessage message) {
-    // One at a time: a new strip replaces whatever is up.
-    _entries.value = <_Entry>[_Entry(message)];
+    dismiss();
+
     final OverlayState? overlay =
         Overlay.maybeOf(context, rootOverlay: true) ??
         Navigator.maybeOf(context, rootNavigator: true)?.overlay;
     if (overlay == null) return;
-    if (_layer == null || !_layer!.mounted) {
-      _layer = OverlayEntry(builder: (BuildContext _) => const _SnackLayer());
-      overlay.insert(_layer!);
-    }
-  }
 
-  static void info(BuildContext context, String text) => show(context, SnackMessage(text: text));
-
-  /// Something destructive, with its undo.
-  static void undo(BuildContext context, String text, VoidCallback onUndo) =>
-      show(context, SnackMessage(text: text, actionLabel: 'Undo', onAction: onUndo));
-
-  static void _remove(int id) =>
-      _entries.value = _entries.value.where((_Entry e) => e.id != id).toList(growable: false);
-}
-
-class _SnackLayer extends StatelessWidget {
-  const _SnackLayer();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<_Entry>>(
-      valueListenable: AppSnackbar._entries,
-      builder: (BuildContext context, List<_Entry> entries, Widget? _) {
-        if (entries.isEmpty) return const SizedBox.shrink();
-        return Positioned(
-          left: Space.md,
-          right: Space.md,
-          // Above the floating nav pill.
-          bottom: MediaQuery.paddingOf(context).bottom + 96,
-          child: _AnimatedStrip(key: ValueKey<int>(entries.last.id), entry: entries.last),
-        );
-      },
+    final _AppSnackBarController controller = _AppSnackBarController();
+    final OverlayEntry entry = OverlayEntry(
+      builder: (BuildContext _) => _TimedSnackBarWidget(
+        controller: controller,
+        message: message,
+        onRequestClose: dismiss,
+      ),
     );
+
+    _currentController = controller;
+    _currentEntry = entry;
+    overlay.insert(entry);
+
+    _currentTimer = Timer(message.effectiveDuration, dismiss);
+  }
+
+  static void info(BuildContext context, String text) =>
+      show(context, SnackMessage(text: text));
+
+  static void error(BuildContext context, String text) =>
+      show(context, SnackMessage(text: text, isError: true));
+
+  static void undo(BuildContext context, String text, VoidCallback onUndo) =>
+      show(
+        context,
+        SnackMessage(
+          text: text,
+          actionLabel: 'Undo',
+          onAction: onUndo,
+        ),
+      );
+}
+
+class _AppSnackBarController {
+  _TimedSnackBarWidgetState? _state;
+
+  void _attach(_TimedSnackBarWidgetState state) => _state = state;
+
+  Future<void> animateOut() async {
+    final _TimedSnackBarWidgetState? state = _state;
+    if (state == null) return;
+    await state._animateOut();
   }
 }
 
-class _AnimatedStrip extends StatefulWidget {
-  const _AnimatedStrip({required this.entry, super.key});
+class _TimedSnackBarWidget extends StatefulWidget {
+  const _TimedSnackBarWidget({
+    required this.controller,
+    required this.message,
+    required this.onRequestClose,
+  });
 
-  final _Entry entry;
+  final _AppSnackBarController controller;
+  final SnackMessage message;
+  final VoidCallback onRequestClose;
 
   @override
-  State<_AnimatedStrip> createState() => _AnimatedStripState();
+  State<_TimedSnackBarWidget> createState() => _TimedSnackBarWidgetState();
 }
 
-class _AnimatedStripState extends State<_AnimatedStrip> with SingleTickerProviderStateMixin {
-  late final AnimationController _enter = AnimationController(
-    vsync: this,
-    duration: Motion.snackEnter,
-    reverseDuration: Motion.snackExit,
-  )..forward();
-  Timer? _timer;
-  bool _dismissing = false;
+class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
+    with TickerProviderStateMixin {
+  late final AnimationController _slideCtrl;
+  late final Animation<double> _slideAnim;
+  late final AnimationController _progressCtrl;
+  bool _actionFired = false;
+
+  Offset _dragOffset = Offset.zero;
+
+  static const double _kSwipeDistanceThreshold = 80.0;
+  static const double _kSwipeVelocityThreshold = 600.0;
+  static const Duration _kAnimDuration = Duration(milliseconds: 220);
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer(widget.entry.message.duration, _dismiss);
+    _slideCtrl = AnimationController(vsync: this, duration: _kAnimDuration);
+    _slideAnim = CurvedAnimation(
+      parent: _slideCtrl,
+      curve: Curves.easeOutCubic,
+    );
+    _progressCtrl = AnimationController(
+      vsync: this,
+      duration: widget.message.effectiveDuration,
+    );
+    widget.controller._attach(this);
+    _slideCtrl.forward();
+    _progressCtrl.forward();
+  }
+
+  Future<void> _animateOut() async {
+    if (!mounted) return;
+    _progressCtrl.stop();
+    await _slideCtrl.reverse();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _enter.dispose();
+    _slideCtrl.dispose();
+    _progressCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _dismiss() async {
-    if (_dismissing) return;
-    _dismissing = true;
-    _timer?.cancel();
-    if (mounted) await _enter.reverse();
-    AppSnackbar._remove(widget.entry.id);
+  void _handleAction(VoidCallback? cb) {
+    if (_actionFired) return;
+    _actionFired = true;
+    widget.onRequestClose();
+    cb?.call();
+  }
+
+  void _onDragStart(DragStartDetails _) {
+    _progressCtrl.stop();
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    setState(() {
+      final double dx = _dragOffset.dx + details.delta.dx;
+      final double dy = (_dragOffset.dy + details.delta.dy).clamp(-200.0, 0.0);
+      _dragOffset = Offset(dx, dy);
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final Offset v = details.velocity.pixelsPerSecond;
+    final bool distanceMet =
+        _dragOffset.dx.abs() >= _kSwipeDistanceThreshold ||
+        _dragOffset.dy <= -_kSwipeDistanceThreshold;
+    final bool velocityMet =
+        v.dx.abs() >= _kSwipeVelocityThreshold ||
+        v.dy <= -_kSwipeVelocityThreshold;
+
+    if (distanceMet || velocityMet) {
+      widget.onRequestClose();
+      return;
+    }
+
+    setState(() => _dragOffset = Offset.zero);
+    _progressCtrl.forward();
   }
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final SnackMessage m = widget.entry.message;
-    final bool reduced = Motion.reduced(context);
-    return AnimatedBuilder(
-      animation: _enter,
-      builder: (BuildContext context, Widget? child) => Opacity(
-        opacity: _enter.value.clamp(0, 1),
-        child: Transform.translate(
-          offset: Offset(0, reduced ? 0 : 16 * (1 - _enter.value)),
-          child: child,
-        ),
-      ),
-      child: Dismissible(
-        key: ValueKey<int>(widget.entry.id),
-        direction: DismissDirection.down,
-        onDismissed: (_) => AppSnackbar._remove(widget.entry.id),
-        child: Material(
-          color: Colors.transparent,
-          child: Semantics(
-            liveRegion: true,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 13, 8, 13),
-              decoration: BoxDecoration(
-                color: c.inverseSurface,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(color: c.shadow, blurRadius: 24, offset: const Offset(0, 8)),
-                ],
-              ),
-              child: Row(
-                spacing: Space.md,
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      m.text,
-                      style: MullType.label.copyWith(fontSize: 13, color: c.onInverseSurface),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+    final SnackMessage m = widget.message;
+    final Color barColor = m.isError ? c.danger : c.primary;
+    final double topPadding = MediaQuery.paddingOf(context).top;
+
+    return Positioned(
+      top: topPadding + Space.sm,
+      left: Space.screen,
+      right: Space.screen,
+      child: AnimatedBuilder(
+        animation: _slideAnim,
+        builder: (BuildContext context, Widget? child) {
+          final double t = _slideAnim.value;
+          final Offset entryOffset = Offset(0, (1 - t) * -80);
+          final Offset totalOffset = entryOffset + _dragOffset;
+          final double dragDistance = _dragOffset.distance;
+          final double dragFade = (dragDistance / 200).clamp(0.0, 0.5);
+          return Transform.translate(
+            offset: totalOffset,
+            child: Opacity(
+              opacity: (t * (1 - dragFade)).clamp(0.0, 1.0),
+              child: child,
+            ),
+          );
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: _onDragStart,
+          onHorizontalDragUpdate: _onDragUpdate,
+          onHorizontalDragEnd: _onDragEnd,
+          onVerticalDragStart: _onDragStart,
+          onVerticalDragUpdate: _onDragUpdate,
+          onVerticalDragEnd: _onDragEnd,
+          child: Material(
+            color: Colors.transparent,
+            child: Semantics(
+              liveRegion: true,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: c.surfaceContainer,
+                  borderRadius: Radii.cardR,
+                  border: Border.all(
+                    color: m.isError ? c.danger : c.outline,
                   ),
-                  if (m.actionLabel != null)
-                    TextButton(
-                      onPressed: () {
-                        m.onAction?.call();
-                        unawaited(_dismiss());
-                      },
-                      child: Text(
-                        m.actionLabel!.toUpperCase(),
-                        style: MullType.label.copyWith(color: c.primary, letterSpacing: 0.24).weight(700),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: c.shadow,
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: <Widget>[
+                    // Left bar indicator
+                    Container(
+                      width: 4,
+                      height: 44,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: barColor,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                ],
+                    const SizedBox(width: Space.md),
+                    Icon(
+                      m.isError
+                          ? Icons.error_outline_rounded
+                          : Icons.check_circle_outline_rounded,
+                      color: barColor,
+                      size: 20,
+                    ),
+                    const SizedBox(width: Space.md),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              m.text,
+                              style: MullType.titleMedium.copyWith(
+                                fontSize: 13.5,
+                                color: c.onSurface,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: Space.sm),
+                            AnimatedBuilder(
+                              animation: _progressCtrl,
+                              builder: (BuildContext context, _) {
+                                return LinearProgressIndicator(
+                                  value: 1.0 - _progressCtrl.value,
+                                  minHeight: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    c.primary,
+                                  ),
+                                  backgroundColor: c.outline,
+                                  borderRadius: BorderRadius.circular(1),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (m.actionLabel != null)
+                      TextButton(
+                        onPressed: () => _handleAction(m.onAction),
+                        child: Text(
+                          m.actionLabel!.toUpperCase(),
+                          style: MullType.label
+                              .copyWith(color: c.primary, letterSpacing: 0.24)
+                              .weight(700),
+                        ),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      color: c.onSurfaceVariant,
+                      tooltip: 'Dismiss',
+                      onPressed: widget.onRequestClose,
+                    ),
+                    const SizedBox(width: Space.xs),
+                  ],
+                ),
               ),
             ),
           ),

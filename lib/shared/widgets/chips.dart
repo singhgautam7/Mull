@@ -41,6 +41,7 @@ class PillChip extends StatelessWidget {
     this.onTap,
     this.selected = false,
     this.count,
+    this.showCountWhenSelectedOnly = false,
     this.trailing,
     super.key,
   });
@@ -49,12 +50,14 @@ class PillChip extends StatelessWidget {
   final VoidCallback? onTap;
   final bool selected;
   final int? count;
+  final bool showCountWhenSelectedOnly;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final Color fg = selected ? c.onPrimaryContainer : c.onSurface;
+    final bool showCount = count != null && (!showCountWhenSelectedOnly || selected);
     return Semantics(
       button: onTap != null,
       selected: selected,
@@ -71,8 +74,22 @@ class PillChip extends StatelessWidget {
               spacing: 6,
               children: <Widget>[
                 Text(label, style: MullType.label.copyWith(fontSize: 13, color: fg).weight(selected ? 600 : 500)),
-                if (count != null)
-                  Text('$count', style: MullType.monoLabel.copyWith(color: selected ? c.onPrimaryContainer : c.onSurfaceVariant)),
+                if (showCount)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: selected ? c.surface : c.surfaceContainer,
+                      borderRadius: Radii.fullR,
+                    ),
+                    child: Text(
+                      '$count',
+                      style: MullType.monoLabel.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? c.onPrimaryContainer : c.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
                 ?trailing,
               ],
             ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/theme/app_theme.dart';
@@ -27,9 +28,12 @@ class WordCard extends StatefulWidget {
     required this.hasNote,
     required this.onNote,
     required this.onBookmark,
-    required this.onShare,
+    required this.onOpenEntry,
     required this.onOverflow,
     required this.onSpeak,
+    this.onShare,
+    this.onNextCard,
+    this.onPreviousCard,
     this.headwordOverride,
     this.softStop = false,
     super.key,
@@ -43,9 +47,12 @@ class WordCard extends StatefulWidget {
   final bool hasNote;
   final VoidCallback onNote;
   final VoidCallback onBookmark;
-  final VoidCallback onShare;
+  final VoidCallback onOpenEntry;
+  final VoidCallback? onShare;
   final void Function(BuildContext anchor) onOverflow;
   final VoidCallback onSpeak;
+  final VoidCallback? onNextCard;
+  final VoidCallback? onPreviousCard;
 
   /// The American spelling when that setting is on.
   final String? headwordOverride;
@@ -67,6 +74,22 @@ class _WordCardState extends State<WordCard> {
   /// True once layout shows the body taller than its box. Until then the
   /// body does not scroll, so a vertical drag pages the card as usual.
   bool _overflows = false;
+  double _accumulatedOverscroll = 0;
+  DateTime? _lastPageTrigger;
+
+  static const double _kOverscrollThreshold = 40.0;
+  static const Duration _kPageCooldown = Duration(milliseconds: 500);
+
+  @override
+  void didUpdateWidget(WordCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.word.wordKey != widget.word.wordKey) {
+      _accumulatedOverscroll = 0;
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(0);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -78,6 +101,43 @@ class _WordCardState extends State<WordCard> {
     if (!mounted || !_scroll.hasClients) return;
     final bool now = _scroll.position.maxScrollExtent > 0;
     if (now != _overflows) setState(() => _overflows = now);
+  }
+
+  bool _onScrollNotification(ScrollNotification n) {
+    if (!_overflows) return false;
+
+    if (n is OverscrollNotification) {
+      _accumulatedOverscroll += n.overscroll;
+    } else if (n is ScrollUpdateNotification) {
+      if (n.scrollDelta != null && n.scrollDelta != 0) {
+        // If user scrolls back inside bounds, clear overscroll
+        _accumulatedOverscroll = 0;
+      }
+    } else if (n is ScrollEndNotification) {
+      final DateTime now = DateTime.now();
+      final bool cooledDown = _lastPageTrigger == null ||
+          now.difference(_lastPageTrigger!) > _kPageCooldown;
+
+      if (cooledDown) {
+        if (_accumulatedOverscroll >= _kOverscrollThreshold) {
+          _accumulatedOverscroll = 0;
+          _lastPageTrigger = now;
+          widget.onNextCard?.call();
+          return false;
+        } else if (_accumulatedOverscroll <= -_kOverscrollThreshold) {
+          _accumulatedOverscroll = 0;
+          _lastPageTrigger = now;
+          widget.onPreviousCard?.call();
+          return false;
+        }
+      }
+      _accumulatedOverscroll = 0;
+    } else if (n is UserScrollNotification) {
+      if (n.direction == ScrollDirection.idle) {
+        _accumulatedOverscroll = 0;
+      }
+    }
+    return false;
   }
 
   @override
@@ -98,12 +158,18 @@ class _WordCardState extends State<WordCard> {
         children: <Widget>[
           Expanded(
             child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
-                controller: _scroll,
-                physics: _overflows ? const ClampingScrollPhysics() : const NeverScrollableScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: box.maxHeight),
-                  child: _body(context),
+              builder: (BuildContext context, BoxConstraints box) =>
+                  NotificationListener<ScrollNotification>(
+                onNotification: _onScrollNotification,
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  physics: _overflows
+                      ? const ClampingScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: box.maxHeight),
+                    child: _body(context),
+                  ),
                 ),
               ),
             ),
@@ -227,12 +293,11 @@ class _WordCardState extends State<WordCard> {
       spacing: Space.md,
       children: <Widget>[
         AppIconButton(
-          icon: hasNote ? Icons.sticky_note_2_rounded : Icons.sticky_note_2_outlined,
+          icon: Icons.menu_book_rounded,
           size: 52,
-          active: hasNote,
-          semanticLabel: hasNote ? 'Edit note' : 'Add a note',
-          onPressed: widget.onNote,
-          background: bookmarked && !hasNote ? c.surfaceContainer : null,
+          semanticLabel: 'Open full entry',
+          onPressed: widget.onOpenEntry,
+          background: bookmarked ? c.surfaceContainer : null,
         ),
         AppIconButton(
           icon: bookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
@@ -243,11 +308,12 @@ class _WordCardState extends State<WordCard> {
           background: bookmarked ? c.surface : null,
         ),
         AppIconButton(
-          icon: Icons.ios_share_rounded,
+          icon: hasNote ? Icons.sticky_note_2_rounded : Icons.sticky_note_2_outlined,
           size: 52,
-          semanticLabel: 'Share',
-          onPressed: widget.onShare,
-          background: bookmarked ? c.surfaceContainer : null,
+          active: hasNote,
+          semanticLabel: hasNote ? 'Edit note' : 'Add note',
+          onPressed: widget.onNote,
+          background: bookmarked && !hasNote ? c.surfaceContainer : null,
         ),
         const Spacer(),
         Builder(

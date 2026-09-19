@@ -68,7 +68,7 @@ class StatsScreen extends ConsumerWidget {
           Text('The heatmap appears after a fortnight of use.', style: MullType.note.copyWith(color: c.onSurfaceVariant)),
         ] else
           _Heatmap(stats: s),
-        label('COLLECTIONS'),
+        label('SHELVES'),
         Row(
           children: <Widget>[
             for (final Collection col in collections)

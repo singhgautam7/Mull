@@ -135,6 +135,7 @@ void main() {
         seenBefore: true,
         bookmarked: bookmarked,
         hasNote: true,
+        onOpenEntry: () {},
         onNote: () {},
         onBookmark: () {},
         onShare: () {},
@@ -148,9 +149,9 @@ void main() {
     await pumpAt(tester, card(longest));
     expect(find.textContaining('institutionalisation', findRichText: true), findsOneWidget);
     // The action row is pinned inside the card and fully visible.
-    final Rect share = tester.getRect(find.bySemanticsLabel('Share'));
-    expect(share.bottom, lessThanOrEqualTo(640 - 104));
-    expect(share.height, 52);
+    final Rect entry = tester.getRect(find.bySemanticsLabel('Open full entry'));
+    expect(entry.bottom, lessThanOrEqualTo(640 - 104));
+    expect(entry.height, 52);
   });
 
   testWidgets('the word card at every scale, with and without an example', (WidgetTester tester) async {

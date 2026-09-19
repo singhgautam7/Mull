@@ -21,32 +21,68 @@ import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/app_snackbar.dart';
-import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/states.dart';
 import '../dictionary/idiom_sheet.dart';
 import '../dictionary/search_screen.dart';
 import '../dictionary/word_sheet.dart';
-import 'create_list_sheet.dart';
 import '../settings/settings_controller.dart';
+import 'create_list_sheet.dart';
 
-enum WordSort {
-  az('az', 'A–Z'),
-  frequency('frequency', 'frequency'),
-  recent('recent', 'recently added'),
-  bookmarked('bookmarked', 'bookmarked first');
+enum SortCriterion {
+  name('name', 'Name'),
+  frequency('frequency', 'Frequency'),
+  bookmarked('bookmarked', 'Bookmark first');
 
-  const WordSort(this.key, this.label);
+  const SortCriterion(this.key, this.label);
 
   final String key;
   final String label;
 
-  static WordSort fromKey(String k) => values.firstWhere((WordSort s) => s.key == k, orElse: () => WordSort.az);
+  static SortCriterion fromKey(String k) => switch (k) {
+    'frequency' => SortCriterion.frequency,
+    'bookmarked' => SortCriterion.bookmarked,
+    _ => SortCriterion.name,
+  };
 }
 
-/// HANDOFF 3.3, less the lens toggle. The table is the three-column view
-/// with "Mull these" (the Mull tab scoped to the collection) and Hide defs
-/// above it, sort in the overflow, count and sort pinned at the bottom. One of the user's own
-/// collections opens in the same view, with multi-select.
+enum CollectionViewMode {
+  card('card', 'Card view'),
+  table('table', 'Table view');
+
+  const CollectionViewMode(this.key, this.label);
+
+  final String key;
+  final String label;
+}
+
+/// Unified entry wrapping a word, phrase or legacy idiom.
+class CollectionEntry {
+  CollectionEntry.word(this.word) : phrase = null, idiom = null;
+  CollectionEntry.phrase(this.phrase) : word = null, idiom = null;
+  CollectionEntry.idiom(this.idiom) : word = null, phrase = null;
+
+  final DictionaryWord? word;
+  final Phrase? phrase;
+  final Idiom? idiom;
+
+  bool get isWord => word != null;
+  String get key => word?.wordKey ?? phrase?.phraseKey ?? idiom!.idiomKey;
+  String get title => word?.headword ?? phrase?.phrase ?? idiom!.phrase;
+  String get definition => word?.definitionShort ?? phrase?.meaning ?? idiom!.meaning;
+  String? get example => word != null ? null : (phrase?.example ?? idiom?.example);
+  String get chip => word != null ? bandLabel(word!.band) : (phrase?.register ?? idiom!.register);
+  String? get pos => word != null ? posLabel(word!.pos) : (phrase?.type ?? 'phrase');
+  int get freqRank => word?.freqRank ?? phrase?.freqRank ?? 999999;
+
+  SearchResult toSearchResult() {
+    if (word != null) return SearchResult.word(word!);
+    if (phrase != null) return SearchResult.phrase(phrase!);
+    return SearchResult.idiom(idiom!);
+  }
+}
+
+/// Shelf screen supporting Card and Table views, real-time filtering,
+/// sort menu, view switcher, and overflow menu with "Mull these".
 class CollectionScreen extends ConsumerStatefulWidget {
   const CollectionScreen({required this.slug, super.key});
 
@@ -59,11 +95,21 @@ class CollectionScreen extends ConsumerStatefulWidget {
 
 class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   String get _scopeKey => widget.slug;
-  late bool _hideDefs = ref.read(settingsProvider.notifier).hideDefs(_scopeKey);
-  late WordSort _sort = WordSort.fromKey(ref.read(settingsProvider.notifier).sort(_scopeKey));
-  String? _revealed;
+  late SortCriterion _sortCriterion = SortCriterion.fromKey(ref.read(settingsProvider.notifier).sort(_scopeKey));
+  late bool _sortAscending = ref.read(settingsProvider.notifier).sortAscending(_scopeKey);
+  late CollectionViewMode _viewMode = ref.read(settingsProvider.notifier).lens(_scopeKey) == 'table'
+      ? CollectionViewMode.table
+      : CollectionViewMode.card;
+
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  String _searchQuery = '';
+
   final Set<String> _selected = <String>{};
   bool _selecting = false;
+
+  bool _buttonsVisible = true;
+  double _scrollTravel = 0.0;
 
   UserRepository get _user => ref.read(userRepositoryProvider);
 
@@ -73,9 +119,27 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     unawaited(_user.setAppState(UserRepository.kLastOpened, widget.slug));
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
   void _openCards() {
     unawaited(ref.read(settingsProvider.notifier).setLens(_scopeKey, 'cards'));
     context.go(Routes.scoped(widget.slug));
+  }
+
+  void _openAddSearch(SearchSegment segment) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => SearchScreen(
+          addToCollectionSlug: widget.slug,
+          initialSegment: segment,
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteSelected(List<String> keys) async {
@@ -88,11 +152,245 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       _selecting = false;
     });
     if (!mounted) return;
-    AppSnackbar.undo(context, 'Removed ${removed.length} words', () async {
+    AppSnackbar.undo(context, 'Removed ${removed.length} items', () async {
       for (final String k in removed) {
         await _user.addToCollection(widget.slug, k);
       }
     });
+  }
+
+  void _onScroll(ScrollNotification notification) {
+    if (notification is ScrollUpdateNotification) {
+      final double delta = notification.scrollDelta ?? 0;
+      final ScrollMetrics metrics = notification.metrics;
+      if (!metrics.hasContentDimensions ||
+          metrics.maxScrollExtent <= 0 ||
+          metrics.pixels <= metrics.minScrollExtent) {
+        if (!_buttonsVisible) setState(() => _buttonsVisible = true);
+        return;
+      }
+      if (delta == 0) return;
+      if (delta.sign != _scrollTravel.sign) _scrollTravel = 0;
+      _scrollTravel += delta;
+      if (_scrollTravel > 24 && _buttonsVisible) {
+        setState(() => _buttonsVisible = false);
+      } else if (_scrollTravel < -24 && !_buttonsVisible) {
+        setState(() => _buttonsVisible = true);
+      }
+    }
+  }
+
+  Future<void> _showAddMenu(BuildContext anchor) async {
+    final String? action = await showAppMenu<String>(
+      context: anchor,
+      anchorContext: anchor,
+      entries: const <AppMenuEntry<String>>[
+        AppMenuEntry<String>(
+          value: 'add_words',
+          label: 'Add words',
+          icon: Icons.add_rounded,
+        ),
+        AppMenuEntry<String>(
+          value: 'add_phrases',
+          label: 'Add phrases',
+          icon: Icons.add_rounded,
+        ),
+      ],
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'add_words':
+        _openAddSearch(SearchSegment.words);
+      case 'add_phrases':
+        _openAddSearch(SearchSegment.idioms);
+    }
+  }
+
+  Future<void> _overflow(BuildContext anchor, Collection? collection, List<CollectionEntry> allEntries) async {
+    final bool own = collection?.isUsers ?? false;
+    final String? action = await showAppMenu<String>(
+      context: anchor,
+      anchorContext: anchor,
+      minWidth: 220,
+      entries: <AppMenuEntry<String>>[
+        // Segment 1: Mull these.
+        if (allEntries.isNotEmpty) ...<AppMenuEntry<String>>[
+          const AppMenuEntry<String>(
+            value: 'mull',
+            label: 'Mull these',
+            icon: Icons.play_arrow_rounded,
+          ),
+          const AppMenuEntry<String>.divider(),
+        ],
+
+        // Segment 2: Add words, Add phrases
+        const AppMenuEntry<String>(
+          value: 'add_words',
+          label: 'Add words',
+          icon: Icons.add_rounded,
+        ),
+        const AppMenuEntry<String>(
+          value: 'add_phrases',
+          label: 'Add phrases',
+          icon: Icons.add_rounded,
+        ),
+        if (own)
+          const AppMenuEntry<String>(
+            value: 'select',
+            label: 'Select words',
+            icon: Icons.checklist_rounded,
+          ),
+
+        // Segment 3: Sort: Name, sort: Frequency, Sort: Bookmark first
+        const AppMenuEntry<String>.divider(),
+        AppMenuEntry<String>(
+          value: 'sort_name',
+          label: 'Sort: Name',
+          icon: Icons.sort_by_alpha_rounded,
+          selected: _sortCriterion == SortCriterion.name,
+        ),
+        AppMenuEntry<String>(
+          value: 'sort_frequency',
+          label: 'Sort: Frequency',
+          icon: Icons.bar_chart_rounded,
+          selected: _sortCriterion == SortCriterion.frequency,
+        ),
+        AppMenuEntry<String>(
+          value: 'sort_bookmarked',
+          label: 'Sort: Bookmark first',
+          icon: Icons.bookmark_border_rounded,
+          selected: _sortCriterion == SortCriterion.bookmarked,
+        ),
+
+        // Segment 4: Order: ASCENDING, Order: DESCENDING
+        const AppMenuEntry<String>.divider(),
+        AppMenuEntry<String>(
+          value: 'order_asc',
+          label: 'Order: ASCENDING',
+          icon: Icons.arrow_upward_rounded,
+          selected: _sortAscending,
+        ),
+        AppMenuEntry<String>(
+          value: 'order_desc',
+          label: 'Order: DESCENDING',
+          icon: Icons.arrow_downward_rounded,
+          selected: !_sortAscending,
+        ),
+
+        // Segment 5: View mode: Cards, View mode: Table
+        const AppMenuEntry<String>.divider(),
+        AppMenuEntry<String>(
+          value: 'view_card',
+          label: 'View mode: Cards',
+          icon: Icons.view_agenda_outlined,
+          selected: _viewMode == CollectionViewMode.card,
+        ),
+        AppMenuEntry<String>(
+          value: 'view_table',
+          label: 'View mode: Table',
+          icon: Icons.table_rows_outlined,
+          selected: _viewMode == CollectionViewMode.table,
+        ),
+
+        // Segment 6: Delete in red just like in perch long press menu.
+        if (collection?.kind == 'user') ...<AppMenuEntry<String>>[
+          const AppMenuEntry<String>.divider(),
+          const AppMenuEntry<String>(
+            value: 'rename',
+            label: 'Rename',
+            icon: Icons.edit_outlined,
+          ),
+          const AppMenuEntry<String>(
+            value: 'delete',
+            label: 'Delete',
+            icon: Icons.delete_outline_rounded,
+            danger: true,
+          ),
+        ],
+      ],
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'mull':
+        _openCards();
+      case 'add_words':
+        _openAddSearch(SearchSegment.words);
+      case 'add_phrases':
+        _openAddSearch(SearchSegment.idioms);
+      case 'select':
+        setState(() => _selecting = true);
+      case 'sort_name':
+        setState(() => _sortCriterion = SortCriterion.name);
+        unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, 'name'));
+      case 'sort_frequency':
+        setState(() => _sortCriterion = SortCriterion.frequency);
+        unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, 'frequency'));
+      case 'sort_bookmarked':
+        setState(() => _sortCriterion = SortCriterion.bookmarked);
+        unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, 'bookmarked'));
+      case 'order_asc':
+        setState(() => _sortAscending = true);
+        unawaited(ref.read(settingsProvider.notifier).setSortAscending(_scopeKey, value: true));
+      case 'order_desc':
+        setState(() => _sortAscending = false);
+        unawaited(ref.read(settingsProvider.notifier).setSortAscending(_scopeKey, value: false));
+      case 'view_card':
+        setState(() => _viewMode = CollectionViewMode.card);
+        unawaited(ref.read(settingsProvider.notifier).setLens(_scopeKey, 'cards'));
+      case 'view_table':
+        setState(() => _viewMode = CollectionViewMode.table);
+        unawaited(ref.read(settingsProvider.notifier).setLens(_scopeKey, 'table'));
+      case 'rename':
+        await showCreateListSheet(context, renameSlug: widget.slug, initialName: collection!.title, initialColor: collection.color);
+      case 'delete':
+        final bool ok = await confirmDialog(context, title: 'Delete ${collection!.title}?', message: 'The words stay in the dictionary. Only the shelf is removed.', confirmLabel: 'Delete');
+        if (ok) {
+          await _user.deleteCollection(widget.slug);
+          if (mounted) context.pop();
+        }
+    }
+  }
+
+  void _handleItemTap(CollectionEntry entry) {
+    if (_selecting) {
+      setState(() {
+        if (_selected.contains(entry.key)) {
+          _selected.remove(entry.key);
+        } else {
+          _selected.add(entry.key);
+        }
+      });
+    } else if (entry.isWord) {
+      showWordSheet(context, wordKey: entry.key);
+    } else if (entry.phrase != null) {
+      showIdiomSheet(
+        context,
+        idiom: Idiom(
+          idiomKey: entry.phrase!.phraseKey,
+          phrase: entry.phrase!.phrase,
+          meaning: entry.phrase!.meaning,
+          example: entry.phrase!.example,
+          register: entry.phrase!.register,
+        ),
+      );
+    } else if (entry.idiom != null) {
+      showIdiomSheet(context, idiom: entry.idiom!);
+    }
+  }
+
+  void _handleItemLongPress(CollectionEntry entry, bool own) async {
+    if (ref.read(settingsProvider).haptics) unawaited(HapticFeedback.lightImpact());
+    if (own) {
+      setState(() {
+        _selecting = true;
+        _selected.add(entry.key);
+      });
+    } else {
+      final bool on = await _user.toggleBookmark(entry.key);
+      if (!on && mounted) {
+        AppSnackbar.undo(context, 'Removed bookmark', () => _user.addBookmark(entry.key));
+      }
+    }
   }
 
   @override
@@ -103,233 +401,335 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final Map<String, SeenWord> seen = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
 
     final Collection? collection = ref.watch(collectionBySlugProvider)[widget.slug];
-    // The user's own collections are live; "recently added" is their order.
     final bool own = collection?.isUsers ?? false;
-    final List<String> ownKeys = own ? ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[] : const <String>[];
     final String title = collection?.title ?? '';
 
-    if (collection?.kind == 'idiom') return _idioms(context, dict, collection!);
+    // Collect all keys in order
+    final List<String> allKeys = ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[];
+    final List<DictionaryWord> fetchedWords = dict.byKeys(allKeys);
+    final List<Phrase> fetchedPhrases = dict.phrasesByKeys(allKeys);
 
-    List<DictionaryWord> words = own ? dict.byKeys(ownKeys) : dict.collectionWords(widget.slug);
-    if (own) {
-      final Map<String, int> order = <String, int>{for (int i = 0; i < ownKeys.length; i++) ownKeys[i]: i};
-      words.sort((DictionaryWord a, DictionaryWord b) => order[a.wordKey]!.compareTo(order[b.wordKey]!));
-    }
-    words = switch (_sort) {
-      WordSort.az => words..sort((DictionaryWord a, DictionaryWord b) => a.headword.compareTo(b.headword)),
-      WordSort.frequency => words..sort((DictionaryWord a, DictionaryWord b) => a.freqRank.compareTo(b.freqRank)),
-      WordSort.recent => words,
-      WordSort.bookmarked => words
-        ..sort((DictionaryWord a, DictionaryWord b) {
-          final int ba = bookmarks.contains(a.wordKey) ? 0 : 1;
-          final int bb = bookmarks.contains(b.wordKey) ? 0 : 1;
-          return ba != bb ? ba.compareTo(bb) : a.headword.compareTo(b.headword);
-        }),
+    final Map<String, DictionaryWord> wordsByKey = <String, DictionaryWord>{
+      for (final DictionaryWord w in fetchedWords) w.wordKey: w,
     };
-    final int seenCount = words.where((DictionaryWord w) => seen.containsKey(w.wordKey)).length;
+    final Map<String, Phrase> phrasesByKey = <String, Phrase>{
+      for (final Phrase p in fetchedPhrases) p.phraseKey: p,
+    };
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (_selecting)
-              _SelectionHeader(
-                count: _selected.length,
-                onClose: () => setState(() {
-                  _selecting = false;
-                  _selected.clear();
-                }),
-                onBookmark: () async {
-                  for (final String k in _selected) {
-                    await _user.addBookmark(k);
-                  }
-                  setState(() {
-                    _selecting = false;
-                    _selected.clear();
-                  });
-                },
-                onDelete: own ? () => _deleteSelected(_selected.toList()) : null,
-              )
-            else
-              AppHeader(
-                title: title,
-                onBack: () => context.pop(),
-                actions: <Widget>[
-                  Builder(
-                    builder: (BuildContext anchor) => AppIconButton(
-                      icon: Icons.more_horiz_rounded,
-                      semanticLabel: 'More',
-                      onPressed: () => unawaited(_overflow(anchor, collection)),
-                    ),
-                  ),
-                ],
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
-              child: Row(
-                spacing: Space.md,
+    final List<CollectionEntry> rawEntries = <CollectionEntry>[];
+    for (final String k in allKeys) {
+      if (wordsByKey.containsKey(k)) {
+        rawEntries.add(CollectionEntry.word(wordsByKey[k]!));
+      } else if (phrasesByKey.containsKey(k)) {
+        rawEntries.add(CollectionEntry.phrase(phrasesByKey[k]!));
+      }
+    }
+
+    if (rawEntries.isEmpty && collection?.kind == 'idiom') {
+      for (final Idiom i in dict.collectionIdioms(widget.slug)) {
+        rawEntries.add(CollectionEntry.idiom(i));
+      }
+    }
+
+    // Sort entries
+    List<CollectionEntry> sortedEntries = List<CollectionEntry>.of(rawEntries);
+    switch (_sortCriterion) {
+      case SortCriterion.name:
+        sortedEntries.sort((CollectionEntry a, CollectionEntry b) => a.title.compareTo(b.title));
+      case SortCriterion.frequency:
+        sortedEntries.sort((CollectionEntry a, CollectionEntry b) => a.freqRank.compareTo(b.freqRank));
+      case SortCriterion.bookmarked:
+        sortedEntries.sort((CollectionEntry a, CollectionEntry b) {
+          final int ba = bookmarks.contains(a.key) ? 0 : 1;
+          final int bb = bookmarks.contains(b.key) ? 0 : 1;
+          return ba != bb ? ba.compareTo(bb) : a.title.compareTo(b.title);
+        });
+    }
+    if (!_sortAscending) {
+      sortedEntries = sortedEntries.reversed.toList();
+    }
+
+    // Real-time filter
+    final String q = _searchQuery.trim().toLowerCase();
+    final List<CollectionEntry> displayItems = q.isEmpty
+        ? sortedEntries
+        : sortedEntries.where((CollectionEntry e) {
+            return e.title.toLowerCase().contains(q) ||
+                e.definition.toLowerCase().contains(q);
+          }).toList();
+
+    final int seenCount = rawEntries.where((CollectionEntry e) => seen.containsKey(e.key)).length;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        body: SafeArea(
+          bottom: false,
+          child: Stack(
+            children: <Widget>[
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Expanded(child: AppButton(label: 'Mull these', fullWidth: true, onPressed: words.isEmpty ? null : _openCards)),
-                  PillChip(
-                    label: _hideDefs ? 'Definitions hidden' : 'Hide defs',
-                    selected: _hideDefs,
-                    onTap: () {
-                      setState(() {
-                        _hideDefs = !_hideDefs;
-                        _revealed = null;
-                      });
-                      unawaited(ref.read(settingsProvider.notifier).setHideDefs(_scopeKey, value: _hideDefs));
-                    },
-                  ),
-                ],
-              ),
-            ),
-            if (_hideDefs)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.sm),
-                child: Text('tap a row to reveal one', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
-              ),
-            Expanded(
-              child: words.isEmpty
-                  ? EmptyState(
-                      title: 'No words in here yet',
-                      message: 'Add a word from a search result, the table, or the Mull tab. Both lenses work as soon as there is something to look at.',
-                      actionLabel: 'Search for a word',
-                      onAction: () => context.go(Routes.search),
+                  if (_selecting)
+                    _SelectionHeader(
+                      count: _selected.length,
+                      onClose: () => setState(() {
+                        _selecting = false;
+                        _selected.clear();
+                      }),
+                      onBookmark: () async {
+                        for (final String k in _selected) {
+                          await _user.addBookmark(k);
+                        }
+                        setState(() {
+                          _selecting = false;
+                          _selected.clear();
+                        });
+                      },
+                      onDelete: own ? () => _deleteSelected(_selected.toList()) : null,
                     )
-                  : Stack(
-                      children: <Widget>[
-                        CustomScrollView(
-                          slivers: <Widget>[
-                            SliverPersistentHeader(pinned: true, delegate: _TableHeader(c)),
-                            SliverList.builder(
-                              itemCount: words.length,
-                              itemBuilder: (BuildContext context, int i) {
-                                final DictionaryWord w = words[i];
-                                return WordTableRow(
-                                  word: w,
-                                  example: dict.examples(w.wordKey).firstOrNull,
-                                  bookmarked: bookmarks.contains(w.wordKey),
-                                  hideDefs: _hideDefs,
-                                  revealed: _revealed == w.wordKey,
-                                  selecting: _selecting,
-                                  selected: _selected.contains(w.wordKey),
-                                  onTap: () {
-                                    if (_selecting) {
-                                      setState(() => _selected.contains(w.wordKey) ? _selected.remove(w.wordKey) : _selected.add(w.wordKey));
-                                    } else if (_hideDefs) {
-                                      setState(() => _revealed = _revealed == w.wordKey ? null : w.wordKey);
-                                    } else {
-                                      showWordSheet(context, wordKey: w.wordKey);
-                                    }
-                                  },
-                                  onLongPress: () async {
-                                    // Row long-press: one haptic tick, the bookmark dot fades in at the word.
-                                    if (ref.read(settingsProvider).haptics) unawaited(HapticFeedback.lightImpact());
-                                    if (own) {
-                                      setState(() {
-                                        _selecting = true;
-                                        _selected.add(w.wordKey);
-                                      });
-                                    } else {
-                                      final bool on = await _user.toggleBookmark(w.wordKey);
-                                      if (!on && context.mounted) {
-                                        AppSnackbar.undo(context, 'Removed bookmark', () => _user.addBookmark(w.wordKey));
-                                      }
-                                    }
-                                  },
-                                );
-                              },
-                            ),
-                            const SliverToBoxAdapter(child: SizedBox(height: Space.bottomSafe + 24)),
-                          ],
+                  else
+                    AppHeader(
+                      title: title,
+                      onBack: () => context.pop(),
+                      actions: <Widget>[
+                        Builder(
+                          builder: (BuildContext anchor) => AppIconButton(
+                            icon: Icons.add_rounded,
+                            semanticLabel: 'Add',
+                            onPressed: () => unawaited(_showAddMenu(anchor)),
+                          ),
                         ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: Space.bottomSafe - 48,
-                          child: IgnorePointer(
-                            child: Container(
-                              padding: const EdgeInsets.fromLTRB(Space.screen, 6, Space.screen, 6),
-                              color: c.surface,
-                              child: Row(
-                              children: <Widget>[
-                                Expanded(child: Text('${grouped(words.length)} words · ${grouped(seenCount)} seen', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted))),
-                                Text('Sort: ${_sort.label}', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
-                              ],
-                            ),
-                            ),
+                        Builder(
+                          builder: (BuildContext anchor) => AppIconButton(
+                            icon: Icons.more_horiz_rounded,
+                            semanticLabel: 'More',
+                            onPressed: () => unawaited(_overflow(anchor, collection, rawEntries)),
                           ),
                         ),
                       ],
                     ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Future<void> _overflow(BuildContext anchor, Collection? collection) async {
-    final bool own = collection?.isUsers ?? false;
-    final String? action = await showAppMenu<String>(
-      context: context,
-      anchorContext: anchor,
-      entries: <AppMenuEntry<String>>[
-        for (final WordSort s in WordSort.values)
-          if (own || s != WordSort.recent)
-            AppMenuEntry<String>(value: 'sort:${s.key}', label: 'Sort: ${s.label}', radio: true, selected: _sort == s),
-        if (own) ...<AppMenuEntry<String>>[
-          const AppMenuEntry<String>.divider(),
-          const AppMenuEntry<String>(value: 'select', label: 'Select words', icon: Icons.checklist_rounded),
-        ],
-        // System collections keep their names and cannot be deleted.
-        if (collection?.kind == 'user') ...<AppMenuEntry<String>>[
-          const AppMenuEntry<String>(value: 'rename', label: 'Rename', icon: Icons.edit_outlined),
-          const AppMenuEntry<String>(value: 'delete', label: 'Delete list', icon: Icons.delete_outline_rounded, danger: true),
-        ],
-      ],
-    );
-    if (action == null || !mounted) return;
-    if (action.startsWith('sort:')) {
-      setState(() => _sort = WordSort.fromKey(action.substring(5)));
-      unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, _sort.key));
-      return;
-    }
-    switch (action) {
-      case 'select':
-        setState(() => _selecting = true);
-      case 'rename':
-        await showCreateListSheet(context, renameSlug: widget.slug, initialName: collection!.title, initialColor: collection.color);
-      case 'delete':
-        final bool ok = await confirmDialog(context, title: 'Delete ${collection!.title}?', message: 'The words stay in the dictionary. Only the list is removed.', confirmLabel: 'Delete');
-        if (ok) {
-          await _user.deleteCollection(widget.slug);
-          if (mounted) context.pop();
-        }
-    }
-  }
-
-  Widget _idioms(BuildContext context, DictionaryDb dict, Collection collection) {
-    final List<Idiom> idioms = dict.collectionIdioms(collection.slug);
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            AppHeader(title: collection.title, onBack: () => context.pop()),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                itemCount: idioms.length,
-                separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
-                itemBuilder: (BuildContext context, int i) => IdiomCard(idiom: idioms[i], query: '', onTap: () => showIdiomSheet(context, idiom: idioms[i])),
+                  Expanded(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (ScrollNotification n) {
+                        _onScroll(n);
+                        return false;
+                      },
+                      child: CustomScrollView(
+                        slivers: <Widget>[
+                          // Top row: Search bar + info row
+                          SliverToBoxAdapter(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                                  child: Container(
+                                    height: 44,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    decoration: BoxDecoration(
+                                      color: c.surfaceContainer,
+                                      borderRadius: Radii.fullR,
+                                      border: Border.all(color: c.outline),
+                                    ),
+                                    child: Row(
+                                      children: <Widget>[
+                                        Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: TextField(
+                                            controller: _searchController,
+                                            focusNode: _searchFocus,
+                                            autofocus: false,
+                                            onChanged: (String val) => setState(() => _searchQuery = val),
+                                            style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              border: InputBorder.none,
+                                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                              hintText: 'Search shelf',
+                                              hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
+                                            ),
+                                          ),
+                                        ),
+                                        if (_searchQuery.isNotEmpty)
+                                          AppIconButton(
+                                            icon: Icons.close_rounded,
+                                            size: 28,
+                                            glyphSize: 16,
+                                            filled: false,
+                                            semanticLabel: 'Clear',
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              setState(() => _searchQuery = '');
+                                            },
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(Space.screen, Space.sm, Space.screen, Space.xs),
+                                  child: Wrap(
+                                    alignment: WrapAlignment.spaceBetween,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: Space.sm,
+                                    runSpacing: Space.xs,
+                                    children: <Widget>[
+                                      Text(
+                                        '${displayItems.length} items · $seenCount seen',
+                                        style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+                                      ),
+                                      Text(
+                                        'Sort: ${_sortCriterion.label} (${_sortAscending ? 'ASC' : 'DESC'})',
+                                        style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (displayItems.isEmpty)
+                            SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: rawEntries.isEmpty
+                                  ? EmptyState(
+                                      title: 'No items on this shelf yet',
+                                      message: 'Add a word or phrase from search or using the + button above.',
+                                      actionLabel: 'Search for a word',
+                                      onAction: () => _openAddSearch(SearchSegment.words),
+                                    )
+                                  : Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(Space.screen),
+                                        child: Text(
+                                          'No results for "$_searchQuery"',
+                                          style: MullType.body.copyWith(color: c.onSurfaceVariant),
+                                        ),
+                                      ),
+                                    ),
+                            )
+                          else if (_viewMode == CollectionViewMode.card)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(
+                                Space.screen,
+                                Space.sm,
+                                Space.screen,
+                                Space.bottomSafe + 48,
+                              ),
+                              sliver: SliverList.separated(
+                                itemCount: displayItems.length,
+                                separatorBuilder: (BuildContext _, int _) =>
+                                    const SizedBox(height: Space.row),
+                                itemBuilder: (BuildContext context, int i) {
+                                  final CollectionEntry item = displayItems[i];
+                                  return SearchResultCard(
+                                    result: item.toSearchResult(),
+                                    query: _searchQuery,
+                                    selecting: _selecting,
+                                    selected: _selected.contains(item.key),
+                                    onTap: () => _handleItemTap(item),
+                                    onLongPress: () => _handleItemLongPress(item, own),
+                                  );
+                                },
+                              ),
+                            )
+                          else ...<Widget>[
+                            SliverPersistentHeader(
+                              pinned: true,
+                              delegate: _TableHeader(c),
+                            ),
+                            SliverList.builder(
+                              itemCount: displayItems.length,
+                              itemBuilder: (BuildContext context, int i) {
+                                final CollectionEntry item = displayItems[i];
+                                final String? ex = item.example ??
+                                    (item.isWord ? dict.examples(item.key).firstOrNull : null);
+                                return WordTableRow(
+                                  title: item.title,
+                                  definition: item.definition,
+                                  example: ex,
+                                  bookmarked: bookmarks.contains(item.key),
+                                  selecting: _selecting,
+                                  selected: _selected.contains(item.key),
+                                  onTap: () => _handleItemTap(item),
+                                  onLongPress: () => _handleItemLongPress(item, own),
+                                );
+                              },
+                            ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: Space.bottomSafe + 48),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+              if (!_selecting)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    ignoring: !_buttonsVisible,
+                    child: AnimatedSlide(
+                      duration: Motion.navHide,
+                      curve: Motion.curveOf(context, Motion.standard),
+                      offset: _buttonsVisible ? Offset.zero : const Offset(0, 1.2),
+                      child: AnimatedOpacity(
+                        duration: Motion.fast,
+                        curve: Motion.curveOf(context, Motion.standard),
+                        opacity: _buttonsVisible ? 1.0 : 0.0,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: <Color>[
+                                c.surface.withValues(alpha: 0),
+                                c.surface.withValues(alpha: 0.85),
+                                c.surface,
+                              ],
+                              stops: const <double>[0, 0.4, 1],
+                            ),
+                          ),
+                          child: SafeArea(
+                            top: false,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                Space.screen,
+                                Space.md,
+                                Space.screen,
+                                Space.md,
+                              ),
+                              child: Center(
+                                child: AppButton(
+                                  label: 'Mull',
+                                  icon: Icons.play_arrow_rounded,
+                                  type: AppButtonType.primary,
+                                  fullWidth: false,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: Space.xl,
+                                    vertical: Space.xs,
+                                  ),
+                                  onPressed: rawEntries.isEmpty ? null : _openCards,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -396,18 +796,15 @@ class _TableHeader extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(_TableHeader old) => old.c != c;
 }
 
-/// Three columns in one 48dp-minimum row: word (82dp, `titleMedium`),
+/// Three columns in one 48dp-minimum row: word/phrase title (82dp, `titleMedium`),
 /// definition (flex 1.1, `tableCell`), example (flex 1, italic). Bookmarked:
-/// a 5dp `primary` dot after the word. Definitions-hidden: a 9dp
-/// `surfaceContainerHigh` bar at 64 to 94% width by definition length; a
-/// revealed row shows its definition in `accent` on `surfaceContainer`.
+/// a 5dp `primary` dot after the word.
 class WordTableRow extends StatelessWidget {
   const WordTableRow({
-    required this.word,
+    required this.title,
+    required this.definition,
     required this.example,
     required this.bookmarked,
-    required this.hideDefs,
-    required this.revealed,
     required this.onTap,
     required this.onLongPress,
     this.selecting = false,
@@ -415,11 +812,10 @@ class WordTableRow extends StatelessWidget {
     super.key,
   });
 
-  final DictionaryWord word;
+  final String title;
+  final String definition;
   final String? example;
   final bool bookmarked;
-  final bool hideDefs;
-  final bool revealed;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final bool selecting;
@@ -428,8 +824,6 @@ class WordTableRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final bool hidden = hideDefs && !revealed;
-    final double barFraction = 0.64 + 0.30 * (word.definitionShort.length.clamp(20, 90) - 20) / 70;
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -437,7 +831,7 @@ class WordTableRow extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 9),
         decoration: BoxDecoration(
-          color: revealed || selected ? c.surfaceContainer : null,
+          color: selected ? c.surfaceContainer : null,
           border: Border(bottom: BorderSide(color: c.divider)),
         ),
         child: Row(
@@ -461,7 +855,7 @@ class WordTableRow extends StatelessWidget {
               child: Text.rich(
                 TextSpan(
                   children: <InlineSpan>[
-                    TextSpan(text: word.headword),
+                    TextSpan(text: title),
                     if (bookmarked)
                       WidgetSpan(
                         alignment: PlaceholderAlignment.middle,
@@ -482,18 +876,12 @@ class WordTableRow extends StatelessWidget {
             const SizedBox(width: Space.sm),
             Expanded(
               flex: 11,
-              child: hidden
-                  ? FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: barFraction,
-                      child: Container(height: 9, decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR)),
-                    )
-                  : Text(
-                      word.definitionShort,
-                      style: MullType.tableCell.copyWith(color: revealed ? c.accent : c.onSurface),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              child: Text(
+                definition,
+                style: MullType.tableCell.copyWith(color: c.onSurface),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const SizedBox(width: Space.sm),
             Expanded(

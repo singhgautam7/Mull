@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
-import '../../core/database/user_repository.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -18,13 +17,15 @@ import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_menu.dart';
+import '../../shared/widgets/app_tooltip.dart';
 import '../../shared/widgets/dashed_border.dart';
 import '../../shared/widgets/progress.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/two_column_grid.dart';
 import '../collections/collection_cards.dart';
-import '../dictionary/word_sheet.dart';
 import '../collections/create_list_sheet.dart';
+import '../dictionary/add_to_list_sheet.dart';
+import '../dictionary/word_sheet.dart';
 
 /// HANDOFF 3.1. Greeting, word of the day, Continue, Recently looked up,
 /// Collections (a shortlist: last opened, in progress, then built-ins), Your
@@ -88,7 +89,7 @@ class HomeScreen extends ConsumerWidget {
                           context: context,
                           anchorContext: anchor,
                           entries: const <AppMenuEntry<String>>[
-                            AppMenuEntry<String>(value: 'collections', label: 'All collections', icon: Icons.grid_view_rounded),
+                            AppMenuEntry<String>(value: 'collections', label: 'All shelves', icon: Icons.grid_view_rounded),
                             AppMenuEntry<String>(value: 'stats', label: 'Stats', icon: Icons.bar_chart_rounded),
                           ],
                         );
@@ -113,7 +114,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ],
                     const SizedBox(height: Space.section),
-                    const SectionHeader(label: 'Recently looked up'),
+                    const SectionHeader(label: 'Recently searched'),
                     if (recent.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
@@ -144,14 +145,14 @@ class HomeScreen extends ConsumerWidget {
                         child: Row(
                           spacing: Space.sm,
                           children: <Widget>[
-                            for (final String key in recent)
+                            for (final String key in recent.take(10))
                               if (dict.byKey(key) case final DictionaryWord w) _RecentChip(word: w),
                           ],
                         ),
                       ),
                     const SizedBox(height: Space.section),
                     SectionHeader(
-                      label: 'Collections',
+                      label: 'Shelves',
                       trailing: InkWell(
                         onTap: () => context.push(Routes.collections),
                         child: Text('See all ${collections.length}', style: MullType.monoLabel.copyWith(color: c.accent)),
@@ -174,7 +175,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: Space.section),
                     SectionHeader(
-                      label: 'Your lists',
+                      label: 'Your shelves',
                       trailing: InkWell(
                         onTap: () => context.push(Routes.collections),
                         child: Text('See all', style: MullType.monoLabel.copyWith(color: c.accent)),
@@ -317,9 +318,9 @@ class _RecentChip extends ConsumerWidget {
             spacing: Space.sm,
             children: <Widget>[
               // Bounded, or the one-line definition would never ellipsise
-              // inside a horizontal scroll.
+              // inside a horizontal scroll. Reduced by 15% (220 * 0.85 = 187).
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
+                constraints: const BoxConstraints(maxWidth: 187),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -329,17 +330,24 @@ class _RecentChip extends ConsumerWidget {
                   ],
                 ),
               ),
-              Semantics(
-                button: true,
-                label: 'Add ${word.headword} to From my reading',
-                child: InkWell(
-                  onTap: () => ref.read(userRepositoryProvider).addToCollection(UserRepository.readingSlug, word.wordKey),
-                  customBorder: const CircleBorder(),
-                  child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(color: c.surfaceContainerHigh, shape: BoxShape.circle),
-                    child: Icon(Icons.add_rounded, size: 16, color: c.accent),
+              AppTooltip(
+                message: 'Add to shelf',
+                child: Semantics(
+                  button: true,
+                  label: 'Add ${word.headword} to shelf',
+                  child: InkWell(
+                    onTap: () => showAddToListSheet(
+                      context,
+                      wordKey: word.wordKey,
+                      headword: word.headword,
+                    ),
+                    customBorder: const CircleBorder(),
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(color: c.surfaceContainerHigh, shape: BoxShape.circle),
+                      child: Icon(Icons.add_rounded, size: 16, color: c.accent),
+                    ),
                   ),
                 ),
               ),
@@ -372,7 +380,7 @@ class _NewListCard extends StatelessWidget {
             children: <Widget>[
               Icon(Icons.add_rounded, size: 20, color: c.accent),
               const SizedBox(height: 4),
-              Text('New list', style: MullType.titleMedium.copyWith(color: c.accent)),
+              Text('New shelf', style: MullType.titleMedium.copyWith(color: c.accent)),
               Text('Your own words', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
             ],
           ),

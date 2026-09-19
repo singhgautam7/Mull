@@ -32,29 +32,31 @@ class UserRepository {
   }
 
   /// The row id behind a slug. A missing system row is created on demand so
-  /// a bookmark can never land nowhere.
+  /// The row id behind a slug. A missing system row is created on demand so
+  /// a bookmark can never land nowhere. Any collection (even built-in) gets an
+  /// on-demand row so words can be added to it.
   Future<int?> _idOf(String slug) async {
     final UserCollection? row = await (_db.select(_db.userCollections)
           ..where((UserCollections c) => c.slug.equals(slug)))
         .getSingleOrNull();
     if (row != null) return row.id;
     final String? name = _systemNames[slug];
-    if (name == null) return null;
     return _db
         .into(_db.userCollections)
         .insert(
           UserCollectionsCompanion.insert(
             slug: slug,
-            kind: 'system',
-            name: name,
+            kind: name != null ? 'system' : 'builtin',
+            name: name ?? slug,
             createdAt: DateTime.now(),
           ),
         );
   }
 
   /// System rows first (Bookmarks, then From my reading), then user
-  /// collections in creation order.
+  /// collections in creation order. Builtin extension rows are excluded.
   Stream<List<UserCollection>> watchCollections() => (_db.select(_db.userCollections)
+        ..where((UserCollections c) => c.kind.isNotIn(const <String>['builtin']))
         ..orderBy(<OrderingTerm Function(UserCollections)>[
           (UserCollections c) => OrderingTerm.desc(c.kind.equals('system')),
           (UserCollections c) => OrderingTerm.asc(c.slug.equals(readingSlug)),

@@ -10,13 +10,13 @@ import '../../core/utils/format.dart';
 import '../../shared/widgets/progress.dart';
 
 /// The progress states, HANDOFF 12. Not started: empty track, "not
-/// started". In progress: "{n} of {total} seen" in `accent`. Complete: the
-/// card fills with `primaryContainer`, "all {total} seen", still tappable.
+/// started". In progress: "{n} seen" in `accent`. Complete: the
+/// card fills with `primaryContainer`, "all seen", still tappable.
 String progressLabel(Progress p) => !p.started
     ? 'not started'
     : p.complete
-        ? 'all ${grouped(p.total)} seen'
-        : '${grouped(p.seen)} of ${grouped(p.total)} seen';
+        ? 'all seen'
+        : '${grouped(p.seen)} seen';
 
 /// The swatch of one of the user's own collections: Bookmarks takes
 /// `primary`, everything else its stored hue or the accent.
@@ -105,22 +105,23 @@ class TopicCard extends StatelessWidget {
                 Text(collection.description, style: MullType.bodySmall.copyWith(fontSize: 11.5, color: muted), maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
               const SizedBox(height: Space.sm),
-              // Count left, progress right; at a large font scale the
-              // progress label drops to its own line rather than clipping.
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                spacing: Space.sm,
-                children: <Widget>[
-                  Text(
-                    compact ? plural(collection.wordCount, collection.kind == 'idiom' ? 'phrase' : 'word') : grouped(collection.wordCount),
-                    style: MullType.monoLabel.copyWith(color: muted),
-                  ),
-                  if (!compact)
-                    Text(
-                      progressLabel(progress),
-                      style: MullType.monoLabel.copyWith(color: progress.started && !done ? c.accent : muted),
+              // Count and progress: "187 · 3 seen" with accent on progress.
+              Text.rich(
+                TextSpan(
+                  style: MullType.monoLabel.copyWith(color: muted),
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: compact
+                          ? plural(collection.wordCount, collection.kind == 'idiom' ? 'phrase' : 'word')
+                          : '${grouped(collection.wordCount)} · ',
                     ),
-                ],
+                    if (!compact)
+                      TextSpan(
+                        text: progressLabel(progress),
+                        style: TextStyle(color: progress.started && !done ? c.accent : muted),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 6),
               ProgressTrack(fraction: progress.fraction, onContainer: done),

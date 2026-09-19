@@ -253,7 +253,7 @@ class _WordSheet extends ConsumerWidget {
             AppIconButton(
               icon: Icons.playlist_add_rounded,
               size: 48,
-              semanticLabel: 'Add to a list',
+              semanticLabel: 'Add to a shelf',
               onPressed: () => showAddToListSheet(
                 context,
                 wordKey: wordKey,
