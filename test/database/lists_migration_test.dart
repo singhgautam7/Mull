@@ -55,7 +55,7 @@ void main() {
     final Database after = sqlite3.open(file.path);
     expect(after.select('SELECT count(*) AS n FROM bookmarks').first['n'], 2);
     expect(after.select('SELECT count(*) AS n FROM list_words').first['n'], 3);
-    expect(after.select('PRAGMA user_version').first.values.first, 3);
+    expect(after.select('PRAGMA user_version').first.values.first, 4);
     after.close();
   });
 }

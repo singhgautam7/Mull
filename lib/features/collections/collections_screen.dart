@@ -15,6 +15,7 @@ import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/how_to_use_sheet.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/states.dart';
 import '../../shared/widgets/two_column_grid.dart';
 import 'collection_cards.dart';
 import 'create_list_sheet.dart';
@@ -51,6 +52,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     final MullColors c = context.colors;
     final List<Collection> all = ref.watch(collectionsProvider);
     final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
+    // The dictionary's shelves are here at once; the user's own and the seen
+    // progress arrive a frame later from the user database. Until then the
+    // sections hold their shape with placeholders rather than jumping.
+    final bool settling = ref.watch(userCollectionsProvider).isLoading ||
+        ref.watch(seenMapProvider).isLoading;
     final ({Set<String> withWords, Set<String> withPhrases}) kinds = ref.watch(shelfKindsProvider);
     final String q = _search.text.trim().toLowerCase();
 
@@ -92,10 +98,36 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                 collapsed: collapsed,
                 onBack: Navigator.of(context).canPop() ? () => Navigator.of(context).pop() : null,
                 actions: <Widget>[
-                  AppIconButton(
-                    icon: Icons.add_rounded,
-                    semanticLabel: 'New shelf',
-                    onPressed: () => showCreateListSheet(context),
+                  Builder(
+                    builder: (BuildContext anchor) => AppIconButton(
+                      icon: Icons.add_rounded,
+                      semanticLabel: 'Add shelf',
+                      onPressed: () async {
+                        final String? action = await showAppMenu<String>(
+                          context: context,
+                          anchorContext: anchor,
+                          minWidth: 220,
+                          entries: <AppMenuEntry<String>>[
+                            const AppMenuEntry<String>(
+                              value: 'new',
+                              label: 'New shelf',
+                              icon: Icons.add_rounded,
+                            ),
+                            const AppMenuEntry<String>(
+                              value: 'import',
+                              label: 'Import words',
+                              subtitle: 'paste a table or pick a CSV',
+                              icon: Icons.file_upload_outlined,
+                            ),
+                          ],
+                        );
+                        if (action == 'new' && context.mounted) {
+                          await showCreateListSheet(context);
+                        } else if (action == 'import' && context.mounted) {
+                          await context.push(Routes.importWords);
+                        }
+                      },
+                    ),
                   ),
                   Builder(
                     builder: (BuildContext anchor) => AppIconButton(
@@ -213,7 +245,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             children: <Widget>[
                               for (int i = 0; i < bands.length; i++) ...<Widget>[
                                 if (i > 0) Divider(color: c.divider, height: 1),
-                                BandRow(collection: bands[i], progress: of(bands[i]), onTap: () => context.push(Routes.collection(bands[i].slug))),
+                                if (settling)
+                                  const SkeletonRow()
+                                else
+                                  BandRow(collection: bands[i], progress: of(bands[i]), onTap: () => context.push(Routes.collection(bands[i].slug))),
                               ],
                             ],
                           ),
@@ -228,17 +263,38 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                         child: TwoColumnGrid(
                           children: <Widget>[
                             for (final Collection t in topics)
-                              TopicCard(collection: t, progress: of(t), onTap: () => context.push(Routes.collection(t.slug))),
+                              if (settling)
+                                const SkeletonCard()
+                              else
+                                TopicCard(collection: t, progress: of(t), onTap: () => context.push(Routes.collection(t.slug))),
                           ],
                         ),
                       ),
                       const SizedBox(height: Space.section),
                     ],
-                    if (yours.isNotEmpty) ...<Widget>[
+                    if (settling && _filter == _Filter.all && q.isEmpty) ...<Widget>[
+                      // Bookmarks and From my reading always exist, so two
+                      // rows is the least the section will be.
+                      const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                        child: Container(
+                          decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            children: <Widget>[
+                              const SkeletonRow(),
+                              Divider(color: c.divider, height: 1),
+                              const SkeletonRow(),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else if (yours.isNotEmpty) ...<Widget>[
                       const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
                       YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
                     ],
-                    if (bands.isEmpty && topics.isEmpty && yours.isEmpty)
+                    if (!settling && bands.isEmpty && topics.isEmpty && yours.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(Space.xl),
                         child: Center(

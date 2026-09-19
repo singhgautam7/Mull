@@ -10,6 +10,7 @@ import 'package:mull/core/database/dictionary_db.dart';
 import 'package:mull/core/database/dictionary_installer.dart';
 import 'package:mull/core/database/user_db.dart';
 import 'package:mull/core/providers.dart';
+import 'package:mull/core/theme/tokens.dart';
 import 'package:mull/features/settings/install_screen.dart';
 import 'package:mull/features/settings/settings_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -85,6 +86,10 @@ void main() {
         await tester.pump();
       }
       expect(find.text('01 / 03'), findsOneWidget);
+      // The install state cross-fades out under the first-run screen.
+      for (int i = 0; i < 10 && find.byType(InstallScreen).evaluate().isNotEmpty; i++) {
+        await tester.pump(Motion.sheet);
+      }
       expect(find.byType(InstallScreen), findsNothing);
 
       // Tear the tree down here, under real timers, so the user database's

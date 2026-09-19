@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
-
 import '../../core/database/dictionary_db.dart';
+import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
@@ -19,8 +18,10 @@ import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/chips.dart';
+import '../linger/share_word_sheet.dart';
 import '../settings/settings_controller.dart';
 import 'add_to_list_sheet.dart';
+import 'arrival_sheet.dart';
 import 'note_sheet.dart';
 
 /// HANDOFF 3.5, the word detail sheet. Opened from a search row, a table
@@ -30,22 +31,35 @@ Future<void> showWordSheet(
   BuildContext context, {
   required String wordKey,
   bool fromSearch = false,
+  bool fromOutside = false,
+  String? sourceHint,
 }) {
   return showAppBottomSheet<void>(
     context: context,
     expand: true,
     showClose: false,
     scrollable: false,
-    builder: (BuildContext ctx) =>
-        _WordSheet(wordKey: wordKey, fromSearch: fromSearch),
+    builder: (BuildContext ctx) => _WordSheet(
+      wordKey: wordKey,
+      fromSearch: fromSearch,
+      fromOutside: fromOutside,
+      sourceHint: sourceHint,
+    ),
   );
 }
 
 class _WordSheet extends ConsumerWidget {
-  const _WordSheet({required this.wordKey, required this.fromSearch});
+  const _WordSheet({
+    required this.wordKey,
+    required this.fromSearch,
+    this.fromOutside = false,
+    this.sourceHint,
+  });
 
   final String wordKey;
   final bool fromSearch;
+  final bool fromOutside;
+  final String? sourceHint;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -69,6 +83,8 @@ class _WordSheet extends ConsumerWidget {
         ref.watch(bookmarksProvider).value?.contains(wordKey) ?? false;
     final UserRepository user = ref.read(userRepositoryProvider);
     final String? note = ref.watch(_noteProvider(wordKey)).value;
+    final List<WordContext> contexts =
+        ref.watch(_contextsProvider(wordKey)).value ?? const <WordContext>[];
 
     // Senses grouped by part of speech, in dictionary order.
     final Map<String, List<DictionaryWord>> byPos =
@@ -94,6 +110,10 @@ class _WordSheet extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
+                if (fromOutside) ...<Widget>[
+                  ArrivalTopRow(sourceHint: sourceHint),
+                  const SizedBox(height: Space.lg),
+                ],
                 if (note != null) ...<Widget>[
                   _NoteCard(
                     note: note,
@@ -102,6 +122,14 @@ class _WordSheet extends ConsumerWidget {
                       wordKey: wordKey,
                       headword: word.headword,
                     ),
+                  ),
+                  const SizedBox(height: Space.lg),
+                ],
+                if (contexts.isNotEmpty) ...<Widget>[
+                  _ContextCard(
+                    contexts: contexts,
+                    headword: word.headword,
+                    onDelete: (int id) => unawaited(user.deleteContext(id)),
                   ),
                   const SizedBox(height: Space.lg),
                 ],
@@ -222,6 +250,52 @@ class _WordSheet extends ConsumerWidget {
     bool bookmarked,
     UserRepository user,
   ) {
+    if (fromOutside) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          AppButton(
+            label: 'Put it on a shelf',
+            fullWidth: true,
+            onPressed: () => showAddToListSheet(
+              context,
+              wordKey: wordKey,
+              headword: word.headword,
+              fromSearch: fromSearch,
+            ),
+          ),
+          const SizedBox(height: Space.sm),
+          Row(
+            spacing: Space.md,
+            children: <Widget>[
+              Expanded(
+                child: AppButton(
+                  label: 'Full entry',
+                  type: AppButtonType.secondary,
+                  fullWidth: true,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    showWordSheet(context, wordKey: wordKey, fromOutside: false);
+                  },
+                ),
+              ),
+              Expanded(
+                child: AppButton(
+                  label: 'Add a note',
+                  type: AppButtonType.secondary,
+                  fullWidth: true,
+                  onPressed: () => showNoteSheet(
+                    context,
+                    wordKey: wordKey,
+                    headword: word.headword,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -265,10 +339,10 @@ class _WordSheet extends ConsumerWidget {
               icon: Icons.ios_share_rounded,
               size: 48,
               semanticLabel: 'Share',
-              onPressed: () => unawaited(
-                SharePlus.instance.share(
-                  ShareParams(text: '${word.headword}: ${word.definitionFull}'),
-                ),
+              onPressed: () => showShareWordSheet(
+                context,
+                word: word,
+                example: dict.examples(word.wordKey).firstOrNull,
               ),
             ),
           ],
@@ -282,6 +356,186 @@ final StreamProvider<String?> Function(String) _noteProvider =
     StreamProvider.family<String?, String>(
       (Ref ref, String key) => ref.watch(userRepositoryProvider).watchNote(key),
     );
+
+final StreamProvider<List<WordContext>> Function(String) _contextsProvider =
+    StreamProvider.family<List<WordContext>, String>(
+      (Ref ref, String key) =>
+          ref.watch(userRepositoryProvider).watchContexts(key),
+    );
+
+class _ContextCard extends StatefulWidget {
+  const _ContextCard({
+    required this.contexts,
+    required this.headword,
+    required this.onDelete,
+  });
+
+  final List<WordContext> contexts;
+  final String headword;
+  final void Function(int id) onDelete;
+
+  @override
+  State<_ContextCard> createState() => _ContextCardState();
+}
+
+class _ContextCardState extends State<_ContextCard> {
+  bool _editing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.contexts.isEmpty) return const SizedBox.shrink();
+    final MullColors c = context.colors;
+    final bool multi = widget.contexts.length > 1;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            Text(
+              multi
+                  ? 'YOU MET THIS IN · ${widget.contexts.length} PLACES'
+                  : 'YOU MET THIS IN',
+              style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+            ),
+            if (multi)
+              InkWell(
+                onTap: () => setState(() => _editing = !_editing),
+                child: Text(
+                  _editing ? 'Done' : 'Edit',
+                  style: MullType.monoLabel.copyWith(
+                    color: c.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else
+              Text(
+                widget.contexts.first.capturedAt
+                    .toLocal()
+                    .toIso8601String()
+                    .split('T')
+                    .first,
+                style: MullType.monoTabular.copyWith(
+                  fontSize: 10,
+                  color: c.onSurfaceMuted,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: Space.sm),
+        for (final WordContext ctx in widget.contexts) ...<Widget>[
+          Dismissible(
+            key: ValueKey<int>(ctx.id),
+            direction: DismissDirection.endToStart,
+            onDismissed: (_) => widget.onDelete(ctx.id),
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: Space.lg),
+              decoration: BoxDecoration(
+                color: c.dangerContainer,
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(14),
+                  bottomRight: Radius.circular(14),
+                ),
+              ),
+              child: Icon(
+                Icons.delete_outline_rounded,
+                color: c.onDangerContainer,
+              ),
+            ),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(Space.md),
+              decoration: BoxDecoration(
+                color: c.surfaceContainerHigh,
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(14),
+                  bottomRight: Radius.circular(14),
+                ),
+                border: Border(left: BorderSide(color: c.primary, width: 2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _highlightText(ctx.contextText, widget.headword, c),
+                  if (multi || ctx.sourceHint != null) ...<Widget>[
+                    const SizedBox(height: Space.xs),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        Text(
+                          _contextMeta(ctx),
+                          style: MullType.monoLabel.copyWith(
+                            fontSize: 10,
+                            color: c.onSurfaceMuted,
+                          ),
+                        ),
+                        if (_editing)
+                          InkWell(
+                            onTap: () => widget.onDelete(ctx.id),
+                            child: Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: c.danger,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: Space.sm),
+        ],
+      ],
+    );
+  }
+
+  String _contextMeta(WordContext ctx) {
+    final String date =
+        ctx.capturedAt.toLocal().toIso8601String().split('T').first;
+    if (ctx.sourceHint != null && ctx.sourceHint!.isNotEmpty) {
+      return '$date · ${formatAppName(ctx.sourceHint)}'.toUpperCase();
+    }
+    return date;
+  }
+
+  Widget _highlightText(String text, String headword, MullColors c) {
+    final TextStyle base = MullType.body.copyWith(
+      fontSize: 14,
+      height: 1.6,
+      fontStyle: FontStyle.italic,
+      color: c.onSurfaceVariant,
+    );
+    final String stem = headword.length > 4
+        ? headword.substring(0, headword.length - 1)
+        : headword;
+    final RegExp re = RegExp(
+      '\\b(${RegExp.escape(headword)}|${RegExp.escape(stem)})[a-z]*',
+      caseSensitive: false,
+    );
+    final List<InlineSpan> spans = <InlineSpan>[];
+    int last = 0;
+    for (final RegExpMatch m in re.allMatches(text)) {
+      spans.add(TextSpan(text: text.substring(last, m.start)));
+      spans.add(
+        TextSpan(
+          text: m.group(0),
+          style: base.copyWith(
+            color: c.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+      last = m.end;
+    }
+    spans.add(TextSpan(text: text.substring(last)));
+    return Text.rich(TextSpan(children: spans), style: base);
+  }
+}
 
 class _NoteCard extends StatelessWidget {
   const _NoteCard({required this.note, required this.onTap});

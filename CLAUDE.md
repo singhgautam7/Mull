@@ -7,7 +7,9 @@ call, ever.
 
 **Stack:** Flutter (stable) · Riverpod · GoRouter · Drift (user data) · sqlite3 (read-only
 dictionary, FTS5) · shared_preferences · dynamic_color · share_plus (export and
-share, hands text to the OS share sheet) · flutter_animate (unused so far).
+share, hands text to the OS share sheet) · file_picker (import: JSON and CSV through the
+storage access framework) · csv (shelf CSV and pasted tables) · pdf (the printed shelf
+sheet) · flutter_animate (unused so far).
 Package `com.grs.dictionary`, Android only, minSdk 24.
 
 **UI source of truth:** `specs/design/HANDOFF.md` (gitignored, on disk). Read it before
@@ -144,6 +146,10 @@ implementation:
 | The Mull tab ground | `LingerBackground` |
 | Settings rows | `SettingsGroup`, `SettingsRow`, `SettingsSwitch`, `SettingsScaffold` |
 | Word detail, idiom detail, note, add to list, create list, mix | `showWordSheet`, `showIdiomSheet`, `showNoteSheet`, `showAddToListSheet`, `showCreateListSheet`, `showMixSheet` |
+| Pill search field | `SearchField` |
+| One of a few choices as cards (CSV/PDF, Merge/Replace) | `SelectableCard` |
+| Search result as a row or card, with an optional trailing control | `SearchResultRow`, `SearchResultCard` |
+| The `Back to {app} · IN MULL` row on a sheet opened from outside | `ArrivalTopRow` |
 
 ## Layout
 
@@ -151,18 +157,24 @@ implementation:
 lib/main.dart            bootstrap: prefs, installer, user DB, ProviderScope
 lib/app.dart             MaterialApp, theme resolution, install gate
 lib/core/theme/          tokens · oklch · palette (MullColors, ThemeFamily) · typography · app_theme
-lib/core/database/       dictionary_db (read-only) · dictionary_installer · user_db (Drift) ·
-                         user_repository · mix_repository
+lib/core/database/       dictionary_db (read-only, search, import matching, quiz candidates) ·
+                         dictionary_installer · user_db (Drift) · user_repository ·
+                         mix_repository · data_transfer_repository (JSON export and import)
 lib/core/router/         GoRouter
-lib/core/utils/          wallpaper_seed
+lib/core/utils/          wallpaper_seed · platform_surfaces (widget schedule, arrivals from
+                         PROCESS_TEXT, SEND and a widget tap, sentence context)
 lib/core/providers.dart  the provider graph
 lib/app/                 nav_bar (the pill) · nav_shell · transitions
 lib/features/            home · linger (the Mull tab: screen, word card, mix sheet, rules,
-                         queue builder, saved mixes) · collections (browse, lens screen, cards,
-                         create-list sheet) ·
-                         dictionary (search, word/idiom/note/add-to-list sheets) ·
-                         stats · settings (more, settings, theme, info pages, export, welcome,
-                         debug)
+                         queue builder, saved mixes, share sheet and share image) ·
+                         collections (browse, shelf screen, cards, create-list sheet,
+                         add-to-shelf picker, import words + import_table parser, shelf
+                         export sheet, shelf stats) · quiz (engine, screen) ·
+                         dictionary (search, word/idiom/note/add-to-list sheets, arrival
+                         sheets) · stats · settings (more, settings, theme, info pages, data,
+                         export, import, welcome, debug)
+android/.../kotlin/      MainActivity (TTS channel, arrivals, widget refresh) · WordOfDayWidget
+                         (reads only `widget.schedule` from prefs; never a database)
 tool/                    generate_icons_test.dart draws the launcher art; icon_masks_test.dart
                          previews it under the launcher masks into build/icon_preview/
 lib/shared/widgets/      reusable components from HANDOFF.md
@@ -215,6 +227,45 @@ flutter build apk --release
 Measured: 24.6 MB (arm64) with the old 4 MB sample dictionary; the full dictionary
 asset is ~49 MB gzipped. No signing config yet.
 
+## Data, quiz and platform (pass 02)
+
+- JSON export is `mull.export` format_version 1, word keys only (rule D4), the dictionary never.
+  Import parses and previews first, then writes in one transaction. Merge never overwrites a
+  note: an existing note keeps its text and the imported one is appended under
+  `DataTransferRepository.importedNoteMarker`. Mixes merge by name so presets are not doubled.
+  Unresolved word keys are kept and counted, not dropped.
+- Word import (`/shelves/import`, or `?target={slug}` from a shelf) parses TSV/CSV/bare lists
+  through `ImportTable` (pure, tested), matches through `DictionaryDb.batchMatchWords`
+  (exact → alias → lemma → trigram, batched 250 a query), and ends on the review screen.
+  Not-found rows are listed and never added, so there is no fallback-definition column.
+- The quiz is opened from a shelf overflow only, needs `QuizScreen.minimumWords` (10), writes
+  `quiz_sessions` / `quiz_answers` and never `seen`. Distractors: same POS, band within one,
+  shelf first, no synonym either way, similar definition length. Cloze blanks inflections
+  through `QuizEngine.inflectionPattern`. "Words I got wrong" is the `quiz_wrong` mix source.
+- Arrivals: `PROCESS_TEXT` and `SEND` land in `MainActivity`, which hands the extras to Dart once
+  (pulled on launch, pushed via `onIntentReceived` while running). One word opens its sheet;
+  longer text keeps only the sentence around the word (`PlatformSurfaces.sentenceAround`);
+  exactly one uncommon word opens directly, otherwise the picker offers learning-set and
+  rarer-band words. `source_hint` is the calling package, shown formatted, never raw.
+- Widget: Dart writes a 30-day `widget.schedule` to prefs; the Kotlin provider picks today's
+  entry, so it rolls over daily and survives a reboot without the app. Colours live in
+  `res/values*/widget_colors.xml` (light, night, and Android 12 dynamic via `system_*`).
+- Backup: only `app_flutter/mull_user.sqlite` (domain `root`) is included; naming one include is
+  what excludes the dictionary, and lint rejects an `<exclude>` outside an include. Verified
+  with `bmgr backupnow` on an emulator: 135 KB measured, dictionary.db absent.
+- No new permissions: `RECEIVE_BOOT_COMPLETED` is not needed, the system re-sends
+  `APPWIDGET_UPDATE` after boot.
+- Main-isolate budget: the dictionary's indexed queries are milliseconds and stay synchronous,
+  but the trigram fuzzy step costs tens of ms per unmatched word, so anything that can fuzzy
+  many words (arrivals, word import) goes through `DictionaryDb.matchWords`, which runs
+  `batchMatchWords` on a worker isolate with its own read-only connection.
+  `test/database/off_main_isolate_test.dart` watches the event loop during the real install
+  and a name-heavy match and fails on a stall over 100 ms. Search's fuzzy fallback is still one
+  synchronous query per keystroke.
+- `LoadingHairline` waits the HANDOFF's 120 ms on its own; pass `visible` for the whole load.
+  Shelves hold `SkeletonCard` / `SkeletonRow` placeholders until the user streams emit; the
+  Mull tab serves the first card before hydrating the rest of the batch.
+
 ## Known gotchas
 
 - Seven taps on the version line under More opens the debug route.
@@ -222,6 +273,8 @@ asset is ~49 MB gzipped. No signing config yet.
   this" from HANDOFF 3.2 is not implemented (there is no signal to act on yet).
 - Word of the day notifications are a setting only; no scheduling plugin is wired.
   Adding one needs `flutter_local_notifications` and core library desugaring.
+- The emulator on this Mac is arm64 (Apple Silicon): build with
+  `--target-platform android-arm64`, and `--profile` when a debug APK is too big to install.
 - List reorder by drag (HANDOFF 3.7) is not implemented; `reorderList` exists in the
   repository for when it is.
 - The committed dictionary is the full lookup build (~49 MB gzipped, ~127 MB installed).

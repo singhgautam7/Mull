@@ -11,27 +11,35 @@ class AppMenuEntry<T> {
   const AppMenuEntry({
     required this.value,
     required this.label,
+    this.subtitle,
     this.icon,
     this.selected = false,
     this.danger = false,
     this.radio = false,
+    this.enabled = true,
   }) : divider = false;
 
   const AppMenuEntry.divider()
     : value = null,
       label = '',
+      subtitle = null,
       icon = null,
       selected = false,
       danger = false,
       radio = false,
+      enabled = true,
       divider = true;
 
   final T? value;
   final String label;
+  final String? subtitle;
   final IconData? icon;
   final bool selected;
   final bool danger;
   final bool radio;
+
+  /// A disabled row stays visible, muted, with its [subtitle] as the reason.
+  final bool enabled;
   final bool divider;
 }
 
@@ -98,6 +106,7 @@ Future<T?> showAppMenu<T>({
         else
           PopupMenuItem<T>(
             value: e.value,
+            enabled: e.enabled,
             height: 0,
             padding: EdgeInsets.zero,
             child: _MenuRow<T>(entry: e),
@@ -114,7 +123,9 @@ class _MenuRow<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final Color fg = entry.danger
+    final Color fg = !entry.enabled
+        ? c.onSurfaceMuted
+        : entry.danger
         ? c.danger
         : (entry.selected ? c.onPrimaryContainer : c.onSurface);
 
@@ -132,11 +143,27 @@ class _MenuRow<T> extends StatelessWidget {
           else if (entry.icon != null)
             SizedBox(width: 18, child: Icon(entry.icon, size: 17, color: fg)),
           Flexible(
-            child: Text(
-              entry.label,
-              style: MullType.label
-                  .copyWith(fontSize: 13.5, height: 1.35, color: fg)
-                  .weight(entry.selected ? 600 : 500),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  entry.label,
+                  style: MullType.label
+                      .copyWith(fontSize: 13.5, height: 1.35, color: fg)
+                      .weight(entry.selected ? 600 : 500),
+                ),
+                if (entry.subtitle != null) ...<Widget>[
+                  const SizedBox(height: 1),
+                  Text(
+                    entry.subtitle!,
+                    style: MullType.monoLabel.copyWith(
+                      fontSize: 11,
+                      color: entry.selected ? c.onPrimaryContainer.withValues(alpha: 0.8) : c.onSurfaceMuted,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

@@ -160,6 +160,52 @@ class MixSettings extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{mixId};
 }
 
+/// Context captured from Android text processing or sharing. Contexts are
+/// private user text and are deliberately separate from curated examples.
+@DataClassName('WordContext')
+class WordContexts extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get wordKey => text()();
+  TextColumn get contextText => text()();
+  DateTimeColumn get capturedAt => dateTime()();
+  TextColumn get sourceHint => text().nullable()();
+}
+
+/// A completed or abandoned quiz belongs to a shelf, never the other way
+/// around. Keeping the shelf slug as text also supports shipped shelves.
+@DataClassName('QuizSession')
+class QuizSessions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get collectionSlug => text()();
+  DateTimeColumn get startedAt => dateTime()();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+  IntColumn get questionCount => integer()();
+  IntColumn get correctCount => integer().withDefault(const Constant(0))();
+  BoolColumn get wasAbandoned => boolean().withDefault(const Constant(false))();
+}
+
+@DataClassName('QuizAnswer')
+class QuizAnswers extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get sessionId =>
+      integer().references(QuizSessions, #id, onDelete: KeyAction.cascade)();
+  TextColumn get wordKey => text()();
+  TextColumn get questionType => text()();
+  BoolColumn get wasCorrect => boolean()();
+  TextColumn get chosenKey => text().nullable()();
+  DateTimeColumn get answeredAt => dateTime()();
+}
+
+@DataClassName('CollectionStat')
+class CollectionStats extends Table {
+  TextColumn get collectionSlug => text()();
+  IntColumn get timesOpened => integer().withDefault(const Constant(0))();
+  DateTimeColumn get lastOpenedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{collectionSlug};
+}
+
 /// Key/value app state: `active_mix_id`, `last_scoped_collection`.
 @DataClassName('AppStateRow')
 class AppState extends Table {
@@ -188,6 +234,10 @@ class AppState extends Table {
     Mixes,
     MixSources,
     MixSettings,
+    WordContexts,
+    QuizSessions,
+    QuizAnswers,
+    CollectionStats,
     AppState,
   ],
 )
@@ -198,7 +248,7 @@ class UserDatabase extends _$UserDatabase {
   UserDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -208,6 +258,12 @@ class UserDatabase extends _$UserDatabase {
         await m.createTable(userCollections);
         await m.createTable(userCollectionWords);
         await _migrateListsToCollections();
+      }
+      if (from < 4) {
+        await m.createTable(wordContexts);
+        await m.createTable(quizSessions);
+        await m.createTable(quizAnswers);
+        await m.createTable(collectionStats);
       }
     },
     beforeOpen: (OpeningDetails details) async {

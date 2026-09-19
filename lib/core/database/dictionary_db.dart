@@ -1,3 +1,6 @@
+import 'dart:isolate';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -15,6 +18,7 @@ class DictionaryWord {
     required this.ipa,
     required this.freqRank,
     required this.band,
+    required this.inLearningSet,
   });
 
   /// `{headword_norm}|{pos}|{sense_index}`. The only thing user data stores.
@@ -29,6 +33,14 @@ class DictionaryWord {
   final int freqRank;
   final String band;
 
+  /// One of the ~5,000 curated words the Mull tab plays; the rest of the
+  /// 136k headwords are lookup only.
+  final bool inLearningSet;
+
+  /// Rarer than the everyday band: worth stopping on when it turns up in a
+  /// sentence sent from another app.
+  bool get isUncommon => band != 'core' && band != 'everyday';
+
   factory DictionaryWord._from(Row r) => DictionaryWord(
     wordKey: r['word_key'] as String,
     headword: r['headword'] as String,
@@ -36,12 +48,39 @@ class DictionaryWord {
     pos: r['pos'] as String,
     senseIndex: r['sense_index'] as int,
     // The pipeline stores '' when the short form would repeat the full one.
-    definitionShort: (r['definition_short'] as String).isEmpty ? r['definition_full'] as String : r['definition_short'] as String,
+    definitionShort: (r['definition_short'] as String).isEmpty
+        ? r['definition_full'] as String
+        : r['definition_short'] as String,
     definitionFull: r['definition_full'] as String,
     ipa: r['ipa'] as String?,
     freqRank: r['freq_rank'] as int,
     band: r['band'] as String,
+    inLearningSet: (r['in_learning_set'] as int) == 1,
   );
+}
+
+/// One row of a word import after matching (see [DictionaryDb.batchMatchWords]).
+@immutable
+class WordMatch {
+  const WordMatch({
+    required this.rawWord,
+    this.word,
+    this.isNearMatch = false,
+    this.pastedDefinition,
+  });
+
+  final String rawWord;
+  final DictionaryWord? word;
+
+  /// Found by lemma or fuzzy match, so the user confirms it.
+  final bool isNearMatch;
+
+  /// What the table said the word means, shown beside a near match to help
+  /// the user decide. Mull's own definition is what goes on the shelf.
+  final String? pastedDefinition;
+
+  bool get isMatched => word != null && !isNearMatch;
+  bool get isNotFound => word == null;
 }
 
 /// One collection, whichever database it lives in. Bands, topics, idioms
@@ -166,16 +205,20 @@ class Idiom {
 /// dataset answers a search in well under a frame; move to a worker isolate
 /// via `Isolate.run` only if profiling on a device shows otherwise.
 class DictionaryDb {
-  DictionaryDb._(this._db);
+  DictionaryDb._(this._db, this._path);
 
   final Database _db;
 
+  /// The file behind [_db], or null for an in-memory test database. A
+  /// background isolate opens its own read-only connection to it.
+  final String? _path;
+
   static DictionaryDb open(String path) =>
-      DictionaryDb._(sqlite3.open(path, mode: OpenMode.readOnly));
+      DictionaryDb._(sqlite3.open(path, mode: OpenMode.readOnly), path);
 
   /// Test constructor over an in-memory database the test has populated.
   @visibleForTesting
-  DictionaryDb.forTesting(this._db);
+  DictionaryDb.forTesting(this._db) : _path = null;
 
   void close() => _db.close();
 
@@ -205,7 +248,7 @@ class DictionaryDb {
 
   static const String _cols =
       'word_key, headword, headword_norm, pos, sense_index, definition_short, '
-      'definition_full, ipa, freq_rank, band';
+      'definition_full, ipa, freq_rank, band, in_learning_set';
 
   DictionaryWord? byKey(String wordKey) {
     final ResultSet rs = _db.select(
@@ -225,12 +268,31 @@ class DictionaryDb {
         .toList();
   }
 
+  /// Whether any of [keys] is a word, without reading the rows.
+  bool hasAnyWord(Iterable<String> keys) => _exists('words', 'word_key', keys);
+
+  /// Whether any of [keys] is a phrase, without reading the rows.
+  bool hasAnyPhrase(Iterable<String> keys) =>
+      _exists('phrases', 'phrase_key', keys);
+
+  bool _exists(String table, String column, Iterable<String> keys) {
+    final List<String> list = keys.toList();
+    if (list.isEmpty) return false;
+    final String marks = List<String>.filled(list.length, '?').join(',');
+    return _db
+        .select('SELECT 1 FROM $table WHERE $column IN ($marks) LIMIT 1', list)
+        .isNotEmpty;
+  }
+
   List<Phrase> phrasesByKeys(Iterable<String> keys) {
     final List<String> list = keys.toList();
     if (list.isEmpty) return const <Phrase>[];
     final String marks = List<String>.filled(list.length, '?').join(',');
     return _db
-        .select('SELECT $_phraseCols FROM phrases WHERE phrase_key IN ($marks)', list)
+        .select(
+          'SELECT $_phraseCols FROM phrases WHERE phrase_key IN ($marks)',
+          list,
+        )
         .map(Phrase._from)
         .toList();
   }
@@ -245,9 +307,10 @@ class DictionaryDb {
       .toList();
 
   List<String> examples(String wordKey) => _db
-      .select('SELECT text FROM examples WHERE word_key = ? ORDER BY id', <Object>[
-        wordKey,
-      ])
+      .select(
+        'SELECT text FROM examples WHERE word_key = ? ORDER BY id',
+        <Object>[wordKey],
+      )
       .map((Row r) => r['text'] as String)
       .toList();
 
@@ -278,7 +341,10 @@ class DictionaryDb {
     void take(ResultSet rs) {
       for (final Row r in rs) {
         if (out.length >= limit) return;
-        out.putIfAbsent(r['headword_norm'] as String, () => DictionaryWord._from(r));
+        out.putIfAbsent(
+          r['headword_norm'] as String,
+          () => DictionaryWord._from(r),
+        );
       }
     }
 
@@ -328,11 +394,14 @@ class DictionaryDb {
 
   static const String _colsW =
       'word_key, w.headword, w.headword_norm, w.pos, w.sense_index, '
-      'w.definition_short, w.definition_full, w.ipa, w.freq_rank, w.band';
+      'w.definition_short, w.definition_full, w.ipa, w.freq_rank, w.band, w.in_learning_set';
 
   /// A safe FTS5 query: every token quoted, prefix-matched, AND-ed.
-  static String _ftsQuery(String q) =>
-      q.split(' ').where((String t) => t.isNotEmpty).map((String t) => '"$t"*').join(' ');
+  static String _ftsQuery(String q) => q
+      .split(' ')
+      .where((String t) => t.isNotEmpty)
+      .map((String t) => '"$t"*')
+      .join(' ');
 
   /// The single-word "Did you mean" candidate for a query with no results.
   String? suggest(String query) {
@@ -364,8 +433,9 @@ class DictionaryDb {
       if (d <= tolerance) scored.add((d, w));
     }
     scored.sort(
-      ((int, DictionaryWord) a, (int, DictionaryWord) b) =>
-          a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.freqRank.compareTo(b.$2.freqRank),
+      ((int, DictionaryWord) a, (int, DictionaryWord) b) => a.$1 != b.$1
+          ? a.$1.compareTo(b.$1)
+          : a.$2.freqRank.compareTo(b.$2.freqRank),
     );
     return scored.take(limit).map(((int, DictionaryWord) e) => e.$2).toList();
   }
@@ -564,6 +634,205 @@ class DictionaryDb {
       .map(DictionaryWord._from)
       .toList();
 
+  /// One word a day, the same for everyone on the same day: picked from the
+  /// banded words by the day number, so it never needs storing. The home
+  /// screen and the launcher widget's schedule both come through here.
+  DictionaryWord? wordOfTheDay(DateTime date) {
+    final List<String> keys = _wordOfTheDayPool;
+    if (keys.isEmpty) return null;
+    final int day = date.difference(DateTime(2026)).inDays;
+    // A stride coprime with most sizes, so consecutive days are not neighbours.
+    return byKey(keys[(day * 7919) % keys.length]);
+  }
+
+  /// Read once per open connection: the widget schedule asks thirty times.
+  late final List<String> _wordOfTheDayPool = collectionWordKeys(<String>[
+    'everyday',
+    'well_read',
+    'uncommon',
+  ]);
+
+  /// The wider learning set used only when a shelf cannot supply three fair
+  /// quiz distractors. It remains local and read-only.
+  List<DictionaryWord> quizCandidates() => _db
+      .select(
+        'SELECT $_cols FROM words WHERE in_learning_set = 1 AND sense_index = 1',
+      )
+      .map(DictionaryWord._from)
+      .toList();
+
+  /// [batchMatchWords] off the calling isolate. The trigram step costs tens
+  /// of milliseconds per unmatched word, so a shared paragraph or a pasted
+  /// table full of names would otherwise block the UI thread for seconds.
+  /// The worker opens its own read-only connection to the same file; an
+  /// in-memory test database has no file, so it matches in place.
+  Future<List<WordMatch>> matchWords(
+    List<({String word, String? definition})> rows,
+  ) {
+    final String? path = _path;
+    if (path == null) return Future<List<WordMatch>>.value(batchMatchWords(rows));
+    return Isolate.run(() {
+      final DictionaryDb db = DictionaryDb.open(path);
+      try {
+        return db.batchMatchWords(rows);
+      } finally {
+        db.close();
+      }
+    });
+  }
+
+  /// The matching pipeline for a word import, in order, stopping at the
+  /// first hit: exact on `headword_norm`, alias (US spellings, plurals,
+  /// inflections), lemma (a rough stem retried through both), trigram fuzzy
+  /// for typos, then unmatched. Exact and alias hits are automatic; lemma
+  /// and fuzzy hits are near matches the user confirms. The indexed steps
+  /// are one batched query per 250 words; the fuzzy step is one query per
+  /// word still missing, which is why callers go through [matchWords].
+  List<WordMatch> batchMatchWords(List<({String word, String? definition})> rows) {
+    if (rows.isEmpty) return const <WordMatch>[];
+    final Map<String, String> norms = <String, String>{
+      for (final ({String word, String? definition}) r in rows)
+        r.word: normalise(r.word),
+    };
+    final List<String> wanted = norms.values
+        .where((String n) => n.isNotEmpty)
+        .toSet()
+        .toList();
+
+    // 1 and 2: exact, then alias, for whatever is still missing.
+    final Map<String, DictionaryWord> direct = _byHeadwordNorm(wanted);
+    direct.addAll(
+      _byAliasNorm(
+        wanted.where((String n) => !direct.containsKey(n)).toList(),
+      ),
+    );
+
+    // 3: lemmatise the rest and retry 1 and 2 on the candidates.
+    final Map<String, List<String>> lemmas = <String, List<String>>{
+      for (final String n in wanted)
+        if (!direct.containsKey(n)) n: _candidateLemmas(n),
+    };
+    final List<String> lemmaForms = lemmas.values.expand((List<String> l) => l).toSet().toList();
+    final Map<String, DictionaryWord> byLemma = _byHeadwordNorm(lemmaForms);
+    byLemma.addAll(
+      _byAliasNorm(
+        lemmaForms.where((String n) => !byLemma.containsKey(n)).toList(),
+      ),
+    );
+    final Map<String, DictionaryWord> near = <String, DictionaryWord>{
+      for (final MapEntry<String, List<String>> e in lemmas.entries)
+        for (final String lemma in e.value)
+          if (byLemma[lemma] case final DictionaryWord w) e.key: w,
+    };
+
+    // 4: trigram fuzzy, one query per remaining word.
+    for (final String n in lemmas.keys) {
+      if (near.containsKey(n) || n.length < 3) continue;
+      final List<DictionaryWord> hits = _fuzzy(n, 1);
+      if (hits.isNotEmpty) near[n] = hits.first;
+    }
+
+    return <WordMatch>[
+      for (final ({String word, String? definition}) r in rows)
+        WordMatch(
+          rawWord: r.word,
+          word: direct[norms[r.word]] ?? near[norms[r.word]],
+          isNearMatch: !direct.containsKey(norms[r.word]) && near.containsKey(norms[r.word]),
+          pastedDefinition: r.definition,
+        ),
+    ];
+  }
+
+  /// First sense of each headword in [norms], by `headword_norm`.
+  Map<String, DictionaryWord> _byHeadwordNorm(List<String> norms) => _inChunks(
+    norms,
+    (String marks) =>
+        'SELECT $_cols FROM words WHERE headword_norm IN ($marks) '
+        'AND sense_index = 1 ORDER BY freq_rank',
+    'headword_norm',
+  );
+
+  /// The word each alias in [norms] points at, by `alias_norm`.
+  Map<String, DictionaryWord> _byAliasNorm(List<String> norms) => _inChunks(
+    norms,
+    (String marks) =>
+        'SELECT a.alias_norm, w.$_colsW FROM aliases a '
+        'JOIN words w ON w.word_key = a.word_key '
+        'WHERE a.alias_norm IN ($marks) ORDER BY w.freq_rank',
+    'alias_norm',
+  );
+
+  /// Runs [sql] over [keys] 250 at a time (SQLite's bind limit is 999) and
+  /// keeps the first, best-ranked row per [keyColumn].
+  Map<String, DictionaryWord> _inChunks(
+    List<String> keys,
+    String Function(String marks) sql,
+    String keyColumn,
+  ) {
+    final Map<String, DictionaryWord> out = <String, DictionaryWord>{};
+    for (int i = 0; i < keys.length; i += 250) {
+      final List<String> chunk = keys.sublist(i, min(i + 250, keys.length));
+      final String marks = List<String>.filled(chunk.length, '?').join(',');
+      for (final Row r in _db.select(sql(marks), chunk)) {
+        out.putIfAbsent(r[keyColumn] as String, () => DictionaryWord._from(r));
+      }
+    }
+    return out;
+  }
+
+  static List<String> _candidateLemmas(String s) {
+    final List<String> candidates = <String>[];
+    void add(String c) {
+      if (c.length >= 2 && c != s && !candidates.contains(c)) candidates.add(c);
+    }
+
+    if (s.endsWith('ies') && s.length > 3) {
+      add('${s.substring(0, s.length - 3)}y');
+    }
+    if (s.endsWith('es') && s.length > 3) {
+      add(s.substring(0, s.length - 2));
+      add(s.substring(0, s.length - 1));
+    }
+    if (s.endsWith('s') && !s.endsWith('ss') && s.length > 2) {
+      add(s.substring(0, s.length - 1));
+    }
+    if (s.endsWith('ed') && s.length > 3) {
+      add(s.substring(0, s.length - 2));
+      add(s.substring(0, s.length - 1));
+      // double consonant: hopped -> hop
+      if (s.length > 4 && s[s.length - 3] == s[s.length - 4]) {
+        add(s.substring(0, s.length - 3));
+      }
+    }
+    if (s.endsWith('ing') && s.length > 4) {
+      add(s.substring(0, s.length - 3));
+      add('${s.substring(0, s.length - 3)}e');
+      // double consonant: running -> run
+      if (s.length > 5 && s[s.length - 4] == s[s.length - 5]) {
+        add(s.substring(0, s.length - 4));
+      }
+    }
+    if (s.endsWith('ly') && s.length > 3) {
+      add(s.substring(0, s.length - 2));
+      add('${s.substring(0, s.length - 2)}le');
+    }
+    if (s.endsWith('er') && s.length > 3) {
+      add(s.substring(0, s.length - 2));
+      add(s.substring(0, s.length - 1));
+    }
+    if (s.endsWith('est') && s.length > 4) {
+      add(s.substring(0, s.length - 3));
+      add(s.substring(0, s.length - 2));
+    }
+    if (s.endsWith('ence') && s.length > 4) {
+      add('${s.substring(0, s.length - 4)}ent');
+    }
+    if (s.endsWith('ance') && s.length > 4) {
+      add('${s.substring(0, s.length - 4)}ant');
+    }
+    return candidates;
+  }
+
   /// The same normalisation the build pipeline applies to `headword_norm`:
   /// lowercase, diacritics stripped, punctuation removed, whitespace collapsed.
   static String normalise(String s) {
@@ -575,7 +844,9 @@ class DictionaryDb {
         b.write(plain);
       } else if (ch == '-') {
         b.write(' ');
-      } else if ((cu >= 0x61 && cu <= 0x7a) || (cu >= 0x30 && cu <= 0x39) || cu == 0x20) {
+      } else if ((cu >= 0x61 && cu <= 0x7a) ||
+          (cu >= 0x30 && cu <= 0x39) ||
+          cu == 0x20) {
         b.write(ch);
       }
     }
@@ -583,10 +854,36 @@ class DictionaryDb {
   }
 
   static const Map<String, String> _diacritics = <String, String>{
-    'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a', 'æ': 'ae',
-    'ç': 'c', 'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e', 'ì': 'i', 'í': 'i',
-    'î': 'i', 'ï': 'i', 'ñ': 'n', 'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o',
-    'ö': 'o', 'ø': 'o', 'œ': 'oe', 'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
-    'ý': 'y', 'ÿ': 'y', 'ß': 'ss',
+    'à': 'a',
+    'á': 'a',
+    'â': 'a',
+    'ã': 'a',
+    'ä': 'a',
+    'å': 'a',
+    'æ': 'ae',
+    'ç': 'c',
+    'è': 'e',
+    'é': 'e',
+    'ê': 'e',
+    'ë': 'e',
+    'ì': 'i',
+    'í': 'i',
+    'î': 'i',
+    'ï': 'i',
+    'ñ': 'n',
+    'ò': 'o',
+    'ó': 'o',
+    'ô': 'o',
+    'õ': 'o',
+    'ö': 'o',
+    'ø': 'o',
+    'œ': 'oe',
+    'ù': 'u',
+    'ú': 'u',
+    'û': 'u',
+    'ü': 'u',
+    'ý': 'y',
+    'ÿ': 'y',
+    'ß': 'ss',
   };
 }

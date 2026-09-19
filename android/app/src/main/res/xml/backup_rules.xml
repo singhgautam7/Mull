@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below. Only the user database is backed up. Drift stores
+     it under getApplicationDocumentsDirectory(), which on Android is
+     <data>/app_flutter (domain "root"). Naming one include is what excludes
+     everything else: the dictionary (files/dictionary.db, 127 MB, shipped in
+     the APK), caches, and prefs. Lint rejects an <exclude> outside an
+     included path, so the exclusion is by omission, and verified with
+     `bmgr backupnow`: the backup measured only mull_user.sqlite. Prefs are
+     left out on purpose: after a restore the installer sees no dictionary
+     file and unpacks it afresh. -->
+<full-backup-content>
+    <include domain="root" path="app_flutter/mull_user.sqlite" />
+</full-backup-content>

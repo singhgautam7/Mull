@@ -15,6 +15,7 @@ class QueueBuilder {
 
   final DictionaryDb _dict;
   final UserRepository _user;
+  static const String wrongQuizSource = 'quiz_wrong';
 
   /// Every word key the mix can draw from, deduplicated. A word in three
   /// source collections is here once. A source slug names either a
@@ -25,10 +26,16 @@ class QueueBuilder {
     return poolFor(mix.effectiveSources);
   }
 
-  Future<List<String>> poolFor(List<String> sources) async => <String>{
-    ..._dict.collectionWordKeys(sources),
-    ...await _user.collectionWordKeysFor(sources),
-  }.toList();
+  Future<List<String>> poolFor(List<String> sources) async {
+    final List<String> collectionSources = sources
+        .where((String source) => source != wrongQuizSource)
+        .toList();
+    return <String>{
+      ..._dict.collectionWordKeys(collectionSources),
+      ...await _user.collectionWordKeysFor(collectionSources),
+      if (sources.contains(wrongQuizSource)) ...await _user.wrongQuizKeys(),
+    }.toList();
+  }
 
   /// One batch of [size] keys. [exclude] is what the session has already
   /// served, so extending the queue never repeats a card.
@@ -72,7 +79,10 @@ class QueueBuilder {
     final int wantUnseen = (size * mix.seenPolicy.unseenRatio).round();
     final int wantDue = size - wantUnseen;
     final List<String> fromUnseen = unseen.take(wantUnseen).toList();
-    final List<String> fromDue = due.take(wantDue).map((SeenWord s) => s.wordKey).toList();
+    final List<String> fromDue = due
+        .take(wantDue)
+        .map((SeenWord s) => s.wordKey)
+        .toList();
 
     final List<String> out = <String>[...fromUnseen, ...fromDue];
     // Backfill from the other side, within the policy's spirit.
@@ -80,7 +90,12 @@ class QueueBuilder {
       out.addAll(unseen.skip(wantUnseen).take(size - out.length));
     }
     if (out.length < size && mix.seenPolicy != SeenPolicy.unseenOnly) {
-      out.addAll(due.skip(wantDue).take(size - out.length).map((SeenWord s) => s.wordKey));
+      out.addAll(
+        due
+            .skip(wantDue)
+            .take(size - out.length)
+            .map((SeenWord s) => s.wordKey),
+      );
     }
     if (out.length < size && mix.seenPolicy == SeenPolicy.reviewOnly) {
       out.addAll(rest.take(size - out.length).map((SeenWord s) => s.wordKey));

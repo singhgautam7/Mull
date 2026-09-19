@@ -27,6 +27,8 @@ import '../dictionary/search_screen.dart';
 import '../dictionary/word_sheet.dart';
 import '../settings/settings_controller.dart';
 import 'create_list_sheet.dart';
+import '../quiz/quiz_screen.dart';
+import 'shelf_export_sheet.dart';
 
 enum SortCriterion {
   name('name', 'Name'),
@@ -68,10 +70,15 @@ class CollectionEntry {
   bool get isWord => word != null;
   String get key => word?.wordKey ?? phrase?.phraseKey ?? idiom!.idiomKey;
   String get title => word?.headword ?? phrase?.phrase ?? idiom!.phrase;
-  String get definition => word?.definitionShort ?? phrase?.meaning ?? idiom!.meaning;
-  String? get example => word != null ? null : (phrase?.example ?? idiom?.example);
-  String get chip => word != null ? bandLabel(word!.band) : (phrase?.register ?? idiom!.register);
-  String? get pos => word != null ? posLabel(word!.pos) : (phrase?.type ?? 'phrase');
+  String get definition =>
+      word?.definitionShort ?? phrase?.meaning ?? idiom!.meaning;
+  String? get example =>
+      word != null ? null : (phrase?.example ?? idiom?.example);
+  String get chip => word != null
+      ? bandLabel(word!.band)
+      : (phrase?.register ?? idiom!.register);
+  String? get pos =>
+      word != null ? posLabel(word!.pos) : (phrase?.type ?? 'phrase');
   int get freqRank => word?.freqRank ?? phrase?.freqRank ?? 999999;
 
   SearchResult toSearchResult() {
@@ -95,9 +102,14 @@ class CollectionScreen extends ConsumerStatefulWidget {
 
 class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   String get _scopeKey => widget.slug;
-  late SortCriterion _sortCriterion = SortCriterion.fromKey(ref.read(settingsProvider.notifier).sort(_scopeKey));
-  late bool _sortAscending = ref.read(settingsProvider.notifier).sortAscending(_scopeKey);
-  late CollectionViewMode _viewMode = ref.read(settingsProvider.notifier).lens(_scopeKey) == 'table'
+  late SortCriterion _sortCriterion = SortCriterion.fromKey(
+    ref.read(settingsProvider.notifier).sort(_scopeKey),
+  );
+  late bool _sortAscending = ref
+      .read(settingsProvider.notifier)
+      .sortAscending(_scopeKey);
+  late CollectionViewMode _viewMode =
+      ref.read(settingsProvider.notifier).lens(_scopeKey) == 'table'
       ? CollectionViewMode.table
       : CollectionViewMode.card;
 
@@ -117,6 +129,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   void initState() {
     super.initState();
     unawaited(_user.setAppState(UserRepository.kLastOpened, widget.slug));
+    unawaited(_user.recordCollectionOpened(widget.slug));
   }
 
   @override
@@ -131,16 +144,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     context.go(Routes.scoped(widget.slug));
   }
 
-  void _openAddSearch(SearchSegment segment) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => SearchScreen(
-          addToCollectionSlug: widget.slug,
-          initialSegment: segment,
-        ),
-      ),
-    );
-  }
+  void _openAdd({bool phrases = false}) =>
+      unawaited(context.push(Routes.shelfAdd(widget.slug, phrases: phrases)));
 
   Future<void> _deleteSelected(List<String> keys) async {
     final List<String> removed = keys.toList();
@@ -200,14 +205,21 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     if (action == null || !mounted) return;
     switch (action) {
       case 'add_words':
-        _openAddSearch(SearchSegment.words);
+        _openAdd();
       case 'add_phrases':
-        _openAddSearch(SearchSegment.idioms);
+        _openAdd(phrases: true);
     }
   }
 
-  Future<void> _overflow(BuildContext anchor, Collection? collection, List<CollectionEntry> allEntries) async {
+  Future<void> _overflow(
+    BuildContext anchor,
+    Collection? collection,
+    List<CollectionEntry> allEntries,
+  ) async {
     final bool own = collection?.isUsers ?? false;
+    final int wordCount = allEntries
+        .where((CollectionEntry entry) => entry.isWord)
+        .length;
     final String? action = await showAppMenu<String>(
       context: anchor,
       anchorContext: anchor,
@@ -219,6 +231,15 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
             value: 'mull',
             label: 'Mull these',
             icon: Icons.play_arrow_rounded,
+          ),
+          AppMenuEntry<String>(
+            value: 'quiz',
+            label: 'Quiz',
+            subtitle: wordCount >= QuizScreen.minimumWords
+                ? '10 questions from this shelf'
+                : 'needs ${QuizScreen.minimumWords} words · this shelf has $wordCount',
+            icon: Icons.quiz_outlined,
+            enabled: wordCount >= QuizScreen.minimumWords,
           ),
           const AppMenuEntry<String>.divider(),
         ],
@@ -240,6 +261,29 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
             label: 'Select words',
             icon: Icons.checklist_rounded,
           ),
+
+        // Segment 3: Import words, Export this shelf
+        const AppMenuEntry<String>.divider(),
+        const AppMenuEntry<String>(
+          value: 'import_words',
+          label: 'Import words',
+          subtitle: 'paste a table or pick a CSV',
+          icon: Icons.file_upload_outlined,
+        ),
+        const AppMenuEntry<String>(
+          value: 'export_shelf',
+          label: 'Export this shelf',
+          subtitle: 'CSV or PDF',
+          icon: Icons.ios_share_rounded,
+        ),
+
+        // Segment 4: Shelf stats
+        const AppMenuEntry<String>.divider(),
+        const AppMenuEntry<String>(
+          value: 'shelf_stats',
+          label: 'Shelf stats',
+          icon: Icons.query_stats_rounded,
+        ),
 
         // Segment 3: Sort: Name, sort: Frequency, Sort: Bookmark first
         const AppMenuEntry<String>.divider(),
@@ -313,37 +357,80 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     switch (action) {
       case 'mull':
         _openCards();
+      case 'quiz':
+        unawaited(context.push(Routes.quiz(widget.slug)));
       case 'add_words':
-        _openAddSearch(SearchSegment.words);
+        _openAdd();
       case 'add_phrases':
-        _openAddSearch(SearchSegment.idioms);
+        _openAdd(phrases: true);
+      case 'import_words':
+        unawaited(context.push('${Routes.importWords}?target=${widget.slug}'));
+      case 'export_shelf':
+        unawaited(
+          showShelfExportSheet(
+            context,
+            slug: widget.slug,
+            shelfTitle: collection?.title ?? widget.slug,
+          ),
+        );
+      case 'shelf_stats':
+        unawaited(context.push(Routes.shelfStats(widget.slug)));
       case 'select':
         setState(() => _selecting = true);
       case 'sort_name':
         setState(() => _sortCriterion = SortCriterion.name);
-        unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, 'name'));
+        unawaited(
+          ref.read(settingsProvider.notifier).setSort(_scopeKey, 'name'),
+        );
       case 'sort_frequency':
         setState(() => _sortCriterion = SortCriterion.frequency);
-        unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, 'frequency'));
+        unawaited(
+          ref.read(settingsProvider.notifier).setSort(_scopeKey, 'frequency'),
+        );
       case 'sort_bookmarked':
         setState(() => _sortCriterion = SortCriterion.bookmarked);
-        unawaited(ref.read(settingsProvider.notifier).setSort(_scopeKey, 'bookmarked'));
+        unawaited(
+          ref.read(settingsProvider.notifier).setSort(_scopeKey, 'bookmarked'),
+        );
       case 'order_asc':
         setState(() => _sortAscending = true);
-        unawaited(ref.read(settingsProvider.notifier).setSortAscending(_scopeKey, value: true));
+        unawaited(
+          ref
+              .read(settingsProvider.notifier)
+              .setSortAscending(_scopeKey, value: true),
+        );
       case 'order_desc':
         setState(() => _sortAscending = false);
-        unawaited(ref.read(settingsProvider.notifier).setSortAscending(_scopeKey, value: false));
+        unawaited(
+          ref
+              .read(settingsProvider.notifier)
+              .setSortAscending(_scopeKey, value: false),
+        );
       case 'view_card':
         setState(() => _viewMode = CollectionViewMode.card);
-        unawaited(ref.read(settingsProvider.notifier).setLens(_scopeKey, 'cards'));
+        unawaited(
+          ref.read(settingsProvider.notifier).setLens(_scopeKey, 'cards'),
+        );
       case 'view_table':
         setState(() => _viewMode = CollectionViewMode.table);
-        unawaited(ref.read(settingsProvider.notifier).setLens(_scopeKey, 'table'));
+        unawaited(
+          ref.read(settingsProvider.notifier).setLens(_scopeKey, 'table'),
+        );
       case 'rename':
-        await showCreateListSheet(context, renameSlug: widget.slug, initialName: collection!.title, initialColor: collection.color);
+        await showCreateListSheet(
+          context,
+          renameSlug: widget.slug,
+          initialName: collection!.title,
+          initialColor: collection.color,
+        );
       case 'delete':
-        final bool ok = await confirmDialog(context, title: 'Delete ${collection!.title}?', message: 'The words stay in the dictionary. Only the shelf is removed.', confirmLabel: 'Delete');
+        final bool ok = await confirmDialog(
+          context,
+          title: 'Delete ${collection!.title}?',
+          message:
+              'The words stay in the dictionary. Only the shelf is removed.',
+          confirmLabel: 'Delete',
+        );
         if (ok) {
           await _user.deleteCollection(widget.slug);
           if (mounted) context.pop();
@@ -379,7 +466,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   }
 
   void _handleItemLongPress(CollectionEntry entry, bool own) async {
-    if (ref.read(settingsProvider).haptics) unawaited(HapticFeedback.lightImpact());
+    if (ref.read(settingsProvider).haptics) {
+      unawaited(HapticFeedback.lightImpact());
+    }
     if (own) {
       setState(() {
         _selecting = true;
@@ -388,7 +477,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     } else {
       final bool on = await _user.toggleBookmark(entry.key);
       if (!on && mounted) {
-        AppSnackbar.undo(context, 'Removed bookmark', () => _user.addBookmark(entry.key));
+        AppSnackbar.undo(
+          context,
+          'Removed bookmark',
+          () => _user.addBookmark(entry.key),
+        );
       }
     }
   }
@@ -397,15 +490,20 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final DictionaryDb dict = ref.watch(dictProvider);
-    final Set<String> bookmarks = ref.watch(bookmarksProvider).value ?? const <String>{};
-    final Map<String, SeenWord> seen = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
+    final Set<String> bookmarks =
+        ref.watch(bookmarksProvider).value ?? const <String>{};
+    final Map<String, SeenWord> seen =
+        ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
 
-    final Collection? collection = ref.watch(collectionBySlugProvider)[widget.slug];
+    final Collection? collection = ref.watch(
+      collectionBySlugProvider,
+    )[widget.slug];
     final bool own = collection?.isUsers ?? false;
     final String title = collection?.title ?? '';
 
     // Collect all keys in order
-    final List<String> allKeys = ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[];
+    final List<String> allKeys =
+        ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[];
     final List<DictionaryWord> fetchedWords = dict.byKeys(allKeys);
     final List<Phrase> fetchedPhrases = dict.phrasesByKeys(allKeys);
 
@@ -435,9 +533,14 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     List<CollectionEntry> sortedEntries = List<CollectionEntry>.of(rawEntries);
     switch (_sortCriterion) {
       case SortCriterion.name:
-        sortedEntries.sort((CollectionEntry a, CollectionEntry b) => a.title.compareTo(b.title));
+        sortedEntries.sort(
+          (CollectionEntry a, CollectionEntry b) => a.title.compareTo(b.title),
+        );
       case SortCriterion.frequency:
-        sortedEntries.sort((CollectionEntry a, CollectionEntry b) => a.freqRank.compareTo(b.freqRank));
+        sortedEntries.sort(
+          (CollectionEntry a, CollectionEntry b) =>
+              a.freqRank.compareTo(b.freqRank),
+        );
       case SortCriterion.bookmarked:
         sortedEntries.sort((CollectionEntry a, CollectionEntry b) {
           final int ba = bookmarks.contains(a.key) ? 0 : 1;
@@ -458,7 +561,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                 e.definition.toLowerCase().contains(q);
           }).toList();
 
-    final int seenCount = rawEntries.where((CollectionEntry e) => seen.containsKey(e.key)).length;
+    final int seenCount = rawEntries
+        .where((CollectionEntry e) => seen.containsKey(e.key))
+        .length;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -487,7 +592,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                           _selected.clear();
                         });
                       },
-                      onDelete: own ? () => _deleteSelected(_selected.toList()) : null,
+                      onDelete: own
+                          ? () => _deleteSelected(_selected.toList())
+                          : null,
                     )
                   else
                     AppHeader(
@@ -505,7 +612,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                           builder: (BuildContext anchor) => AppIconButton(
                             icon: Icons.more_horiz_rounded,
                             semanticLabel: 'More',
-                            onPressed: () => unawaited(_overflow(anchor, collection, rawEntries)),
+                            onPressed: () => unawaited(
+                              _overflow(anchor, collection, rawEntries),
+                            ),
                           ),
                         ),
                       ],
@@ -526,10 +635,14 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: Space.screen,
+                                  ),
                                   child: Container(
                                     height: 44,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: c.surfaceContainer,
                                       borderRadius: Radii.fullR,
@@ -537,21 +650,36 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                     ),
                                     child: Row(
                                       children: <Widget>[
-                                        Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
+                                        Icon(
+                                          Icons.search_rounded,
+                                          size: 18,
+                                          color: c.iconMuted,
+                                        ),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: TextField(
                                             controller: _searchController,
                                             focusNode: _searchFocus,
                                             autofocus: false,
-                                            onChanged: (String val) => setState(() => _searchQuery = val),
-                                            style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
+                                            onChanged: (String val) => setState(
+                                              () => _searchQuery = val,
+                                            ),
+                                            style: MullType.body.copyWith(
+                                              fontSize: 14,
+                                              color: c.onSurface,
+                                            ),
                                             decoration: InputDecoration(
                                               isDense: true,
                                               border: InputBorder.none,
-                                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                  ),
                                               hintText: 'Search shelf',
-                                              hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
+                                              hintStyle: MullType.body.copyWith(
+                                                fontSize: 14,
+                                                color: c.onSurfaceMuted,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -572,20 +700,30 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                   ),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.fromLTRB(Space.screen, Space.sm, Space.screen, Space.xs),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    Space.screen,
+                                    Space.sm,
+                                    Space.screen,
+                                    Space.xs,
+                                  ),
                                   child: Wrap(
                                     alignment: WrapAlignment.spaceBetween,
-                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
                                     spacing: Space.sm,
                                     runSpacing: Space.xs,
                                     children: <Widget>[
                                       Text(
                                         '${displayItems.length} items · $seenCount seen',
-                                        style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+                                        style: MullType.monoLabel.copyWith(
+                                          color: c.onSurfaceMuted,
+                                        ),
                                       ),
                                       Text(
                                         'Sort: ${_sortCriterion.label} (${_sortAscending ? 'ASC' : 'DESC'})',
-                                        style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+                                        style: MullType.monoLabel.copyWith(
+                                          color: c.onSurfaceMuted,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -599,16 +737,21 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               child: rawEntries.isEmpty
                                   ? EmptyState(
                                       title: 'No items on this shelf yet',
-                                      message: 'Add a word or phrase from search or using the + button above.',
-                                      actionLabel: 'Search for a word',
-                                      onAction: () => _openAddSearch(SearchSegment.words),
+                                      message: 'Add words or phrases from the overflow, or paste a table.',
+                                      actionLabel: 'Add words to it',
+                                      onAction: () =>
+                                          _openAdd(),
                                     )
                                   : Center(
                                       child: Padding(
-                                        padding: const EdgeInsets.all(Space.screen),
+                                        padding: const EdgeInsets.all(
+                                          Space.screen,
+                                        ),
                                         child: Text(
                                           'No results for "$_searchQuery"',
-                                          style: MullType.body.copyWith(color: c.onSurfaceVariant),
+                                          style: MullType.body.copyWith(
+                                            color: c.onSurfaceVariant,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -633,7 +776,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                     selecting: _selecting,
                                     selected: _selected.contains(item.key),
                                     onTap: () => _handleItemTap(item),
-                                    onLongPress: () => _handleItemLongPress(item, own),
+                                    onLongPress: () =>
+                                        _handleItemLongPress(item, own),
                                   );
                                 },
                               ),
@@ -647,8 +791,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               itemCount: displayItems.length,
                               itemBuilder: (BuildContext context, int i) {
                                 final CollectionEntry item = displayItems[i];
-                                final String? ex = item.example ??
-                                    (item.isWord ? dict.examples(item.key).firstOrNull : null);
+                                final String? ex =
+                                    item.example ??
+                                    (item.isWord
+                                        ? dict.examples(item.key).firstOrNull
+                                        : null);
                                 return WordTableRow(
                                   title: item.title,
                                   definition: item.definition,
@@ -657,7 +804,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                   selecting: _selecting,
                                   selected: _selected.contains(item.key),
                                   onTap: () => _handleItemTap(item),
-                                  onLongPress: () => _handleItemLongPress(item, own),
+                                  onLongPress: () =>
+                                      _handleItemLongPress(item, own),
                                 );
                               },
                             ),
@@ -681,7 +829,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                     child: AnimatedSlide(
                       duration: Motion.navHide,
                       curve: Motion.curveOf(context, Motion.standard),
-                      offset: _buttonsVisible ? Offset.zero : const Offset(0, 1.2),
+                      offset: _buttonsVisible
+                          ? Offset.zero
+                          : const Offset(0, 1.2),
                       child: AnimatedOpacity(
                         duration: Motion.fast,
                         curve: Motion.curveOf(context, Motion.standard),
@@ -718,7 +868,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                     horizontal: Space.xl,
                                     vertical: Space.xs,
                                   ),
-                                  onPressed: rawEntries.isEmpty ? null : _openCards,
+                                  onPressed: rawEntries.isEmpty
+                                      ? null
+                                      : _openCards,
                                 ),
                               ),
                             ),
@@ -739,7 +891,12 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
 /// Multi-select: the header turns `primaryContainer`, shows "{n} selected"
 /// and bookmark/delete actions.
 class _SelectionHeader extends StatelessWidget {
-  const _SelectionHeader({required this.count, required this.onClose, required this.onBookmark, this.onDelete});
+  const _SelectionHeader({
+    required this.count,
+    required this.onClose,
+    required this.onBookmark,
+    this.onDelete,
+  });
 
   final int count;
   final VoidCallback onClose;
@@ -754,12 +911,35 @@ class _SelectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(Space.lg, 14, Space.lg, Space.md),
       child: Row(
         children: <Widget>[
-          AppIconButton(icon: Icons.close_rounded, semanticLabel: 'Cancel selection', onPressed: onClose, tint: c.onPrimaryContainer, background: Colors.transparent),
+          AppIconButton(
+            icon: Icons.close_rounded,
+            semanticLabel: 'Cancel selection',
+            onPressed: onClose,
+            tint: c.onPrimaryContainer,
+            background: Colors.transparent,
+          ),
           const SizedBox(width: 6),
-          Expanded(child: Text('$count selected', style: MullType.headerTitle.copyWith(color: c.onPrimaryContainer))),
-          AppIconButton(icon: Icons.bookmark_border_rounded, semanticLabel: 'Bookmark selected', onPressed: count == 0 ? null : onBookmark, tint: c.onPrimaryContainer, background: Colors.transparent),
+          Expanded(
+            child: Text(
+              '$count selected',
+              style: MullType.headerTitle.copyWith(color: c.onPrimaryContainer),
+            ),
+          ),
+          AppIconButton(
+            icon: Icons.bookmark_border_rounded,
+            semanticLabel: 'Bookmark selected',
+            onPressed: count == 0 ? null : onBookmark,
+            tint: c.onPrimaryContainer,
+            background: Colors.transparent,
+          ),
           if (onDelete != null)
-            AppIconButton(icon: Icons.delete_outline_rounded, semanticLabel: 'Remove selected', onPressed: count == 0 ? null : onDelete, tint: c.onPrimaryContainer, background: Colors.transparent),
+            AppIconButton(
+              icon: Icons.delete_outline_rounded,
+              semanticLabel: 'Remove selected',
+              onPressed: count == 0 ? null : onDelete,
+              tint: c.onPrimaryContainer,
+              background: Colors.transparent,
+            ),
         ],
       ),
     );
@@ -773,17 +953,42 @@ class _TableHeader extends SliverPersistentHeaderDelegate {
   final MullColors c;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => Container(
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => Container(
     height: 32,
     padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-    decoration: BoxDecoration(color: c.surface, border: Border(bottom: BorderSide(color: c.divider))),
+    decoration: BoxDecoration(
+      color: c.surface,
+      border: Border(bottom: BorderSide(color: c.divider)),
+    ),
     child: Row(
       children: <Widget>[
-        SizedBox(width: 82, child: Text('WORD', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant))),
+        SizedBox(
+          width: 82,
+          child: Text(
+            'WORD',
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+        ),
         const SizedBox(width: Space.sm),
-        Expanded(flex: 11, child: Text('DEFINITION', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant))),
+        Expanded(
+          flex: 11,
+          child: Text(
+            'DEFINITION',
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+        ),
         const SizedBox(width: Space.sm),
-        Expanded(flex: 10, child: Text('EXAMPLE', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant))),
+        Expanded(
+          flex: 10,
+          child: Text(
+            'EXAMPLE',
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+        ),
       ],
     ),
   );
@@ -829,7 +1034,10 @@ class WordTableRow extends StatelessWidget {
       onLongPress: onLongPress,
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
-        padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 9),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.screen,
+          vertical: 9,
+        ),
         decoration: BoxDecoration(
           color: selected ? c.surfaceContainer : null,
           border: Border(bottom: BorderSide(color: c.divider)),
@@ -844,9 +1052,14 @@ class WordTableRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: selected ? c.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: selected ? c.primary : c.outline, width: 1.5),
+                  border: Border.all(
+                    color: selected ? c.primary : c.outline,
+                    width: 1.5,
+                  ),
                 ),
-                child: selected ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
+                child: selected
+                    ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary)
+                    : null,
               ),
               const SizedBox(width: Space.md),
             ],
@@ -863,7 +1076,10 @@ class WordTableRow extends StatelessWidget {
                           width: 5,
                           height: 5,
                           margin: const EdgeInsets.only(left: 5, bottom: 4),
-                          decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
+                          decoration: BoxDecoration(
+                            color: c.primary,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                       ),
                   ],
@@ -888,7 +1104,10 @@ class WordTableRow extends StatelessWidget {
               flex: 10,
               child: Text(
                 example ?? '',
-                style: MullType.tableCell.copyWith(color: c.onSurfaceVariant, fontStyle: FontStyle.italic),
+                style: MullType.tableCell.copyWith(
+                  color: c.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

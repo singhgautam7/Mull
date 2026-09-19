@@ -52,7 +52,14 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('0${_step + 1} / 03', style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+              AnimatedSwitcher(
+                duration: Motion.of(context, Motion.fast),
+                child: Text(
+                  '0${_step + 1} / 03',
+                  key: ValueKey<int>(_step),
+                  style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                ),
+              ),
               // Centred while it fits; scrolls at a large font scale. The
               // buttons below stay put.
               Expanded(
@@ -65,7 +72,31 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
                           const SizedBox(height: Space.xl),
-                          switch (_step) {
+                          // `page.push`: the next screen arrives from the
+                          // right on the spring, the last one fades under it.
+                          // The old page is out in the first 40% and the new
+                          // one arrives over the last 70%, so two pages of
+                          // text never sit half-visible on each other.
+                          AnimatedSwitcher(
+                            duration: Motion.of(context, Motion.containerTransform),
+                            switchInCurve: Interval(0.3, 1, curve: Motion.curveOf(context, Motion.spring)),
+                            switchOutCurve: Interval(0.6, 1, curve: Motion.curveOf(context, Motion.decelerate)),
+                            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+                              alignment: Alignment.topCenter,
+                              children: <Widget>[...previous, ?current],
+                            ),
+                            transitionBuilder: (Widget child, Animation<double> animation) => FadeTransition(
+                              opacity: animation,
+                              child: Motion.reduced(context)
+                                  ? child
+                                  : SlideTransition(
+                                      position: Tween<Offset>(begin: const Offset(0.06, 0), end: Offset.zero).animate(animation),
+                                      child: child,
+                                    ),
+                            ),
+                            child: KeyedSubtree(
+                              key: ValueKey<int>(_step),
+                              child: switch (_step) {
                 0 => Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -137,6 +168,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   ],
                 ),
               },
+                            ),
+                          ),
                           const SizedBox(height: Space.xl),
                         ],
                       ),
@@ -189,13 +222,15 @@ class _CardStack extends StatelessWidget {
             borderRadius: Radii.cardR,
             border: Border.all(color: c.outline),
           ),
+          // The cards behind sit in muted ink, so the tinted one reads as
+          // the front of the stack.
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(word, style: MullType.title.copyWith(color: tint ? c.onPrimaryContainer : c.onSurface)),
-              Text(ipa, style: MullType.monoLabel.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceVariant)),
+              Text(word, style: MullType.title.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceVariant)),
+              Text(ipa, style: MullType.monoLabel.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceMuted)),
               const SizedBox(height: 6),
-              Text(def, style: MullType.bodySmall.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceVariant)),
+              Text(def, style: MullType.bodySmall.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceMuted)),
             ],
           ),
         ),
@@ -207,8 +242,9 @@ class _CardStack extends StatelessWidget {
         clipBehavior: Clip.none,
         children: <Widget>[
           card('sonder', '/ˈsɒndə/', 'The sense that every passer-by has a life as full as yours.', 40, 0, -0.06),
-          card('petrichor', '/ˈpɛtrɪkɔː/', 'The smell of rain falling on dry earth.', 0, 50, 0.03, tint: true),
-          card('mull', '/mʌl/', 'To think about something at length, without hurry.', 70, 100, -0.02),
+          card('petrichor', '/ˈpɛtrɪkɔː/', 'The smell of rain falling on dry earth.', 0, 50, 0.03),
+          // The app's own word is the one in colour.
+          card('mull', '/mʌl/', 'To think about something at length, without hurry.', 70, 100, -0.02, tint: true),
         ],
       ),
     );

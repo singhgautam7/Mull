@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/mix_repository.dart';
@@ -21,6 +20,7 @@ import '../../core/utils/pronunciation.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/linger_background.dart';
+import '../../shared/widgets/states.dart';
 import '../dictionary/add_to_list_sheet.dart';
 import '../dictionary/note_sheet.dart';
 import '../dictionary/word_sheet.dart';
@@ -28,6 +28,7 @@ import '../settings/settings_controller.dart';
 import 'linger_rules.dart';
 import 'mix_sheet.dart';
 import 'queue_builder.dart';
+import 'share_word_sheet.dart';
 import 'word_card.dart';
 
 /// The Mull tab. Plays the active mix on arrival, no picker on entry, ever.
@@ -165,18 +166,39 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     if (_pager.hasClients) _pager.jumpToPage(0);
   }
 
-  /// Appends the next batch. The queue is never loaded whole.
+  /// Appends the next batch. The queue is never loaded whole, and on an
+  /// empty queue the first card is served as soon as it alone is ready: the
+  /// other twenty-nine are hydrated behind it, after that frame has drawn.
   Future<void> _extend() async {
     if (_extending || _mix == null) return;
     _extending = true;
     final QueueBuilder builder = ref.read(queueBuilderProvider);
     final List<String> batch = await builder.build(_mix!, exclude: _served);
-    final Map<String, SeenWord> seen = await _user.seenStates(batch);
-    for (final String key in batch) {
-      final DictionaryWord? w = _dict.byKey(key);
-      if (w == null) continue;
-      _cards[key] = _CardData(w, _dict.examples(key), _dict.synonyms(key));
+    if (!mounted) {
+      _extending = false;
+      return;
     }
+    final List<String> hydrated = <String>[];
+    for (final String key in batch) {
+      if (!_hydrate(key)) continue;
+      hydrated.add(key);
+      if (_queue.isEmpty && hydrated.length == 1) {
+        setState(() {
+          _served.add(key);
+          _queue = <String>[key];
+          _loading = false;
+          _enteredAt = DateTime.now();
+        });
+        if (_pager.hasClients) _pager.jumpToPage(0);
+        // Let that first card reach the screen before the rest are read.
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) {
+          _extending = false;
+          return;
+        }
+      }
+    }
+    final Map<String, SeenWord> seen = await _user.seenStates(batch);
     if (!mounted) {
       _extending = false;
       return;
@@ -184,10 +206,19 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     setState(() {
       _seenBefore = <String>{..._seenBefore, ...seen.keys};
       _served.addAll(batch);
-      _queue = <String>[..._queue, ...batch.where(_cards.containsKey)];
+      _queue = <String>[..._queue, ...hydrated.where((String k) => !_queue.contains(k))];
       if (batch.isEmpty && _queue.isEmpty) _exhausted = true;
     });
     _extending = false;
+  }
+
+  /// Reads one card's entry, examples and synonyms into [_cards].
+  bool _hydrate(String key) {
+    if (_cards.containsKey(key)) return true;
+    final DictionaryWord? w = _dict.byKey(key);
+    if (w == null) return false;
+    _cards[key] = _CardData(w, _dict.examples(key), _dict.synonyms(key));
+    return true;
   }
 
   /// Seen is written on card exit, after the dwell threshold, never on entry.
@@ -257,9 +288,11 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     if (!mounted) return;
     switch (action) {
       case 'share':
-        unawaited(SharePlus.instance.share(
-          ShareParams(text: '${word.headword}: ${word.definitionFull}'),
-        ));
+        await showShareWordSheet(
+          context,
+          word: word,
+          example: ref.read(dictProvider).examples(word.wordKey).firstOrNull,
+        );
       case 'collection':
         await showAddToListSheet(context, wordKey: word.wordKey, headword: word.headword);
     }
@@ -267,7 +300,6 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    final MullColors c = context.colors;
     final AppSettings s = ref.watch(settingsProvider);
     final Set<String> bookmarks = ref.watch(bookmarksProvider).value ?? const <String>{};
     final String? scopeTitle = _scope == null ? null : ref.watch(collectionBySlugProvider)[_scope!]?.title;
@@ -356,8 +388,14 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                       ),
                     ),
             ),
-            if (_loading)
-              Center(child: Text('', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted))),
+            // HANDOFF: the hairline, and only if the first card takes more
+            // than a moment. It sits where the card's top edge will land.
+            Positioned(
+              left: Space.screen,
+              right: Space.screen,
+              top: pad.top + 96 - 34,
+              child: LoadingHairline(visible: _loading),
+            ),
           ],
         ),
       ),

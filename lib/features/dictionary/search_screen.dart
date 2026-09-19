@@ -11,8 +11,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
-import '../../shared/widgets/app_icon_button.dart';
-import '../../shared/widgets/app_snackbar.dart';
+import '../../shared/widgets/fields.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/states.dart';
@@ -28,13 +27,15 @@ enum SearchSegment { words, idioms }
 /// tinted.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({
-    this.addToCollectionSlug,
     this.initialSegment = SearchSegment.words,
+    this.initialQuery,
     super.key,
   });
 
-  final String? addToCollectionSlug;
   final SearchSegment initialSegment;
+
+  /// Pre-filled and run on open: the selection an arrival could not resolve.
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -57,6 +58,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.initState();
     _segment = widget.initialSegment;
     unawaited(_loadRecent());
+    if (widget.initialQuery case final String q when q.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _set(q));
+    }
   }
 
   Future<void> _loadRecent() async {
@@ -111,12 +115,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final bool typing = _query.trim().isNotEmpty;
-    final Collection? targetCol = widget.addToCollectionSlug != null
-        ? ref.watch(collectionBySlugProvider)[widget.addToCollectionSlug!]
-        : null;
-    final String title = widget.addToCollectionSlug != null
-        ? 'Add to ${targetCol?.title ?? 'Shelf'}'
-        : 'Search';
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -128,52 +126,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               AppHeader(
-                title: title,
-                onBack: (widget.addToCollectionSlug != null || Navigator.of(context).canPop())
+                title: 'Search',
+                onBack: Navigator.of(context).canPop()
                     ? () => Navigator.of(context).pop()
                     : null,
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: c.surfaceContainer,
-                    borderRadius: Radii.fullR,
-                    border: Border.all(color: c.outline),
-                  ),
-                  child: Row(
-                    spacing: 11,
-                    children: <Widget>[
-                      Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
-                      Expanded(
-                        child: TextField(
-                          controller: _field,
-                          focusNode: _focus,
-                          autofocus: widget.addToCollectionSlug == null,
-                          textInputAction: TextInputAction.search,
-                          onChanged: _run,
-                          style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                            hintText: 'Search words and phrases',
-                            hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
-                          ),
-                        ),
-                      ),
-                      if (typing)
-                        AppIconButton(
-                          icon: Icons.close_rounded,
-                          size: 30,
-                          glyphSize: 16,
-                          filled: false,
-                          semanticLabel: 'Clear',
-                          onPressed: () => _set(''),
-                        ),
-                    ],
-                  ),
+                child: SearchField(
+                  controller: _field,
+                  focusNode: _focus,
+                  autofocus: true,
+                  hint: 'Search words and phrases',
+                  onChanged: _run,
                 ),
               ),
               Padding(
@@ -230,46 +195,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     SearchResult at(int i) => words ? SearchResult.word(_words[i]) : SearchResult.idiom(_idioms[i]);
     void open(int i) => words ? unawaited(_openWord(_words[i])) : unawaited(showIdiomSheet(context, idiom: _idioms[i]));
 
-    Future<void> handleTap(int i) async {
-      if (widget.addToCollectionSlug != null) {
-        final String slug = widget.addToCollectionSlug!;
-        final String key = words ? _words[i].wordKey : _idioms[i].idiomKey;
-        final List<String> currentKeys = ref.read(collectionKeysProvider)[slug] ?? const <String>[];
-        final bool alreadyExists = currentKeys.contains(key) ||
-            ref.read(dictProvider).collectionIdioms(slug).any((Idiom idm) => idm.idiomKey == key);
-        if (alreadyExists) {
-          if (mounted) {
-            AppSnackbar.info(
-              context,
-              words
-                  ? 'Word already exists in the shelf'
-                  : 'Phrase already exists in the shelf',
-            );
-          }
-          return;
-        }
-        await ref.read(userRepositoryProvider).addToCollection(slug, key);
-        if (mounted) {
-          final Collection? col = ref.read(collectionBySlugProvider)[slug];
-          AppSnackbar.info(context, 'Added to ${col?.title ?? 'shelf'}');
-        }
-      } else {
-        open(i);
-      }
-    }
-
     if (ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle)) == SearchStyle.table) {
       return ListView.builder(
         padding: const EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe),
         itemCount: n,
-        itemBuilder: (BuildContext context, int i) => SearchResultRow(result: at(i), query: _query, onTap: () => handleTap(i)),
+        itemBuilder: (BuildContext context, int i) => SearchResultRow(result: at(i), query: _query, onTap: () => open(i)),
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.bottomSafe),
       itemCount: n,
       separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
-      itemBuilder: (BuildContext context, int i) => SearchResultCard(result: at(i), query: _query, onTap: () => handleTap(i)),
+      itemBuilder: (BuildContext context, int i) => SearchResultCard(result: at(i), query: _query, onTap: () => open(i)),
     );
   }
 
@@ -329,11 +266,24 @@ class SearchResult {
 /// One line, 44dp minimum: title (fixed 104dp, matched run tinted `accent`),
 /// then part of speech italic + short definition in `onSurfaceVariant`.
 class SearchResultRow extends StatelessWidget {
-  const SearchResultRow({required this.result, required this.query, required this.onTap, super.key});
+  const SearchResultRow({
+    required this.result,
+    required this.query,
+    required this.onTap,
+    this.trailing,
+    this.tinted = false,
+    super.key,
+  });
 
   final SearchResult result;
   final String query;
   final VoidCallback onTap;
+
+  /// A control at the end of the row (the shelf picker's tick).
+  final Widget? trailing;
+
+  /// `surfaceContainer` behind the row: on the shelf already.
+  final bool tinted;
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +293,7 @@ class SearchResultRow extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+        color: tinted ? c.surfaceContainer : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           spacing: Space.md,
@@ -365,6 +316,7 @@ class SearchResultRow extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            ?trailing,
           ],
         ),
       ),
@@ -383,6 +335,7 @@ class SearchResultCard extends StatelessWidget {
     this.onLongPress,
     this.selecting = false,
     this.selected = false,
+    this.trailing,
     super.key,
   });
 
@@ -392,6 +345,9 @@ class SearchResultCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final bool selecting;
   final bool selected;
+
+  /// A control at the top right, beside the chip (the shelf picker's tick).
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +394,11 @@ class SearchResultCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (trailing != null)
+              Padding(
+                padding: const EdgeInsets.only(left: Space.md),
+                child: trailing,
+              ),
           ],
         ),
       ),

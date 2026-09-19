@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark. Text on panel 13:1, muted labels 5.6:1. -->
+<resources>
+    <color name="widget_panel">#1A2226</color>
+    <color name="widget_outline">#2A353A</color>
+    <color name="widget_text">#E7EEF0</color>
+    <color name="widget_text_variant">#C3CFD3</color>
+    <color name="widget_text_muted">#9EB0B6</color>
+</resources>

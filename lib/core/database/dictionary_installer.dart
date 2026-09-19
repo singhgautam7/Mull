@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -61,19 +63,27 @@ class DictionaryInstaller {
 
   Future<void> _install(String version) async {
     final ByteData data = await bundle.load(assetDb);
-    final Uint8List bytes = data.buffer.asUint8List(
-      data.offsetInBytes,
-      data.lengthInBytes,
+    // Handed over, not copied: the 50 MB asset is moved into the worker.
+    final TransferableTypedData packed = TransferableTypedData.fromList(
+      <TypedData>[
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      ],
     );
     await directory.create(recursive: true);
     // Written to a sibling and renamed, so a crash mid-way never leaves a
     // half-written dictionary.db behind for the next launch to open.
     final String tmp = '$dbPath.part';
     // Inflating tens of megabytes is CPU work; it happens off the UI isolate
-    // so the first-run screen keeps animating.
+    // so the first-run screen keeps animating. Fed in slices so the inflater
+    // never holds more than a slice and its output at once.
     await Isolate.run(() async {
+      final Uint8List bytes = packed.materialize().asUint8List();
+      const int slice = 1 << 20;
       final IOSink sink = File(tmp).openWrite();
-      await Stream<List<int>>.value(bytes).transform(gzip.decoder).pipe(sink);
+      await Stream<List<int>>.fromIterable(<List<int>>[
+        for (int i = 0; i < bytes.length; i += slice)
+          Uint8List.sublistView(bytes, i, min(i + slice, bytes.length)),
+      ]).transform(gzip.decoder).pipe(sink);
     });
     await File(tmp).rename(dbPath);
     await prefs.setString(prefsKey, version);

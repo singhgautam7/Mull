@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/mix_repository.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
+import '../../core/database/user_repository.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -17,6 +18,7 @@ import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/fields.dart';
 import 'linger_rules.dart';
+import 'queue_builder.dart';
 
 /// The familiarity labels, HANDOFF 11.1, over the seen policy the data layer
 /// stores.
@@ -72,12 +74,27 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
   int? _presetId;
   int _total = 0;
   int _new = 0;
+  List<String> _wrongQuizKeys = <String>[];
+  int _quizCount = 0;
 
   @override
   void initState() {
     super.initState();
     _presetId = widget.active.isPreset ? widget.active.id : null;
     unawaited(_recount());
+    unawaited(_loadQuizStats());
+  }
+
+  Future<void> _loadQuizStats() async {
+    final UserRepository user = ref.read(userRepositoryProvider);
+    final List<String> wrong = await user.wrongQuizKeys();
+    final int quizzes = await user.completedQuizCount();
+    if (mounted) {
+      setState(() {
+        _wrongQuizKeys = wrong;
+        _quizCount = quizzes;
+      });
+    }
   }
 
   Future<void> _recount() async {
@@ -190,13 +207,23 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
         if (!(preset?.includeBookmarkedOnly ?? false)) ...<Widget>[
           sectionLabel('SOURCES · BANDS'),
           for (final Collection col in collections.where((Collection x) => x.kind == 'band'))
-            _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
+            _SourceRow.collection(col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
           sectionLabel('SOURCES · TOPICS'),
           for (final Collection col in collections.where((Collection x) => x.kind == 'topic'))
-            _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
+            _SourceRow.collection(col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
           sectionLabel('SOURCES · YOUR SHELVES'),
           for (final Collection col in collections.where((Collection x) => x.isUsers))
-            _SourceRow(collection: col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
+            _SourceRow.collection(col, checked: _sources.contains(col.slug), onTap: () => _toggleSource(col.slug)),
+          // HANDOFF 20: present even when empty, so the user learns where it fills from.
+          _SourceRow(
+            title: 'Words I got wrong',
+            count: _wrongQuizKeys.length,
+            subtitle: _wrongQuizKeys.isEmpty
+                ? 'nothing here yet · words you miss in a quiz land here'
+                : 'from ${plural(_quizCount, 'quiz', 'quizzes')} · right twice running and a word leaves',
+            checked: _sources.contains(QueueBuilder.wrongQuizSource),
+            onTap: _wrongQuizKeys.isEmpty ? null : () => _toggleSource(QueueBuilder.wrongQuizSource),
+          ),
         ],
         const SizedBox(height: Space.xl),
         if (_total < 50 && !(preset?.includeBookmarkedOnly ?? false)) ...<Widget>[
@@ -243,23 +270,43 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
 }
 
 class _SourceRow extends StatelessWidget {
-  const _SourceRow({required this.collection, required this.checked, required this.onTap});
+  const _SourceRow({
+    required this.title,
+    required this.count,
+    required this.checked,
+    required this.onTap,
+    this.subtitle,
+  });
 
-  final Collection collection;
+  _SourceRow.collection(
+    Collection collection, {
+    required this.checked,
+    required this.onTap,
+  }) : title = collection.title,
+       count = collection.wordCount,
+       subtitle = null;
+
+  final String title;
+  final int count;
+  final String? subtitle;
   final bool checked;
-  final VoidCallback onTap;
+
+  /// Null renders the row muted and unselectable (an empty source).
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
+    final bool enabled = onTap != null;
     return Semantics(
       checked: checked,
-      label: collection.title,
+      enabled: enabled,
+      label: title,
       child: InkWell(
         onTap: onTap,
         borderRadius: Radii.thumbR,
-        child: SizedBox(
-          height: 44,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             spacing: Space.md,
             children: <Widget>[
@@ -270,12 +317,31 @@ class _SourceRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: checked ? c.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: checked ? c.primary : c.outline, width: 1.5),
+                  border: Border.all(
+                    color: checked ? c.primary : (enabled ? c.outline : c.divider),
+                    width: 1.5,
+                  ),
                 ),
                 child: checked ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
               ),
-              Expanded(child: Text(collection.title, style: MullType.titleMedium.copyWith(color: c.onSurface))),
-              Text(grouped(collection.wordCount), style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: MullType.titleMedium.copyWith(color: enabled ? c.onSurface : c.onSurfaceMuted),
+                    ),
+                    if (subtitle != null)
+                      Text(subtitle!, style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
+                  ],
+                ),
+              ),
+              Text(
+                grouped(count),
+                style: MullType.monoLabel.copyWith(color: enabled ? c.onSurfaceVariant : c.onSurfaceMuted),
+              ),
             ],
           ),
         ),

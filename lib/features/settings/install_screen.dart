@@ -6,7 +6,10 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 
 /// HANDOFF 3.14, install state: a quiet full-screen moment with a display
-/// line and a sentence. No percentage, no progress bar, no cancel.
+/// line and a sentence. No percentage, no progress bar, no cancel. The line
+/// settles in on the decelerate curve and the app cross-fades over it when
+/// the dictionary is ready (see `MullApp`), so nothing here suggests a wait
+/// that could fail.
 class InstallScreen extends StatelessWidget {
   const InstallScreen({this.entryCount, super.key});
 
@@ -21,7 +24,18 @@ class InstallScreen extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.xxl),
-          child: Column(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: Motion.of(context, Motion.sheet),
+            curve: Motion.curveOf(context, Motion.decelerate),
+            builder: (BuildContext context, double t, Widget? child) => Opacity(
+              opacity: t,
+              child: Transform.translate(
+                offset: Offset(0, Motion.reduced(context) ? 0 : 12 * (1 - t)),
+                child: child,
+              ),
+            ),
+            child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -35,6 +49,7 @@ class InstallScreen extends StatelessWidget {
                 style: MullType.body.copyWith(color: c.onSurfaceVariant),
               ),
             ],
+          ),
           ),
         ),
       ),

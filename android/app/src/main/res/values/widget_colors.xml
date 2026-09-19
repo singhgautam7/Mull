@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget panel and text, light. Mull's light surfaceContainer / onSurface
+     family: text on panel is 12:1, the muted labels 5.3:1. -->
+<resources>
+    <color name="widget_panel">#EEF5F7</color>
+    <color name="widget_outline">#D1DBDE</color>
+    <color name="widget_text">#142125</color>
+    <color name="widget_text_variant">#2D4349</color>
+    <color name="widget_text_muted">#4F676E</color>
+</resources>

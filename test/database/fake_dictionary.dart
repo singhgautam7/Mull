@@ -14,6 +14,7 @@ class FakeWord {
     this.ipa,
     this.examples = const <String>[],
     this.synonyms = const <String>[],
+    this.inLearningSet = true,
   });
 
   final String headword;
@@ -24,6 +25,7 @@ class FakeWord {
   final String? ipa;
   final List<String> examples;
   final List<String> synonyms;
+  final bool inLearningSet;
 
   String get key => '${DictionaryDb.normalise(headword)}|$pos|1';
 }
@@ -105,8 +107,8 @@ DictionaryDb fakeDictionary({
   for (final FakeWord w in words) {
     db.execute(
       'INSERT INTO words(word_key, headword, headword_norm, pos, sense_index, definition_short, '
-      'definition_full, ipa, freq_rank, band) VALUES (?,?,?,?,1,?,?,?,?,?)',
-      <Object?>[w.key, w.headword, DictionaryDb.normalise(w.headword), w.pos, w.definition, w.definition, w.ipa, w.rank, w.band],
+      'definition_full, ipa, freq_rank, band, in_learning_set) VALUES (?,?,?,?,1,?,?,?,?,?,?)',
+      <Object?>[w.key, w.headword, DictionaryDb.normalise(w.headword), w.pos, w.definition, w.definition, w.ipa, w.rank, w.band, w.inLearningSet ? 1 : 0],
     );
     for (final String e in w.examples) {
       db.execute('INSERT INTO examples(word_key, text) VALUES (?,?)', <Object>[w.key, e]);

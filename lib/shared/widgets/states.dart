@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -117,16 +119,136 @@ class ErrorStateView extends StatelessWidget {
 }
 
 /// A 2dp `primary` hairline at 60% opacity, shown only if a query exceeds
-/// 120 ms. No spinners, no skeleton shimmer in search.
-class LoadingHairline extends StatelessWidget {
+/// 120 ms. No spinners, no skeleton shimmer in search. The wait is built in:
+/// pass [visible] for the whole load and the hairline holds back on its own,
+/// so a local query that answers in a frame never flashes it.
+class LoadingHairline extends StatefulWidget {
   const LoadingHairline({required this.visible, super.key});
 
   final bool visible;
 
+  static const Duration grace = Duration(milliseconds: 120);
+
+  @override
+  State<LoadingHairline> createState() => _LoadingHairlineState();
+}
+
+class _LoadingHairlineState extends State<LoadingHairline> {
+  Timer? _grace;
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(LoadingHairline old) {
+    super.didUpdateWidget(old);
+    if (old.visible != widget.visible) _sync();
+  }
+
+  void _sync() {
+    _grace?.cancel();
+    if (widget.visible) {
+      _grace = Timer(LoadingHairline.grace, () {
+        if (mounted) setState(() => _shown = true);
+      });
+    } else {
+      _shown = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _grace?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedOpacity(
     duration: Motion.of(context, Motion.fast),
-    opacity: visible ? 0.6 : 0,
+    opacity: _shown && widget.visible ? 0.6 : 0,
     child: Container(height: 2, color: context.colors.primary),
+  );
+}
+
+/// A muted bar standing in for a line of text while a section settles.
+class SkeletonLine extends StatelessWidget {
+  const SkeletonLine({this.width = 120, this.height = 10, super.key});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: context.colors.surfaceContainerHigh,
+      borderRadius: Radii.chipR,
+    ),
+  );
+}
+
+/// A card the size and shape of a [TopicCard], holding its place until the
+/// progress and shelf streams have emitted, so nothing jumps when they land.
+/// Still, not shimmering: loading is never the dominant impression.
+class SkeletonCard extends StatelessWidget {
+  const SkeletonCard({this.minHeight = 96, super.key});
+
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Container(
+      constraints: BoxConstraints(minHeight: minHeight),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: c.surfaceContainer,
+        borderRadius: Radii.cardR,
+        border: Border.all(color: c.outline),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SkeletonLine(width: 30, height: 30),
+          SizedBox(height: Space.row),
+          SkeletonLine(width: 96, height: 12),
+          SizedBox(height: Space.sm),
+          SkeletonLine(width: 64, height: 9),
+        ],
+      ),
+    );
+  }
+}
+
+/// A row the size of a [BandRow] or [ListRow] inside a container.
+class SkeletonRow extends StatelessWidget {
+  const SkeletonRow({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+    child: Row(
+      spacing: Space.md,
+      children: <Widget>[
+        SkeletonLine(width: 12, height: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SkeletonLine(width: 110, height: 12),
+              SizedBox(height: 6),
+              SkeletonLine(width: 180, height: 9),
+              SizedBox(height: Space.sm),
+              SkeletonLine(width: double.infinity, height: 3),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
