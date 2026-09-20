@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_description">One word a day, from Mull. No streak, nothing to keep up with.</string>
+    <string name="search_widget_description">Search Mull from the home screen, and jump to the Mull or Shelves tab.</string>
+    <string name="widget_search_hint">Search Mull</string>
+    <string name="widget_open_mull">Open the Mull tab</string>
+    <string name="widget_open_shelves">Open Shelves</string>
+    <string name="search_widget_label">Mull search</string>
+    <string name="word_of_day_widget_label">Word of the day</string>
 </resources>

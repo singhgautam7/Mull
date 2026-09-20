@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4x1: a search-shaped box, then the Mull and Shelves buttons, floating
+     on the wallpaper like the Google search widget (no panel: the hint sits
+     inside the filled pill, so text is still never drawn on the wallpaper).
+     Every fill is an ImageView holding a shape, so the app's theme can tint
+     it through setColorFilter; the resources are Mull's default for before
+     the app has run. The row centres vertically when two rows tall. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
+        <FrameLayout
+            android:id="@+id/widget_search_box"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:contentDescription="@string/widget_search_hint">
+            <ImageView
+                android:id="@+id/widget_search_box_fill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_field_fill"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="12dp">
+                <ImageView
+                    android:id="@+id/widget_search_icon"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_widget_search"
+                    android:tint="@color/widget_text_muted"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/widget_search_hint"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:text="@string/widget_search_hint"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textColor="@color/widget_text_muted" />
+            </LinearLayout>
+        </FrameLayout>
+        <FrameLayout
+            android:id="@+id/widget_mull_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/widget_open_mull">
+            <ImageView
+                android:id="@+id/widget_mull_fill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_button_fill"
+                android:importantForAccessibility="no" />
+            <ImageView
+                android:id="@+id/widget_mull_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_widget_mull"
+                android:tint="@color/widget_on_primary"
+                android:importantForAccessibility="no" />
+        </FrameLayout>
+        <FrameLayout
+            android:id="@+id/widget_shelves_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/widget_open_shelves">
+            <ImageView
+                android:id="@+id/widget_shelves_fill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_button_fill"
+                android:importantForAccessibility="no" />
+            <ImageView
+                android:id="@+id/widget_shelves_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_widget_shelves"
+                android:tint="@color/widget_on_primary"
+                android:importantForAccessibility="no" />
+        </FrameLayout>
+    </LinearLayout>
+</FrameLayout>

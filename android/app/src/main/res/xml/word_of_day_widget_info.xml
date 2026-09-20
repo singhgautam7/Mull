@@ -9,5 +9,6 @@
     android:targetCellHeight="2"
     android:initialLayout="@layout/word_of_day_widget_small"
     android:previewLayout="@layout/word_of_day_widget_medium"
+    android:previewImage="@drawable/word_of_day_widget_preview"
     android:description="@string/widget_description"
     android:widgetCategory="home_screen" />

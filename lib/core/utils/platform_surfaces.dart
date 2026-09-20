@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,7 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/dictionary/arrival_sheet.dart';
 import '../../features/dictionary/word_sheet.dart';
+import '../../features/settings/settings_controller.dart';
 import '../database/dictionary_db.dart';
+import '../theme/palette.dart';
 import '../database/user_repository.dart';
 import '../providers.dart';
 
@@ -56,6 +59,25 @@ class PlatformSurfaces {
     }
   }
 
+  /// The installed version name (`1.0.0`), or null off Android.
+  static Future<String?> appVersion() async {
+    try {
+      return await _channel.invokeMethod<String>('appVersion');
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// Hands [url] to the browser or Play. Mull has no network permission; the
+  /// app that opens the link does the fetching.
+  static Future<void> openUrl(String url) async {
+    try {
+      await _channel.invokeMethod<bool>('openUrl', <String, String>{'url': url});
+    } on MissingPluginException {
+      // Tests and other hosts.
+    }
+  }
+
   /// Ends the define sheet's activity, returning the user to the app the text
   /// came from.
   static Future<void> finish() async {
@@ -71,6 +93,48 @@ class PlatformSurfaces {
   /// opened and through a reboot.
   static const String scheduleKey = 'widget.schedule';
   static const int scheduleDays = 30;
+
+  /// Preference the search widget reads (see WidgetTheme.kt): the app's
+  /// palette for both tones and which one applies, so the launcher can draw
+  /// the widget in the user's theme without the app running.
+  static const String themeKey = 'widget.theme';
+
+  /// Writes the current theme for the widgets and asks for a redraw. Called
+  /// on every change of family, mode, true black or dynamic colour.
+  static Future<void> syncWidgetTheme({
+    required AppSettings settings,
+    required Color? seed,
+    required SharedPreferences prefs,
+  }) async {
+    final ThemeFamily family = seed == null ? settings.family : ThemeFamily.fromSeed(seed);
+    Map<String, int> roles(MullColors c) => <String, int>{
+      'panel': c.surfaceContainer.toARGB32(),
+      'field': c.surface.toARGB32(),
+      'outline': c.outline.toARGB32(),
+      'text': c.onSurface.toARGB32(),
+      'muted': c.onSurfaceVariant.toARGB32(),
+      'primary': c.primary.toARGB32(),
+      'onPrimary': c.onPrimary.toARGB32(),
+    };
+    final Tone darkTone = settings.amoled && family.hasAmoled ? Tone.amoled : Tone.dark;
+    await prefs.setString(
+      themeKey,
+      jsonEncode(<String, Object>{
+        'mode': switch (settings.themeMode) {
+          ThemeMode.light => 'light',
+          ThemeMode.dark => 'dark',
+          ThemeMode.system => 'system',
+        },
+        'light': roles(family.colors(Tone.light)),
+        'dark': roles(family.colors(darkTone)),
+      }),
+    );
+    try {
+      await _channel.invokeMethod<void>('refreshWidget');
+    } on MissingPluginException {
+      // Android only.
+    }
+  }
 
   static Future<void> syncWidgetSchedule({
     required DictionaryDb dict,

@@ -1,8 +1,6 @@
 package com.grs.dictionary
 
 import android.app.Activity
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
 import android.speech.tts.TextToSpeech
@@ -41,10 +39,9 @@ class PlatformChannels(private val activity: Activity) {
         platform = MethodChannel(engine.dartExecutor.binaryMessenger, "com.grs.dictionary/platform")
         platform?.setMethodCallHandler { call, result ->
             when (call.method) {
+                // Both launcher widgets, after the schedule or the theme changed.
                 "refreshWidget" -> {
-                    val manager = AppWidgetManager.getInstance(activity)
-                    val ids = manager.getAppWidgetIds(ComponentName(activity, WordOfDayWidget::class.java))
-                    WordOfDayWidget().onUpdate(activity, manager, ids)
+                    WidgetTheme.refreshAll(activity)
                     result.success(null)
                 }
                 "incomingText" -> result.success(takeArrival(activity.intent))
@@ -64,6 +61,22 @@ class PlatformChannels(private val activity: Activity) {
                 "finish" -> {
                     activity.finish()
                     result.success(null)
+                }
+                // About: the installed version, and links that leave the app
+                // for the browser or Play. Mull itself still has no network.
+                "appVersion" -> result.success(
+                    activity.packageManager.getPackageInfo(activity.packageName, 0).versionName,
+                )
+                "openUrl" -> {
+                    val url = call.argument<String>("url")
+                    try {
+                        activity.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                        result.success(true)
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        result.success(false)
+                    }
                 }
                 // Word of the day: the alarm is armed from the saved setting,
                 // so the receiver and the app never disagree about the time.

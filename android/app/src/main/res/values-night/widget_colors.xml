@@ -6,4 +6,8 @@
     <color name="widget_text">#E7EEF0</color>
     <color name="widget_text_variant">#C3CFD3</color>
     <color name="widget_text_muted">#9EB0B6</color>
+    <!-- The search widget: the field inside the panel, and the round buttons. -->
+    <color name="widget_field">#243033</color>
+    <color name="widget_primary">#7FCDE0</color>
+    <color name="widget_on_primary">#00303B</color>
 </resources>

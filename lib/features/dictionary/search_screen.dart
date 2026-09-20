@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/dictionary_db.dart';
@@ -30,6 +31,7 @@ class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({
     this.initialSegment = SearchSegment.words,
     this.initialQuery,
+    this.focusToken,
     super.key,
   });
 
@@ -37,6 +39,11 @@ class SearchScreen extends ConsumerStatefulWidget {
 
   /// Pre-filled and run on open: the selection an arrival could not resolve.
   final String? initialQuery;
+
+  /// Set (to anything, each arrival a new value) by the launcher's search
+  /// widget: the field takes focus and the keyboard comes up. Normal
+  /// navigation to the tab leaves both alone.
+  final String? focusToken;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -70,6 +77,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (widget.initialQuery case final String q when q.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _set(q));
     }
+    if (widget.focusToken != null) _raiseKeyboard();
+  }
+
+  void _raiseKeyboard() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focus.requestFocus();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+    });
   }
 
   Future<void> _loadRecent() async {
@@ -84,6 +100,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.didUpdateWidget(old);
     final String? q = widget.initialQuery;
     if (q != null && q.isNotEmpty && q != old.initialQuery) _set(q);
+    if (widget.focusToken != null && widget.focusToken != old.focusToken) _raiseKeyboard();
   }
 
   @override
@@ -174,7 +191,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 child: SearchField(
                   controller: _field,
                   focusNode: _focus,
-                  autofocus: true,
                   hint: 'Search words and phrases',
                   onChanged: _run,
                 ),

@@ -224,8 +224,10 @@ GoRouter buildRouter({required bool onboarded}) {
             routes: <RouteBase>[
               GoRoute(
                 path: Routes.search,
-                builder: (BuildContext c, GoRouterState s) =>
-                    SearchScreen(initialQuery: s.uri.queryParameters['q']),
+                builder: (BuildContext c, GoRouterState s) => SearchScreen(
+                  initialQuery: s.uri.queryParameters['q'],
+                  focusToken: s.uri.queryParameters['focus'],
+                ),
               ),
             ],
           ),

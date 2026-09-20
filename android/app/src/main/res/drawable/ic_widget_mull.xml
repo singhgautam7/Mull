@@ -1,0 +1,7 @@
+<!-- The Mull tab glyph: one upright card, 12x16 with 4dp corners, 1.75 stroke. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:fillColor="#00000000"
+        android:pathData="M8,2 h4 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-4 a4,4 0 0 1 -4,-4 v-8 a4,4 0 0 1 4,-4 z" />
+</vector>

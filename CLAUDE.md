@@ -293,7 +293,10 @@ Flutter's release build. No signing config yet.
 
 ## Known gotchas
 
-- Seven taps on the version line under More opens the debug route.
+- Seven taps on the "Made with love in India" line under More opens the debug route. The
+  version shown beside About comes from the package (`PlatformSurfaces.appVersion`), never a
+  string in Dart; bump `pubspec.yaml` only. The privacy screen renders `PRIVACY_POLICY.md`
+  from the bundle: edit the file, not the screen.
 - The Mull tab's overflow offers "Open full entry" and "Progress"; "Show me fewer like
   this" from HANDOFF 3.2 is not implemented (there is no signal to act on yet).
 - Word of the day notifications are native, no plugin: `WordOfDayReminder.kt` arms one

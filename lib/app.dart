@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +22,19 @@ ThemeData themeFor(AppSettings s, Color? seed, Brightness b) {
   final Tone tone = s.toneFor(b);
   return seed == null ? AppTheme.of(s.family, tone) : AppTheme.fromSeed(seed, tone);
 }
+
+/// What the widgets' colours depend on, so the push fires on exactly those.
+typedef _WidgetThemeKey = ({String family, ThemeMode mode, bool amoled, Color? seed});
+
+final Provider<_WidgetThemeKey> _widgetThemeKeyProvider = Provider<_WidgetThemeKey>((Ref ref) {
+  final AppSettings s = ref.watch(settingsProvider);
+  return (
+    family: s.familyId,
+    mode: s.themeMode,
+    amoled: s.amoled,
+    seed: s.dynamicColor ? ref.watch(wallpaperSeedProvider).value : null,
+  );
+});
 
 class MullApp extends ConsumerStatefulWidget {
   const MullApp({super.key});
@@ -53,7 +68,14 @@ class _MullAppState extends ConsumerState<MullApp> {
     if (ref.read(dictionaryProvider) is! AsyncData<DictionaryDb>) return;
     // The define sheet handing the user over to a screen of the app.
     if (data['route'] case final String route) {
-      _router.go(route);
+      // The search widget's route carries `focus=1`; a fresh value per
+      // arrival, so a second tap while already on Search raises the
+      // keyboard again.
+      _router.go(
+        route.contains('focus=')
+            ? route.replaceFirst('focus=1', 'focus=${DateTime.now().millisecondsSinceEpoch}')
+            : route,
+      );
       return;
     }
     await PlatformSurfaces.handleIncomingIntent(context: ctx, ref: ref, data: data);
@@ -68,6 +90,18 @@ class _MullAppState extends ConsumerState<MullApp> {
     final Color? seed = s.dynamicColor
         ? ref.watch(wallpaperSeedProvider).value
         : null;
+    // The launcher widgets draw from the theme the app last wrote: push it
+    // whenever the family, mode, true black or the wallpaper seed changes.
+    ref.listen<_WidgetThemeKey>(
+      _widgetThemeKeyProvider,
+      (_WidgetThemeKey? old, _WidgetThemeKey next) => unawaited(
+        PlatformSurfaces.syncWidgetTheme(
+          settings: ref.read(settingsProvider),
+          seed: next.seed,
+          prefs: ref.read(prefsProvider),
+        ),
+      ),
+    );
 
     // The install state is shown while the dictionary is unpacked; the router
     // takes over once it is open. The two cross-fade (`sheet`, decelerate) so
@@ -101,6 +135,11 @@ class _MullAppState extends ConsumerState<MullApp> {
       _widgetSynced = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
+        await PlatformSurfaces.syncWidgetTheme(
+          settings: ref.read(settingsProvider),
+          seed: ref.read(_widgetThemeKeyProvider).seed,
+          prefs: ref.read(prefsProvider),
+        );
         await PlatformSurfaces.syncWidgetSchedule(
           dict: dict.value,
           prefs: ref.read(prefsProvider),

@@ -5,12 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/database/mix_repository.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
-import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
+import 'info_screens.dart';
 import 'settings_controller.dart';
 import 'settings_widgets.dart';
 
@@ -36,11 +34,11 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final MullColors c = context.colors;
     final AppSettings s = ref.watch(settingsProvider);
     final int collections = ref.watch(collectionsProvider).length;
     final int mixes = (ref.watch(mixesProvider).value ?? const <MixSpec>[]).where((MixSpec m) => !m.isPreset).length;
     final int entries = ref.watch(dictProvider).headwordCount;
+    final String? version = ref.watch(appVersionProvider).value;
 
     return Scaffold(
       body: SafeArea(
@@ -74,10 +72,10 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     children: <Widget>[
                       SettingsRow(icon: Icons.shield_outlined, label: 'Privacy', value: 'Offline only', onTap: () => context.push(Routes.privacy)),
                       SettingsRow(icon: Icons.menu_book_outlined, label: 'Dictionary info', value: '${grouped(entries)} entries', onTap: () => context.push(Routes.dictionary)),
-                      SettingsRow(icon: Icons.info_outline_rounded, label: 'About', onTap: () => context.push(Routes.about)),
+                      SettingsRow(icon: Icons.info_outline_rounded, label: 'About', value: version, onTap: () => context.push(Routes.about)),
                     ],
                   ),
-                  // Seven taps on the version line opens the debug route.
+                  // Seven taps on the footer line opens the debug route.
                   GestureDetector(
                     onTap: () {
                       setState(() => _versionTaps++);
@@ -87,9 +85,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                       }
                     },
                     behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text('Mull 0.1.0 · build 1', textAlign: TextAlign.center, style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
+                    child: const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: MadeInIndia(),
                     ),
                   ),
                 ],

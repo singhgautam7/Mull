@@ -1,0 +1,9 @@
+<!-- Mull's search glyph: a 1.75 stroke ring and a stem, on a 20dp box. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:fillColor="#00000000"
+        android:pathData="M8.4,8.4 m-5.2,0 a5.2,5.2 0 1,0 10.4,0 a5.2,5.2 0 1,0 -10.4,0" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:strokeLineCap="round"
+        android:pathData="M12.1,12.1 L16.4,16.4" />
+</vector>

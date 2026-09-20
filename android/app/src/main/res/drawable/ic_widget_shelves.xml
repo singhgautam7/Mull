@@ -1,0 +1,9 @@
+<!-- The Shelves tab glyph: two cards, the front one opaque over the back. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:fillColor="#00000000"
+        android:pathData="M10,2 h4 a3,3 0 0 1 3,3 v8 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-8 a3,3 0 0 1 3,-3 z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:fillColor="#FFFFFFFF" android:fillAlpha="0.0"
+        android:pathData="M6,4 h4 a3,3 0 0 1 3,3 v8 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-8 a3,3 0 0 1 3,-3 z" />
+</vector>

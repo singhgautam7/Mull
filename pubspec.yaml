@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.13.2
@@ -72,6 +72,8 @@ flutter:
     # by running tools/build_dictionary, never by hand.
     - assets/db/dictionary.db.gz
     - assets/db/dictionary.version
+    # Shown in the app under More, straight from the file in the repo root.
+    - PRIVACY_POLICY.md
 
   fonts:
     # Bundled, not fetched: Mull makes no network request, ever. Instrument
