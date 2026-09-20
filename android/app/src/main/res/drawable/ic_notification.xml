@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The status-bar glyph: an open page with two lines. White on alpha, as
+     Android requires; the system tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,3h9l4,4v14a1,1 0,0 1,-1 1H6a1,1 0,0 1,-1 -1V4a1,1 0,0 1,1 -1zM8,11h8v2H8zM8,15h8v2H8z" />
+</vector>

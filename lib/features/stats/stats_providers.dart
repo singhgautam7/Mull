@@ -37,8 +37,9 @@ class MullStats {
 }
 
 /// Stats is a mirror, not a scoreboard. No level, no estimate of words
-/// known, no goal ring.
-final FutureProvider<MullStats> statsProvider = FutureProvider<MullStats>((Ref ref) async {
+/// known, no goal ring. autoDispose: it reads the whole seen_events log and
+/// re-runs on every seen change, so it lives only while the screen does.
+final FutureProvider<MullStats> statsProvider = FutureProvider.autoDispose<MullStats>((Ref ref) async {
   final UserRepository user = ref.watch(userRepositoryProvider);
   // Recomputed whenever seen state changes.
   ref.watch(seenMapProvider);

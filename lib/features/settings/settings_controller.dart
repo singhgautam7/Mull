@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/utils/platform_surfaces.dart';
+
 import '../../core/theme/palette.dart';
 
 /// Which spelling the headword shows when the dictionary carries both.
@@ -196,10 +198,15 @@ class SettingsController extends Notifier<AppSettings> {
     await _prefs.setBool(AppSettings.kHaptics, value);
   }
 
+  /// Turning the reminder on asks the OS for notification permission first;
+  /// declined, it stays off. The alarm is armed by the platform from what is
+  /// saved here, so the receiver and the app never disagree about the time.
   Future<void> setWotd({required bool enabled, int? minutes}) async {
-    state = state.copyWith(wotdEnabled: enabled, wotdMinutes: minutes);
-    await _prefs.setBool(AppSettings.kWotd, enabled);
+    final bool on = enabled && await PlatformSurfaces.requestNotifications();
+    state = state.copyWith(wotdEnabled: on, wotdMinutes: minutes);
+    await _prefs.setBool(AppSettings.kWotd, on);
     if (minutes != null) await _prefs.setInt(AppSettings.kWotdMinutes, minutes);
+    await PlatformSurfaces.scheduleReminder();
   }
 
   Future<void> setOnboarded({required bool value}) async {

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/dictionary/arrival_sheet.dart';
@@ -17,6 +18,53 @@ class PlatformSurfaces {
   static const MethodChannel _channel = MethodChannel(
     'com.grs.dictionary/platform',
   );
+
+  @visibleForTesting
+  static MethodChannel get channel => _channel;
+
+  /// Takes the user to [route] in the app. Inside the app that is the
+  /// router; inside the define sheet (no router) the platform opens the app
+  /// on that route and finishes the sheet.
+  static Future<void> go(BuildContext context, String route) async {
+    if (GoRouter.maybeOf(context) case final GoRouter router) {
+      router.go(route);
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('openInApp', <String, String>{'route': route});
+    } on MissingPluginException {
+      // Tests and other hosts.
+    }
+  }
+
+  /// Asks Android for permission to post notifications (a system dialog on
+  /// Android 13 and later). True when notifications may be posted.
+  static Future<bool> requestNotifications() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestNotifications') ?? false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// Arms or clears the daily word-of-the-day alarm from the saved setting.
+  static Future<void> scheduleReminder() async {
+    try {
+      await _channel.invokeMethod<void>('scheduleReminder');
+    } on MissingPluginException {
+      // Tests and other hosts.
+    }
+  }
+
+  /// Ends the define sheet's activity, returning the user to the app the text
+  /// came from.
+  static Future<void> finish() async {
+    try {
+      await _channel.invokeMethod<void>('finish');
+    } on MissingPluginException {
+      // Tests and other hosts.
+    }
+  }
 
   /// Preference the widget reads (see WordOfDayWidget.kt). A 30-day schedule
   /// keyed by date, so the launcher stays right through days the app is not
@@ -94,26 +142,34 @@ class PlatformSurfaces {
     if (text.isEmpty) return;
     final List<String> tokens = words(text);
 
+    // The whole selection first: one word, or a phrase Mull has as a
+    // headword ("Command Line" is `command-line`). An exact or alias hit
+    // opens the entry; a near miss is offered, never opened.
+    final WordMatch whole = (await dict.matchWords(
+      <({String word, String? definition})>[(word: text, definition: null)],
+    )).single;
+    if (whole.isMatched) {
+      await user.recordLookup(whole.word!.wordKey);
+      if (context.mounted) {
+        await showWordSheet(
+          context,
+          wordKey: whole.word!.wordKey,
+          fromOutside: true,
+          sourceHint: sourceHint,
+        );
+      }
+      return;
+    }
     if (tokens.length <= 1) {
       // A single selection carries no sentence, so none is invented.
-      final WordMatch match = (await dict.matchWords(
-        <({String word, String? definition})>[(word: text, definition: null)],
-      )).single;
-      if (match.isMatched) {
-        await user.recordLookup(match.word!.wordKey);
-        if (context.mounted) {
-          await showWordSheet(
-            context,
-            wordKey: match.word!.wordKey,
-            fromOutside: true,
-            sourceHint: sourceHint,
-          );
-        }
-      } else if (context.mounted) {
+      final List<DictionaryWord> near = await dict.compute(
+        _suggestionsFor(text),
+      );
+      if (context.mounted) {
         await showUnknownWordSheet(
           context,
           text: text,
-          nearMatch: match.word,
+          suggestions: near,
           sourceHint: sourceHint,
         );
       }
@@ -123,11 +179,13 @@ class PlatformSurfaces {
     // Worth offering: the curated set, plus rarer-band words the sentence
     // spells exactly. That drops articles and the like, which Mull also has
     // entries for, and alias quirks such as `Mr` resolving to `millirem`.
-    final List<WordMatch> known = (await dict.matchWords(
+    final List<WordMatch> matched = await dict.matchWords(
       <({String word, String? definition})>[
         for (final String w in tokens.toSet()) (word: w, definition: null),
       ],
-    )).where(
+    );
+    List<WordMatch> known = matched
+        .where(
           (WordMatch m) =>
               m.isMatched &&
               (m.word!.inLearningSet ||
@@ -135,6 +193,18 @@ class PlatformSurfaces {
                       m.word!.headwordNorm == DictionaryDb.normalise(m.rawWord))),
         )
         .toList();
+    // When nothing in the selection stands out, every word Mull spells the
+    // same way is still an answer: "command line" is two entries, not none.
+    final bool everyday = known.isEmpty;
+    if (everyday) {
+      known = matched
+          .where(
+            (WordMatch m) =>
+                m.isMatched &&
+                m.word!.headwordNorm == DictionaryDb.normalise(m.rawWord),
+          )
+          .toList();
+    }
     final List<WordMatch> uncommon = known
         .where((WordMatch m) => m.word!.isUncommon)
         .toList();
@@ -162,10 +232,16 @@ class PlatformSurfaces {
         context,
         text: text,
         matches: known,
+        everyday: everyday,
         sourceHint: sourceHint,
       );
     }
   }
+
+  /// `DictionaryDb.suggestions` for the worker, made here (not inside the
+  /// async handler) so the closure carries only the text.
+  static List<DictionaryWord> Function(DictionaryDb) _suggestionsFor(String text) =>
+      (DictionaryDb db) => db.suggestions(text);
 
   /// The alphabetic words of [text], apostrophes kept, in order.
   @visibleForTesting

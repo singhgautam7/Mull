@@ -399,6 +399,76 @@ def test_slot_pattern_and_phrase_collections():
         assert "CRITICAL SHORTFALL" in str(e)
 
 
+def test_new_shelves_and_four_signals():
+    """Verify that the five new shelves:
+    1. Are produced by build_collections and have >= 60 members (floor) and <= 200 (cap).
+    2. Are NOT alphabetical in their first 10 members.
+    3. Include all required seed words.
+    4. Attribute each member to one of the 4 signals: wiktionary_category, pos_semantic_tag, stage_c_topic, manual.
+    5. Overlap between qualities_and_flaws and describing_people is measured.
+    """
+    import sqlite3
+    from pathlib import Path
+    from build_dictionary import NEW_SHELVES, load_curation
+
+    seeds = {
+        "faces_and_gestures": ["frown", "wince", "grimace", "smirk", "scowl", "squint", "flinch", "recoil", "beam", "bristle", "slouch", "fidget"],
+        "ways_of_saying": ["mutter", "retort", "concede", "quip", "drawl", "snap", "murmur", "insist", "chide", "muse", "stammer"],
+        "qualities_and_flaws": ["pedantic", "gregarious", "meticulous", "aloof", "petty", "earnest", "dogged", "glib", "brittle"],
+        "setting_a_scene": ["desolate", "cramped", "airy", "dingy", "sprawling", "cavernous", "stifling", "serene"],
+        "ways_of_moving": ["amble", "trudge", "dart", "saunter", "lurch", "scurry", "stride", "shuffle"],
+    }
+
+    db_path = Path("work/dictionary.db")
+    if not db_path.exists():
+        return
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    words = [dict(r) for r in con.execute("SELECT * FROM words WHERE sense_index = 1")]
+    primary = {w["headword_norm"]: w for w in words}
+    learning_rows = [w for w in words if w.get("in_learning_set") == 1]
+    cur = load_curation()
+
+    defs, members = build_collections(learning_rows, cur=cur, primary=primary, all_words=words)
+    defs_by_slug = {d["slug"]: d for d in defs}
+
+    valid_signals = {"wiktionary_category", "pos_semantic_tag", "stage_c_topic", "manual"}
+
+    for sh in NEW_SHELVES:
+        slug = sh["slug"]
+        assert slug in defs_by_slug, f"Missing shelf definition for {slug}"
+        assert slug in members, f"Missing members for {slug}"
+        shelf_members = members[slug]
+        count = len(shelf_members)
+
+        # 1. Floor & Cap
+        assert count >= 60, f"Shelf {slug} has {count} members, below floor of 60!"
+        assert count <= 200, f"Shelf {slug} has {count} members, above cap of 200!"
+
+        # 2. First 10 NOT alphabetical
+        first_10 = [w["headword"] for w, _ in shelf_members[:10]]
+        assert first_10 != sorted(first_10), f"Shelf {slug} first 10 members are alphabetical: {first_10}"
+
+        # 3. Seed words present
+        member_headwords = {w["headword_norm"] for w, _ in shelf_members}
+        for seed in seeds[slug]:
+            assert seed in member_headwords, f"Seed word '{seed}' missing from shelf {slug}"
+
+        # 4. Valid signal attribution
+        for w, sig in shelf_members:
+            assert sig in valid_signals, f"Word {w['headword']} in {slug} has invalid signal: {sig}"
+
+    # 5. Overlap between Qualities and Flaws and Describing People
+    qual_words = {w["headword_norm"] for w, _ in members["qualities_and_flaws"]}
+    desc_words = {w["headword_norm"] for w, _ in members.get("describing_people", [])}
+    if not desc_words:
+        desc_words = {r["headword_norm"] for r in con.execute("SELECT w.headword_norm FROM collection_words cw JOIN collections c ON cw.collection_id = c.id JOIN words w ON cw.word_key = w.word_key WHERE c.slug = 'describing_people'")}
+    overlap = qual_words & desc_words
+    overlap_ratio = len(overlap) / len(qual_words) if qual_words else 0
+    assert overlap_ratio < 0.5, f"Overlap too high: {overlap_ratio:.1%}"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -157,12 +157,18 @@ class SearchField extends StatelessWidget {
               ),
             ),
           ),
+          // The clear button's slot is always laid out, so the field is the
+          // same height empty and filled: its 48dp tap target would otherwise
+          // grow the row the moment the first letter lands.
           ValueListenableBuilder<TextEditingValue>(
             valueListenable: controller,
             builder: (BuildContext context, TextEditingValue value, Widget? _) =>
-                value.text.isEmpty
-                ? const SizedBox.shrink()
-                : AppIconButton(
+                Visibility(
+                  visible: value.text.isNotEmpty,
+                  maintainSize: true,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  child: AppIconButton(
                     icon: Icons.close_rounded,
                     size: 30,
                     glyphSize: 16,
@@ -173,6 +179,7 @@ class SearchField extends StatelessWidget {
                       onChanged('');
                     },
                   ),
+                ),
           ),
         ],
       ),

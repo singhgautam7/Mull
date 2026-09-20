@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
+import '../../core/utils/platform_surfaces.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -34,11 +35,12 @@ Future<void> showWordSheet(
   bool fromOutside = false,
   String? sourceHint,
 }) {
+  // The sheet is as tall as the entry, up to 90%: a one-sense word is a
+  // short sheet, never a full one with the actions marooned at the bottom.
   return showAppBottomSheet<void>(
     context: context,
-    expand: true,
     showClose: false,
-    scrollable: false,
+    actions: _WordSheetActions(wordKey: wordKey, fromSearch: fromSearch),
     builder: (BuildContext ctx) => _WordSheet(
       wordKey: wordKey,
       fromSearch: fromSearch,
@@ -79,8 +81,6 @@ class _WordSheet extends ConsumerWidget {
     final String headword = s.spelling == Spelling.american && us != null
         ? us
         : word.headword;
-    final bool bookmarked =
-        ref.watch(bookmarksProvider).value?.contains(wordKey) ?? false;
     final UserRepository user = ref.read(userRepositoryProvider);
     final String? note = ref.watch(_noteProvider(wordKey)).value;
     final List<WordContext> contexts =
@@ -104,198 +104,138 @@ class _WordSheet extends ConsumerWidget {
         .toList();
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Expanded(
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                if (fromOutside) ...<Widget>[
-                  ArrivalTopRow(sourceHint: sourceHint),
-                  const SizedBox(height: Space.lg),
-                ],
-                if (note != null) ...<Widget>[
-                  _NoteCard(
-                    note: note,
-                    onTap: () => showNoteSheet(
-                      context,
-                      wordKey: wordKey,
-                      headword: word.headword,
-                    ),
-                  ),
-                  const SizedBox(height: Space.lg),
-                ],
-                if (contexts.isNotEmpty) ...<Widget>[
-                  _ContextCard(
-                    contexts: contexts,
-                    headword: word.headword,
-                    onDelete: (int id) => unawaited(user.deleteContext(id)),
-                  ),
-                  const SizedBox(height: Space.lg),
-                ],
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  spacing: Space.md,
-                  children: <Widget>[
-                    Flexible(
-                      child: Text(
-                        headword,
-                        style: MullType.headwordL.copyWith(
-                          fontSize: 46,
-                          color: c.onSurface,
-                        ),
-                        softWrap: true,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: BandChip(bandLabel(word.band)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Space.sm),
-                Wrap(
-                  spacing: Space.sm,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    if (word.ipa != null) ...<Widget>[
-                      Text(
-                        word.ipa!,
-                        style: MullType.monoTabular.copyWith(
-                          color: c.onSurfaceVariant,
-                        ),
-                      ),
-                      AppIconButton(
-                        icon: Icons.volume_up_rounded,
-                        size: 30,
-                        glyphSize: 16,
-                        semanticLabel: 'Pronounce ${word.headword}',
-                        onPressed: () => unawaited(
-                          ref
-                              .read(pronunciationProvider)
-                              .speak(word.headword, rate: s.ttsRate),
-                        ),
-                      ),
-                    ] else
-                      Text(
-                        'no pronunciation recorded',
-                        style: MullType.monoLabel.copyWith(
-                          color: c.onSurfaceMuted,
-                        ),
-                      ),
-                    if (plural.isNotEmpty)
-                      Text(
-                        'plural ${plural.first}',
-                        style: MullType.monoLabel.copyWith(
-                          color: c.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: Space.xl),
-                for (final MapEntry<String, List<DictionaryWord>> group
-                    in byPos.entries) ...<Widget>[
-                  Text(
-                    posLabel(group.key).toUpperCase(),
-                    style: MullType.sectionHeader.copyWith(
-                      color: c.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: Space.md),
-                  for (final DictionaryWord sense in group.value) ...<Widget>[
-                    _Sense(
-                      sense: sense,
-                      examples: dict.examples(sense.wordKey),
-                    ),
-                    const SizedBox(height: Space.lg),
-                  ],
-                  const SizedBox(height: Space.sm),
-                ],
-                if (synonyms.isNotEmpty) ...<Widget>[
-                  Wrap(
-                    spacing: Space.sm,
-                    runSpacing: Space.sm,
-                    children: <Widget>[
-                      for (final String sy in synonyms.take(8))
-                        PillChip(label: sy),
-                    ],
-                  ),
-                  const SizedBox(height: Space.lg),
-                ],
-                Text(
-                  us == null
-                      ? 'British spelling shown · US form identical'
-                      : (s.spelling == Spelling.american
-                            ? 'British spelling: ${word.headword}'
-                            : 'American spelling: $us'),
-                  style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
-                ),
-                const SizedBox(height: Space.lg),
-              ],
-            ),
-          ),
-        ),
-        // Actions pinned at the bottom, outside the scroll.
-        const SizedBox(height: Space.md),
-        _actions(context, ref, dict, word, bookmarked, user),
-      ],
-    );
-  }
-
-  Widget _actions(
-    BuildContext context,
-    WidgetRef ref,
-    DictionaryDb dict,
-    DictionaryWord word,
-    bool bookmarked,
-    UserRepository user,
-  ) {
-    if (fromOutside) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          AppButton(
-            label: 'Put it on a shelf',
-            fullWidth: true,
-            onPressed: () => showAddToListSheet(
+        if (fromOutside) ...<Widget>[
+          ArrivalTopRow(sourceHint: sourceHint),
+          const SizedBox(height: Space.lg),
+        ],
+        if (note != null) ...<Widget>[
+          _NoteCard(
+            note: note,
+            onTap: () => showNoteSheet(
               context,
               wordKey: wordKey,
               headword: word.headword,
-              fromSearch: fromSearch,
             ),
           ),
+          const SizedBox(height: Space.lg),
+        ],
+        if (contexts.isNotEmpty) ...<Widget>[
+          _ContextCard(
+            contexts: contexts,
+            headword: word.headword,
+            onDelete: (int id) => unawaited(user.deleteContext(id)),
+          ),
+          const SizedBox(height: Space.lg),
+        ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          spacing: Space.md,
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                headword,
+                style: MullType.headwordL.copyWith(
+                  fontSize: 46,
+                  color: c.onSurface,
+                ),
+                softWrap: true,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: BandChip(bandLabel(word.band)),
+            ),
+          ],
+        ),
+        const SizedBox(height: Space.sm),
+        Wrap(
+          spacing: Space.sm,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            if (word.ipa != null) ...<Widget>[
+              Text(
+                word.ipa!,
+                style: MullType.monoTabular.copyWith(color: c.onSurfaceVariant),
+              ),
+              AppIconButton(
+                icon: Icons.volume_up_rounded,
+                size: 30,
+                glyphSize: 16,
+                semanticLabel: 'Pronounce ${word.headword}',
+                onPressed: () => unawaited(
+                  ref
+                      .read(pronunciationProvider)
+                      .speak(word.headword, rate: s.ttsRate),
+                ),
+              ),
+            ] else
+              Text(
+                'no pronunciation recorded',
+                style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+              ),
+            if (plural.isNotEmpty)
+              Text(
+                'plural ${plural.first}',
+                style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant),
+              ),
+          ],
+        ),
+        const SizedBox(height: Space.xl),
+        for (final MapEntry<String, List<DictionaryWord>> group
+            in byPos.entries) ...<Widget>[
+          Text(
+            posLabel(group.key).toUpperCase(),
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+          const SizedBox(height: Space.md),
+          for (final DictionaryWord sense in group.value) ...<Widget>[
+            _Sense(sense: sense, examples: dict.examples(sense.wordKey)),
+            const SizedBox(height: Space.lg),
+          ],
           const SizedBox(height: Space.sm),
-          Row(
-            spacing: Space.md,
+        ],
+        if (synonyms.isNotEmpty) ...<Widget>[
+          Wrap(
+            spacing: Space.sm,
+            runSpacing: Space.sm,
             children: <Widget>[
-              Expanded(
-                child: AppButton(
-                  label: 'Full entry',
-                  type: AppButtonType.secondary,
-                  fullWidth: true,
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    showWordSheet(context, wordKey: wordKey, fromOutside: false);
-                  },
-                ),
-              ),
-              Expanded(
-                child: AppButton(
-                  label: 'Add a note',
-                  type: AppButtonType.secondary,
-                  fullWidth: true,
-                  onPressed: () => showNoteSheet(
-                    context,
-                    wordKey: wordKey,
-                    headword: word.headword,
-                  ),
-                ),
-              ),
+              for (final String sy in synonyms.take(8)) PillChip(label: sy),
             ],
           ),
+          const SizedBox(height: Space.lg),
         ],
-      );
-    }
+        Text(
+          us == null
+              ? 'British spelling shown · US form identical'
+              : (s.spelling == Spelling.american
+                    ? 'British spelling: ${word.headword}'
+                    : 'American spelling: $us'),
+          style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+        ),
+      ],
+    );
+  }
+}
+
+/// The action row pinned under the entry, the same whether the sheet was
+/// opened in the app or over another app: the entry above it is already the
+/// whole entry, so there is nothing fuller to open.
+class _WordSheetActions extends ConsumerWidget {
+  const _WordSheetActions({required this.wordKey, required this.fromSearch});
+
+  final String wordKey;
+  final bool fromSearch;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final DictionaryDb dict = ref.watch(dictProvider);
+    final DictionaryWord? word = dict.byKey(wordKey);
+    if (word == null) return const SizedBox.shrink();
+    final bool bookmarked =
+        ref.watch(bookmarksProvider).value?.contains(wordKey) ?? false;
+    final UserRepository user = ref.read(userRepositoryProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -309,8 +249,11 @@ class _WordSheet extends ConsumerWidget {
                 onPressed: () {
                   final List<String> slugs = dict.collectionsOf(word.wordKey);
                   Navigator.of(context).pop();
-                  context.go(
-                    slugs.isEmpty ? Routes.mull : Routes.scoped(slugs.first),
+                  unawaited(
+                    PlatformSurfaces.go(
+                      context,
+                      slugs.isEmpty ? Routes.mull : Routes.scoped(slugs.first),
+                    ),
                   );
                 },
               ),
@@ -352,13 +295,16 @@ class _WordSheet extends ConsumerWidget {
   }
 }
 
-final StreamProvider<String?> Function(String) _noteProvider =
-    StreamProvider.family<String?, String>(
+// autoDispose: keyed by word, so without it every word ever opened would
+// keep a live query for the rest of the process.
+final StreamProvider<String?> Function(String) _noteProvider = StreamProvider
+    .autoDispose
+    .family<String?, String>(
       (Ref ref, String key) => ref.watch(userRepositoryProvider).watchNote(key),
     );
 
 final StreamProvider<List<WordContext>> Function(String) _contextsProvider =
-    StreamProvider.family<List<WordContext>, String>(
+    StreamProvider.autoDispose.family<List<WordContext>, String>(
       (Ref ref, String key) =>
           ref.watch(userRepositoryProvider).watchContexts(key),
     );
@@ -495,8 +441,11 @@ class _ContextCardState extends State<_ContextCard> {
   }
 
   String _contextMeta(WordContext ctx) {
-    final String date =
-        ctx.capturedAt.toLocal().toIso8601String().split('T').first;
+    final String date = ctx.capturedAt
+        .toLocal()
+        .toIso8601String()
+        .split('T')
+        .first;
     if (ctx.sourceHint != null && ctx.sourceHint!.isNotEmpty) {
       return '$date · ${formatAppName(ctx.sourceHint)}'.toUpperCase();
     }
@@ -524,10 +473,7 @@ class _ContextCardState extends State<_ContextCard> {
       spans.add(
         TextSpan(
           text: m.group(0),
-          style: base.copyWith(
-            color: c.accent,
-            fontWeight: FontWeight.w600,
-          ),
+          style: base.copyWith(color: c.accent, fontWeight: FontWeight.w600),
         ),
       );
       last = m.end;

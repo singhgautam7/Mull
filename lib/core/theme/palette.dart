@@ -233,7 +233,9 @@ class ThemeFamily {
     required this.primaryChroma,
     required this.primaryContainerChroma,
     required this.hasAmoled,
-  });
+    this.lightSurfaceSink = 0,
+    double? darkNeutralChroma,
+  }) : darkNeutralChroma = darkNeutralChroma ?? neutralChroma;
 
   final String id;
   final String name;
@@ -250,6 +252,16 @@ class ThemeFamily {
   final double primaryChroma;
   final double primaryContainerChroma;
   final bool hasAmoled;
+
+  /// How far below the shared construction the light surfaces sit, so a
+  /// greige family can carry its character in the surfaces (HANDOFF 1.3,
+  /// Clay: `#f6f3ee` is L 0.965 where every other family's page is 0.99).
+  /// The three surface steps sink by 1x, 1.6x and 2.2x of this.
+  final double lightSurfaceSink;
+
+  /// The neutral multiplier in dark, where Clay's 2.2 would read as brown:
+  /// its dark surfaces in HANDOFF 1.3 sit near the base chroma.
+  final double darkNeutralChroma;
 
   static const ThemeFamily mull = ThemeFamily(
     id: 'mull',
@@ -303,11 +315,187 @@ class ThemeFamily {
     hasAmoled: true,
   );
 
+  /// The warm greige behind the pass 02 widget mock-ups. Neutral-led: the
+  /// accent stays low chroma so the surfaces carry the character.
+  static const ThemeFamily clay = ThemeFamily(
+    id: 'clay',
+    name: 'Clay',
+    blurb: 'greige',
+    neutralHue: 75,
+    neutralChroma: 2.2,
+    primaryHue: 45,
+    primaryLightness: 0.50,
+    primaryChroma: 0.055,
+    primaryContainerChroma: 0.02,
+    hasAmoled: false,
+    lightSurfaceSink: 0.025,
+    darkNeutralChroma: 1.2,
+  );
+
+  // Perch's families, at Mull's chroma so they sit in the same register.
+  static const ThemeFamily perch = ThemeFamily(
+    id: 'perch',
+    name: 'Perch',
+    blurb: 'violet',
+    neutralHue: 265,
+    neutralChroma: 1,
+    primaryHue: 265,
+    primaryLightness: 0.52,
+    primaryChroma: 0.11,
+    primaryContainerChroma: 0.04,
+    hasAmoled: true,
+  );
+
+  static const ThemeFamily ember = ThemeFamily(
+    id: 'ember',
+    name: 'Ember',
+    blurb: 'amber',
+    neutralHue: 55,
+    neutralChroma: 1.35,
+    primaryHue: 45,
+    primaryLightness: 0.58,
+    primaryChroma: 0.11,
+    primaryContainerChroma: 0.04,
+    hasAmoled: false,
+  );
+
+  static const ThemeFamily fern = ThemeFamily(
+    id: 'fern',
+    name: 'Fern',
+    blurb: 'cool green',
+    neutralHue: 160,
+    neutralChroma: 1.15,
+    primaryHue: 162,
+    primaryLightness: 0.54,
+    primaryChroma: 0.10,
+    primaryContainerChroma: 0.04,
+    hasAmoled: false,
+  );
+
+  // Dally's accents as families, each keyed by the oklch hue of its light
+  // accent. Ink, Paper and Void are Azure in dark, light and true black,
+  // which in Mull are tones, not families.
+  static const ThemeFamily azure = ThemeFamily(
+    id: 'azure',
+    name: 'Azure',
+    blurb: 'blue',
+    neutralHue: 259,
+    neutralChroma: 1,
+    primaryHue: 259,
+    primaryLightness: 0.52,
+    primaryChroma: 0.12,
+    primaryContainerChroma: 0.04,
+    hasAmoled: true,
+  );
+
+  static const ThemeFamily tide = ThemeFamily(
+    id: 'tide',
+    name: 'Tide',
+    blurb: 'teal',
+    neutralHue: 189,
+    neutralChroma: 1,
+    primaryHue: 189,
+    primaryLightness: 0.50,
+    primaryChroma: 0.09,
+    primaryContainerChroma: 0.04,
+    hasAmoled: true,
+  );
+
+  static const ThemeFamily meadow = ThemeFamily(
+    id: 'meadow',
+    name: 'Meadow',
+    blurb: 'green',
+    neutralHue: 145,
+    neutralChroma: 1.1,
+    primaryHue: 145,
+    primaryLightness: 0.52,
+    primaryChroma: 0.10,
+    primaryContainerChroma: 0.04,
+    hasAmoled: false,
+  );
+
+  static const ThemeFamily blush = ThemeFamily(
+    id: 'blush',
+    name: 'Blush',
+    blurb: 'rose',
+    neutralHue: 359,
+    neutralChroma: 1.05,
+    primaryHue: 359,
+    primaryLightness: 0.55,
+    primaryChroma: 0.12,
+    primaryContainerChroma: 0.04,
+    hasAmoled: false,
+  );
+
+  static const ThemeFamily iris = ThemeFamily(
+    id: 'iris',
+    name: 'Iris',
+    blurb: 'purple',
+    neutralHue: 290,
+    neutralChroma: 1,
+    primaryHue: 290,
+    primaryLightness: 0.55,
+    primaryChroma: 0.12,
+    primaryContainerChroma: 0.04,
+    hasAmoled: true,
+  );
+
+  static const ThemeFamily coral = ThemeFamily(
+    id: 'coral',
+    name: 'Coral',
+    blurb: 'red orange',
+    neutralHue: 30,
+    neutralChroma: 1.2,
+    primaryHue: 30,
+    primaryLightness: 0.56,
+    primaryChroma: 0.12,
+    primaryContainerChroma: 0.04,
+    hasAmoled: false,
+  );
+
+  static const ThemeFamily citron = ThemeFamily(
+    id: 'citron',
+    name: 'Citron',
+    blurb: 'yellow green',
+    neutralHue: 113,
+    neutralChroma: 1.2,
+    primaryHue: 113,
+    primaryLightness: 0.55,
+    primaryChroma: 0.10,
+    primaryContainerChroma: 0.04,
+    hasAmoled: false,
+  );
+
+  static const ThemeFamily neon = ThemeFamily(
+    id: 'neon',
+    name: 'Neon',
+    blurb: 'vivid green',
+    neutralHue: 147,
+    neutralChroma: 0.8,
+    primaryHue: 147,
+    primaryLightness: 0.60,
+    primaryChroma: 0.14,
+    primaryContainerChroma: 0.05,
+    hasAmoled: true,
+  );
+
   static const List<ThemeFamily> all = <ThemeFamily>[
     mull,
     vellum,
     foxglove,
     slate,
+    clay,
+    perch,
+    ember,
+    fern,
+    azure,
+    tide,
+    meadow,
+    blush,
+    iris,
+    coral,
+    citron,
+    neon,
   ];
 
   static ThemeFamily byId(String id) =>
@@ -335,17 +523,20 @@ class ThemeFamily {
   MullColors colors(Tone tone) =>
       tone == Tone.light ? _light() : _dark(amoled: tone == Tone.amoled);
 
-  Oklch _n(double l, double c) => Oklch(l, c * neutralChroma, neutralHue);
+  Oklch _n(double l, double c, {bool dark = false}) =>
+      Oklch(l, c * (dark ? darkNeutralChroma : neutralChroma), neutralHue);
+  Oklch _nd(double l, double c) => _n(l, c, dark: true);
   Oklch _p(double l, double c) => Oklch(l, c, primaryHue);
 
   MullColors _light() {
     final double pc = primaryChroma;
+    final double sink = lightSurfaceSink;
     return MullColors(
-      surface: _n(0.99, 0.004).toColor(),
-      surfaceContainer: _n(0.965, 0.008).toColor(),
-      surfaceContainerHigh: _n(0.935, 0.011).toColor(),
-      outline: _n(0.885, 0.012).toColor(),
-      divider: _n(0.92, 0.008).toColor(),
+      surface: _n(0.99 - sink, 0.004).toColor(),
+      surfaceContainer: _n(0.965 - 1.6 * sink, 0.008).toColor(),
+      surfaceContainerHigh: _n(0.935 - 2.2 * sink, 0.011).toColor(),
+      outline: _n(0.885 - 2.2 * sink, 0.012).toColor(),
+      divider: _n(0.92 - 1.6 * sink, 0.008).toColor(),
       onSurface: _n(0.20, 0.02).toColor(),
       onSurfaceVariant: _n(0.52, 0.02).toColor(),
       onSurfaceMuted: _n(0.62, 0.02).toColor(),
@@ -376,34 +567,34 @@ class ThemeFamily {
     return MullColors(
       surface: amoled
           ? const Oklch(0, 0, 0).toColor()
-          : _n(0.205, 0.012).toColor(),
-      surfaceContainer: _n(
+          : _nd(0.205, 0.012).toColor(),
+      surfaceContainer: _nd(
         amoled ? 0.13 : 0.255,
         amoled ? 0.012 : 0.014,
       ).toColor(),
-      surfaceContainerHigh: _n(
+      surfaceContainerHigh: _nd(
         amoled ? 0.15 : 0.30,
         amoled ? 0.012 : 0.016,
       ).toColor(),
-      outline: _n(amoled ? 0.30 : 0.36, amoled ? 0.014 : 0.016).toColor(),
-      divider: _n(amoled ? 0.24 : 0.30, 0.014).toColor(),
-      onSurface: _n(0.96, 0.005).toColor(),
-      onSurfaceVariant: _n(0.72, 0.012).toColor(),
-      onSurfaceMuted: _n(0.60, 0.012).toColor(),
-      icon: _n(0.90, 0.008).toColor(),
-      iconMuted: _n(0.72, 0.012).toColor(),
+      outline: _nd(amoled ? 0.30 : 0.36, amoled ? 0.014 : 0.016).toColor(),
+      divider: _nd(amoled ? 0.24 : 0.30, 0.014).toColor(),
+      onSurface: _nd(0.96, 0.005).toColor(),
+      onSurfaceVariant: _nd(0.72, 0.012).toColor(),
+      onSurfaceMuted: _nd(0.60, 0.012).toColor(),
+      icon: _nd(0.90, 0.008).toColor(),
+      iconMuted: _nd(0.72, 0.012).toColor(),
       primary: _p(0.74, pcd).toColor(),
       primaryPressed: _p(0.68, pcd).toColor(),
       primaryContainer: _p(0.28, pcd * 0.46).toColor(),
-      onPrimary: _n(0.14, 0.01).toColor(),
+      onPrimary: _nd(0.14, 0.01).toColor(),
       onPrimaryContainer: _p(0.90, pcd * 0.46).toColor(),
       accent: _p(0.85, pcd * 0.69).toColor(),
       success: const Oklch(0.72, 0.11, 145).toColor(),
       danger: const Oklch(0.72, 0.14, 25).toColor(),
       dangerContainer: Oklch(amoled ? 0.20 : 0.26, 0.05, 25).toColor(),
       onDangerContainer: const Oklch(0.82, 0.11, 25).toColor(),
-      inverseSurface: _n(0.93, 0.008).toColor(),
-      onInverseSurface: _n(0.20, 0.02).toColor(),
+      inverseSurface: _nd(0.93, 0.008).toColor(),
+      onInverseSurface: _nd(0.20, 0.02).toColor(),
       shadow: const Oklch(0, 0, 0, 0.5).toColor(),
       tone: amoled ? Tone.amoled : Tone.dark,
       accentHue: primaryHue,

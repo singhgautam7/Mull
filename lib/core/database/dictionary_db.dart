@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 import 'dart:math';
 
@@ -197,20 +198,39 @@ class Idiom {
   final String register;
 }
 
+/// What one search keystroke needs, answered in one trip to the worker.
+@immutable
+class SearchResults {
+  const SearchResults(this.words, this.idioms, this.suggestions);
+
+  static const SearchResults empty = SearchResults(
+    <DictionaryWord>[],
+    <Idiom>[],
+    <DictionaryWord>[],
+  );
+
+  final List<DictionaryWord> words;
+  final List<Idiom> idioms;
+
+  /// The "Did you mean" candidates, only when [words] is empty.
+  final List<DictionaryWord> suggestions;
+}
+
 /// The shipped dictionary, opened read-only (rule D3). Never written to by
 /// the app; replaced wholesale on update. Nothing here touches user data and
 /// nothing here shares a connection with [UserDatabase].
 ///
-/// ponytail: queries run synchronously on the calling isolate. The full
-/// dataset answers a search in well under a frame; move to a worker isolate
-/// via `Isolate.run` only if profiling on a device shows otherwise.
+/// The indexed lookups are synchronous: each is well under a millisecond and
+/// the screens call them inline. Anything that loops over many rows (search
+/// per keystroke, quiz generation, a word import) goes through [compute],
+/// which runs it on a long-lived worker isolate with its own connection.
 class DictionaryDb {
   DictionaryDb._(this._db, this._path);
 
   final Database _db;
 
-  /// The file behind [_db], or null for an in-memory test database. A
-  /// background isolate opens its own read-only connection to it.
+  /// The file behind [_db], or null for an in-memory test database. The
+  /// worker isolate opens its own read-only connection to it.
   final String? _path;
 
   static DictionaryDb open(String path) =>
@@ -220,7 +240,42 @@ class DictionaryDb {
   @visibleForTesting
   DictionaryDb.forTesting(this._db) : _path = null;
 
-  void close() => _db.close();
+  void close() {
+    _worker?.then((_DictionaryWorker w) => w.close());
+    _worker = null;
+    _db.close();
+  }
+
+  Future<_DictionaryWorker>? _worker;
+
+  /// Runs [work] against this dictionary off the calling isolate and returns
+  /// its result (which must be sendable: the model classes here all are). One
+  /// worker per open dictionary, spawned on first use and kept, so its page
+  /// cache stays warm between keystrokes. An in-memory test database has no
+  /// file for a second connection, so there the work runs inline.
+  ///
+  /// Make [work] in a synchronous function: a closure created inside an
+  /// `async` method captures that method's completer and cannot be sent.
+  Future<T> compute<T>(T Function(DictionaryDb db) work) {
+    final String? path = _path;
+    if (path == null) return Future<T>.sync(() => work(this));
+    return (_worker ??= _DictionaryWorker.spawn(path)).then(
+      (_DictionaryWorker w) => w.run(work),
+    );
+  }
+
+  /// Everything the search screen shows for one query, in one worker trip:
+  /// the word ladder, the phrase scan, and the typo suggestion when the ladder
+  /// came back empty.
+  Future<SearchResults> searchAll(String query, {int limit = 30}) =>
+      compute((DictionaryDb db) {
+        final List<DictionaryWord> words = db.search(query, limit: limit);
+        return SearchResults(
+          words,
+          db.searchIdioms(query, limit: limit),
+          words.isEmpty ? db.suggestions(query) : const <DictionaryWord>[],
+        );
+      });
 
   String? meta(String key) {
     final ResultSet rs = _db.select(
@@ -404,11 +459,13 @@ class DictionaryDb {
       .join(' ');
 
   /// The single-word "Did you mean" candidate for a query with no results.
-  String? suggest(String query) {
-    final String q = normalise(query);
-    final List<DictionaryWord> hits = _fuzzy(q, 1);
-    return hits.isEmpty ? null : hits.first.headword;
-  }
+  String? suggest(String query) => suggestions(query, limit: 1).firstOrNull?.headword;
+
+  /// "Did you mean": the headwords nearest to [query], one row per headword,
+  /// closest and commonest first. The one answer for every no-result state
+  /// (search, an arrival Mull does not have, an import row), so they agree.
+  List<DictionaryWord> suggestions(String query, {int limit = 5}) =>
+      _fuzzy(normalise(query), limit);
 
   /// The typo rung. Any trigram of the query pulls a candidate from the
   /// trigram index; candidates are then ranked by Damerau-Levenshtein
@@ -552,7 +609,7 @@ class DictionaryDb {
   /// The inflections the dictionary knows for a word (plural, past...).
   List<String> inflections(String wordKey) => _db
       .select(
-        "SELECT alias_norm FROM aliases WHERE word_key = ? AND kind = 'inflection' ORDER BY rowid",
+        "SELECT alias_norm FROM aliases WHERE word_key = ? AND kind = 'inflection' ORDER BY alias_norm",
         <Object>[wordKey],
       )
       .map((Row r) => r['alias_norm'] as String)
@@ -664,22 +721,9 @@ class DictionaryDb {
   /// [batchMatchWords] off the calling isolate. The trigram step costs tens
   /// of milliseconds per unmatched word, so a shared paragraph or a pasted
   /// table full of names would otherwise block the UI thread for seconds.
-  /// The worker opens its own read-only connection to the same file; an
-  /// in-memory test database has no file, so it matches in place.
   Future<List<WordMatch>> matchWords(
     List<({String word, String? definition})> rows,
-  ) {
-    final String? path = _path;
-    if (path == null) return Future<List<WordMatch>>.value(batchMatchWords(rows));
-    return Isolate.run(() {
-      final DictionaryDb db = DictionaryDb.open(path);
-      try {
-        return db.batchMatchWords(rows);
-      } finally {
-        db.close();
-      }
-    });
-  }
+  ) => compute((DictionaryDb db) => db.batchMatchWords(rows));
 
   /// The matching pipeline for a word import, in order, stopping at the
   /// first hit: exact on `headword_norm`, alias (US spellings, plurals,
@@ -886,4 +930,70 @@ class DictionaryDb {
     'ÿ': 'y',
     'ß': 'ss',
   };
+}
+
+/// The isolate behind [DictionaryDb.compute]: one read-only connection, one
+/// request at a time in arrival order, closures sent over the port.
+class _DictionaryWorker {
+  _DictionaryWorker._(this._isolate, this._replies) {
+    _replies.listen((Object? message) {
+      // The worker's first message is the port to send it work on.
+      if (message is SendPort) {
+        _requests.complete(message);
+        return;
+      }
+      final (int id, Object? value, Object? error) =
+          message! as (int, Object?, Object?);
+      final Completer<Object?> c = _pending.remove(id)!;
+      error == null ? c.complete(value) : c.completeError(error);
+    });
+  }
+
+  final Isolate _isolate;
+  final ReceivePort _replies;
+  final Completer<SendPort> _requests = Completer<SendPort>();
+  final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
+  int _nextId = 0;
+
+  static Future<_DictionaryWorker> spawn(String path) async {
+    final ReceivePort replies = ReceivePort();
+    final Isolate isolate = await Isolate.spawn(
+      _main,
+      (path, replies.sendPort),
+      debugName: 'dictionary worker',
+    );
+    final _DictionaryWorker w = _DictionaryWorker._(isolate, replies);
+    await w._requests.future;
+    return w;
+  }
+
+  Future<T> run<T>(T Function(DictionaryDb db) work) async {
+    final int id = _nextId++;
+    final Completer<Object?> c = Completer<Object?>();
+    _pending[id] = c;
+    (await _requests.future).send((id, work));
+    return (await c.future) as T;
+  }
+
+  void close() {
+    _replies.close();
+    _isolate.kill();
+  }
+
+  static void _main((String, SendPort) args) {
+    final (String path, SendPort replies) = args;
+    final DictionaryDb db = DictionaryDb.open(path);
+    final ReceivePort requests = ReceivePort();
+    replies.send(requests.sendPort);
+    requests.listen((Object? message) {
+      final (int id, Object? Function(DictionaryDb) work) =
+          message! as (int, Object? Function(DictionaryDb));
+      try {
+        replies.send((id, work(db), null));
+      } catch (e) {
+        // Exceptions are not always sendable; the message is.
+        replies.send((id, null, '$e'));
+      }
+    });
+  }
 }

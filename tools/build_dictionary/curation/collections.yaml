@@ -165,3 +165,49 @@ collections:
     categories: [Architecture, Buildings, Rooms, Construction, Housing, Furniture, Roads, Bridges, Doors, Windows, Walls, Building materials, Towns, Cities, Streets, Home]
     include: [alcove, annexe, attic, cellar, corridor, eaves, facade, gable, hallway, lintel, pantry, porch, rafter, scaffold, terrace, threshold, veranda, alley, cul-de-sac, courtyard]
     exclude: []
+
+  faces_and_gestures:
+    title: Faces and Gestures
+    description: What a body does before anyone speaks.
+    icon: person
+    categories: [Facial expressions, Gestures, Body language]
+    topics: [body-language, gesture, facial-expression]
+    include: [frown, wince, grimace, smirk, scowl, squint, flinch, recoil, beam, bristle, slouch, fidget, shrug, wink, blink, sneer, glower, pout, gape, gawk, cringe, cower, shudder, tremble, quiver, shiver, blush, flush, squirm, writhe, twitch, beckon, leer, snicker, gasp, yawn, sigh, pant, nod, snarl, simper, chuckle, giggle, droop, sag, crouch, startle, sprawl, heave, stiffen, freeze, wilt, tense, strut, swagger, waddle, bow, curtsy, salute, grovel, kneel, prostrate, furrow, furl, glare, snort, clench, peer, stare, glance]
+    exclude: []
+
+  ways_of_saying:
+    title: Ways of Saying
+    description: Every verb that is not "said".
+    icon: quote
+    categories: [Speech, Talking, Communication, Vocalisations, Vocalizations, Speaking]
+    topics: [speech, talking, communication, voice]
+    include: [mutter, retort, concede, quip, drawl, snap, murmur, insist, chide, muse, stammer, whisper, shout, bellow, groan, whine, grunt, scoff, hiss, snarl, bark, croak, gabble, howl, jeer, lament, moan, rant, rave, roar, screech, shriek, squeak, squeal, wail, wheeze, whimper, yell, yelp, drone, babble, blurt, chatter, prattle, jabber, tattle, natter, admonish, berate, cajole, rebuke, reprimand, reproach, taunt, coax, plead, implore, entreat, exclaim, bicker, quibble, allege, assert, avow, contend, declare, proclaim, profess, opine, interject, divulge, confide, reminisce, elaborate, clarify, scold, heckle, jest, pontificate, orate, declaim, recite, exhort, dissuade, remonstrate, asseverate, prevaricate, equivocate, bluster, chirp, coo, sputter]
+    exclude: [cell, verbal, hacker, innuendo, bullshit, rhubarb, yak, copulate, hyphenate, lampshade, wildcard, morph, drool, interpret, speech, nose, write, say, talk, ask, mention, crow]
+
+  qualities_and_flaws:
+    title: Qualities and Flaws
+    description: Character, in one word.
+    icon: spark
+    categories: [Personality, Personality traits, Character, Human behaviour]
+    topics: [personality, character, psychology]
+    include: [pedantic, gregarious, meticulous, aloof, petty, earnest, dogged, glib, brittle, affable, brusque, candid, diligent, obstinate, pragmatic, reticent, taciturn, unassuming, garrulous, urbane, laconic, capricious, scrupulous, pugnacious, truculent, vindictive, astute, shrewd, callous, arrogant, pompous, modest, humble, fickle, tenacious, resilient, reckless, cautious, prudent, churlish, curmudgeonly, benevolent, malevolent, magnanimous, spiteful, haughty, boastful, conceited, cynical, naive, gullible, stoic, zealous, apathetic, fastidious, complaisant, disingenuous, ingenious, sycophantic, servile, submissive, defiant, intrepid, timid, cowardly, valiant, flippant, facetious, sullen, morose, ebullient, vivacious, mercurial, imperious, dogmatic, cantankerous, peevish, insolent, impertinent, audacious, brazen, craven, judicious, invidious, obsequious, parsimonious, frugal, prodigal, stingy, generous, spineless, snooty, feisty, frivolous, fretful, headstrong, hypocritical, impetuous, indolent, inquisitive, irascible, jovial, loquacious, malicious, mercenary, miserly, nefarious, officious, ostentatious, petulant, placid, precocious, pretentious, punctilious, pusillanimous, querulous, recalcitrant, reprobate, sanguine, sardonic, supercilious, surly, treacherous, unscrupulous, unyielding, vacillating, vehement, venal, vexatious, vigilant, voluble, wayward, wily]
+    exclude: [psych, robotic, buxom, rotund, beaky, chiselled, stubbly, oral, subjective, libertine]
+
+  setting_a_scene:
+    title: Setting a Scene
+    description: For places and the feeling of being in them.
+    icon: house
+    categories: [Places, Atmosphere, Landforms, Geography, Landscape]
+    topics: [place, space, atmosphere, geography, meteorology]
+    include: [desolate, cramped, airy, dingy, sprawling, cavernous, stifling, serene, bleak, dismal, barren, picturesque, quaint, bustling, tranquil, placid, claustrophobic, confined, spacious, commodious, austere, opulent, palatial, ramshackle, dilapidated, derelict, isolated, remote, secluded, bucolic, pastoral, rustic, verdant, arid, windswept, sunlit, gloomy, sombre, oppressive, hospitable, inhospitable, forbidding, inviting, chilly, draughty, musty, noisome, labyrinthine, monumental, subterranean, arcadian, idyllic, tempestuous, squalid, pristine, balmy, sepulchral, cloistered, uninhabitable, uninhabited, unsheltered, unspoiled, untamed, wooded, cosy, shabby, lush, stark, deserted, sweltering, frigid, dreary, peaceful, roomy, shadowy, cheerless, drab, sterile, forlorn, overcast]
+    exclude: [fire, jet, lite, bog, room, high, offset, traverse, crossing, slab, optimum, jump, loft, invert, lavatory, meridian, mezzanine, portal, synoptic, stratospheric, meteoric, buttery, ensuite, whiffy, downcast, primary, secondary, parallel, coordinate, advisory, frontal, breakaway, duplex, precipitate, thermal, clear]
+
+  ways_of_moving:
+    title: Ways of Moving
+    description: More precise than "walked".
+    icon: compass
+    categories: [Gaits, Gait, Walking, Movement, Locomotion, Horse gaits]
+    topics: [movement, motion, walking, locomotion]
+    include: [amble, trudge, dart, saunter, lurch, scurry, stride, shuffle, stroll, meander, promenade, wander, roam, march, pace, stalk, tiptoe, creep, slink, skulk, sneak, prowl, trot, canter, gallop, scamper, scuttle, scramble, clamber, sprint, dash, hasten, hurry, rush, plod, stomp, stamp, stumble, falter, totter, wobble, stagger, sway, reel, swagger, strut, prance, mince, waddle, hobble, limp, crawl, glide, drift, flit, hop, bound, leap, skip, loiter, sidle, trundle, toddle, forge, slog, trek, scoot, traipse, flounce]
+    exclude: [zip, stump, yaw, headlong, vortex, vector, clump, pelt, vault, manhandle, gravitate, beeline, diddle, steeplechase, disembark, arabesque, judder, scream, gait, troop]
+

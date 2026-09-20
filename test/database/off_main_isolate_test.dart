@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mull/core/database/dictionary_db.dart';
 import 'package:mull/core/database/dictionary_installer.dart';
+import 'package:mull/features/quiz/quiz_engine.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Watches the calling isolate's event loop while [work] runs and reports the
@@ -89,6 +90,32 @@ void main() {
       matches.map((WordMatch m) => (m.rawWord, m.word?.wordKey, m.isNearMatch)),
       expected.map((WordMatch m) => (m.rawWord, m.word?.wordKey, m.isNearMatch)),
       reason: 'the worker gives the same answer as the direct call',
+    );
+
+    // Search per keystroke and quiz generation go through the same worker.
+    for (final String q in const <String>['mitigate', 'wistfl', 'zzzzqqq']) {
+      final SearchResults async = await dict.searchAll(q);
+      expect(
+        async.words.map((DictionaryWord w) => w.wordKey),
+        dict.search(q).map((DictionaryWord w) => w.wordKey),
+        reason: 'searchAll("$q") differs from search()',
+      );
+      expect(
+        async.suggestions.map((DictionaryWord w) => w.wordKey),
+        async.words.isEmpty ? dict.suggestions(q).map((DictionaryWord w) => w.wordKey) : isEmpty,
+      );
+    }
+    // The real worker, not the in-memory inline path, is what proves the
+    // closure is sendable: one made inside an async method is not.
+    final List<String> shelf = dict.collectionWordKeys(<String>['everyday']);
+    final List<QuizQuestion> quiz = await dict.compute(
+      QuizEngine.generator(shelf, seenKeys: const <String>{}, minimumWords: 10),
+    );
+    expect(quiz, isNotEmpty);
+    await expectLater(
+      dict.compute((DictionaryDb db) => throw StateError('boom')),
+      throwsA(contains('boom')),
+      reason: 'a failure in the worker surfaces to the caller',
     );
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

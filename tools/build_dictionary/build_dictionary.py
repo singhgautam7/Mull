@@ -720,7 +720,7 @@ def load_wordnet(path: Path) -> tuple[dict[tuple[str, str], set[str]], dict[tupl
 
 def load_curation() -> dict:
     out = {}
-    for name in ("idioms", "holdout", "pairs", "phrases"):
+    for name in ("idioms", "holdout", "pairs", "phrases", "collections"):
         p = CURATION / f"{name}.yaml"
         if p.exists():
             with open(p, encoding="utf-8") as f:
@@ -1276,16 +1276,16 @@ def topic_collections() -> list[dict]:
              pick=lambda w: has_topic(w, "describing_people"), rank=teaching_value),
         dict(slug="politely_damning", title="Politely Damning", description="Criticism that stays civil.", icon="quote",
              pick=lambda w: (
-                 (has_topic(w, "argument", "describing_people") and (w["llm_register"] in ("formal", "literary") or has_topic(w, "formal_register")))
-                 or (w["llm_register"] in ("formal", "literary") and bool(DAMNING_RE.search(w.get("definition_full", ""))))
-                 or (bool(DAMNING_RE.search(w.get("definition_full", ""))) and w["llm_register"] != "informal")
-             ) and (w["valence"] is None or w["valence"] < 4.8),
+                 (has_topic(w, "argument", "describing_people") and (w.get("llm_register") in ("formal", "literary") or has_topic(w, "formal_register")))
+                 or (w.get("llm_register") in ("formal", "literary") and bool(DAMNING_RE.search(w.get("definition_full", ""))))
+                 or (bool(DAMNING_RE.search(w.get("definition_full", ""))) and w.get("llm_register") != "informal")
+             ) and (w.get("valence") is None or (w.get("valence") or 5.0) < 4.8),
              rank=teaching_value),
         dict(slug="words_for_arguments", title="Words for Arguments", description="Making a case, and taking one apart.",
              icon="scale", pick=lambda w: has_topic(w, "argument", "thinking_and_knowing", "speech_and_writing"), rank=teaching_value),
         dict(slug="read_but_never_said", title="Read but Never Said", description="Common in print, rare out loud.",
-             icon="book", pick=lambda w: w["zipf_written"] is not None and (w["zipf_written"] - (w["zipf_spoken"] or 0)) >= 0.5,
-             rank=lambda w: -(w["zipf_written"] - (w["zipf_spoken"] or 0))),
+             icon="book", pick=lambda w: w.get("zipf_written") is not None and (w["zipf_written"] - (w.get("zipf_spoken") or 0)) >= 0.5,
+             rank=lambda w: -(w["zipf_written"] - (w.get("zipf_spoken") or 0))),
         dict(slug="borrowed_and_kept", title="Borrowed and Kept", description="English took these and never gave them back.",
              icon="globe",
              pick=lambda w: has_topic(w, "borrowed_word") or bool(BORROWED_RE.search(w.get("etymology", ""))),
@@ -1295,7 +1295,7 @@ def topic_collections() -> list[dict]:
              pick=lambda w: has_topic(w, "weather_and_light") or bool(WEATHER_RE.search(w.get("definition_full", ""))),
              rank=teaching_value),
         dict(slug="words_at_work", title="Words at Work", description="Precise, and not jargon.", icon="briefcase",
-             pick=lambda w: has_topic(w, "work", "money") and w["llm_register"] != "technical", rank=teaching_value),
+             pick=lambda w: has_topic(w, "work", "money") and w.get("llm_register") != "technical", rank=teaching_value),
         dict(slug="small_but_sharp", title="Small but Sharp", description="Five letters or fewer, more useful than they look.",
              icon="spark", pick=lambda w: len(w["headword"]) <= 5 and (w["prevalence"] or 1) < 0.85, rank=teaching_value),
         dict(slug="news_vocabulary", title="The News Vocabulary", description="The words the headlines assume you know.",
@@ -1307,7 +1307,85 @@ def topic_collections() -> list[dict]:
     ]
 
 
-def build_collections(learning_rows: list[dict]) -> tuple[list[dict], dict[str, list[tuple[dict, str]]]]:
+NEW_SHELVES = [
+    {
+        "slug": "faces_and_gestures",
+        "title": "Faces and Gestures",
+        "description": "What a body does before anyone speaks.",
+        "icon": "person",
+        "pos": "verb",
+        "cats": {"facial expressions", "gestures", "body language"},
+        "topics": {"body language", "gesture", "facial expression", "body-language", "facial-expression"},
+        "stage_c": {"body_and_health", "feelings"},
+        "regex": re.compile(r" (facial|face|gesture|posture|grimace|frown|wince|scowl|smirk|eyebrow|shrug|cower|cringe|tremble|shudder|quiver|blush|flush|twitch|beckon|nod|mouth|lips|eyes|head|forehead) ", re.I),
+        "exclude": set(),
+    },
+    {
+        "slug": "ways_of_saying",
+        "title": "Ways of Saying",
+        "description": 'Every verb that is not "said".',
+        "icon": "quote",
+        "pos": "verb",
+        "cats": {"speech", "talking", "communication", "vocalisations", "vocalizations", "speaking"},
+        "topics": {"speech", "talking", "communication", "voice"},
+        "stage_c": {"speech_and_writing"},
+        "regex": re.compile(r" (speak|say|said|utter|talk|voice|shout|whisper|murmur|mutter|declare|remark|exclaim|reply|answer|state|pronounce|assert|rebut|tell|vocally|aloud|words) ", re.I),
+        "exclude": {"cell", "verbal", "hacker", "innuendo", "bullshit", "rhubarb", "yak", "copulate", "hyphenate", "lampshade", "wildcard", "morph", "drool", "interpret", "speech", "nose", "write", "say", "talk", "ask", "mention", "crow"},
+    },
+    {
+        "slug": "qualities_and_flaws",
+        "title": "Qualities and Flaws",
+        "description": "Character, in one word.",
+        "icon": "spark",
+        "pos": "adj",
+        "cats": {"personality", "personality traits", "character", "human behaviour"},
+        "topics": {"personality", "character", "psychology"},
+        "stage_c": {"describing_people"},
+        "regex": re.compile(r" (personality|character|trait|disposition|temperament|moral|nature|demeanor|demeanour|attitude|temper|behaving|behaviour|behavior) ", re.I),
+        "exclude": {"psych", "robotic", "buxom", "rotund", "beaky", "chiselled", "stubbly", "oral", "subjective", "libertine"},
+    },
+    {
+        "slug": "setting_a_scene",
+        "title": "Setting a Scene",
+        "description": "For places and the feeling of being in them.",
+        "icon": "house",
+        "pos": "adj",
+        "cats": {"places", "atmosphere", "landforms", "geography", "landscape"},
+        "topics": {"place", "space", "atmosphere", "geography", "meteorology"},
+        "stage_c": {"weather_and_light", "senses_and_perception"},
+        "regex": re.compile(r" (place|room|building|space|atmosphere|scenery|landscape|air|weather|environment|surroundings|terrain|habitable|uninhabited|spacious|cramped|bleak|dreary|sunny|serene|tranquil|peaceful|dwelling|scenic|climate|desolate|cramped|airy|dingy|sprawling|cavernous|stifling) ", re.I),
+        "exclude": {"fire", "jet", "lite", "bog", "room", "high", "offset", "traverse", "crossing", "slab", "optimum", "jump", "loft", "invert", "lavatory", "meridian", "mezzanine", "portal", "synoptic", "stratospheric", "meteoric", "buttery", "ensuite", "whiffy", "downcast", "primary", "secondary", "parallel", "coordinate", "advisory", "frontal", "breakaway", "duplex", "precipitate", "thermal", "clear"},
+    },
+    {
+        "slug": "ways_of_moving",
+        "title": "Ways of Moving",
+        "description": 'More precise than "walked".',
+        "icon": "compass",
+        "pos": "verb",
+        "cats": {"gaits", "gait", "walking", "movement", "locomotion", "horse gaits"},
+        "topics": {"movement", "motion", "walking", "locomotion"},
+        "stage_c": {"movement"},
+        "regex": re.compile(r" (walk|run|move|movement|motion|step|stride|gait|pace|speed|travel|creep|crawl|glide|march|rush|hurry|wander|stroll|proceed|advance|locomotion|footsteps|feet) ", re.I),
+        "exclude": {"zip", "stump", "yaw", "headlong", "vortex", "vector", "clump", "pelt", "vault", "manhandle", "gravitate", "beeline", "diddle", "steeplechase", "disembark", "arabesque", "judder", "scream", "gait", "troop"},
+    },
+]
+
+
+def build_collections(
+    learning_rows: list[dict],
+    cur: dict | None = None,
+    primary: dict[str, dict] | None = None,
+    all_words: list[dict] | None = None,
+    entries: dict | None = None,
+    ent_of: dict[str, Entry] | None = None,
+) -> tuple[list[dict], dict[str, list[tuple[dict, str]]]]:
+    if cur is None:
+        cur = load_curation()
+    if primary is None:
+        primary = {w["headword_norm"]: w for w in learning_rows}
+    if all_words is None:
+        all_words = learning_rows
+
     defs, members = [], {}
     for order, b in enumerate(BANDS):
         title, desc = BAND_TITLES[b]
@@ -1326,6 +1404,123 @@ def build_collections(learning_rows: list[dict]) -> tuple[list[dict], dict[str, 
         defs.append(dict(slug=c["slug"], title=c["title"], description=c["description"], kind="topic", band=None,
                          icon=c["icon"], sort_order=100 + order))
         members[c["slug"]] = [(w, "topic") for w in rows]
+
+    # Five new shelves with 4-signal selection
+    words_by_head_pos = collections.defaultdict(dict)
+    for w in all_words:
+        if w.get("sense_index") == 1 or len(all_words) == len(learning_rows):
+            words_by_head_pos[w["headword_norm"]][w["pos"]] = w
+
+    cats_by_word = collections.defaultdict(set)
+    topics_by_word = collections.defaultdict(set)
+    tags_by_word = collections.defaultdict(set)
+    glosses_by_word = collections.defaultdict(list)
+
+    if entries:
+        for (hn, pos), ent in entries.items():
+            for s in ent.senses:
+                cats_by_word[hn].update(c.lower() for c in s.get("categories", []))
+                topics_by_word[hn].update(t.lower() for t in s.get("topics", []))
+                tags_by_word[hn].update(t.lower() for t in s.get("tags", []))
+                if s.get("glosses"):
+                    glosses_by_word[hn].append(s["glosses"][-1].lower())
+    elif (HERE / "work" / "stage1.jsonl.gz").exists():
+        import gzip
+        with gzip.open(HERE / "work" / "stage1.jsonl.gz", "rt", encoding="utf-8") as f:
+            for line in f:
+                e = json.loads(line)
+                w = e.get("word", "").lower()
+                for s in e.get("senses", []):
+                    for c in s.get("categories", []):
+                        cats_by_word[w].add(c.lower())
+                    for t in s.get("topics", []):
+                        topics_by_word[w].add(t.lower())
+                    for t in s.get("tags", []):
+                        tags_by_word[w].add(t.lower())
+                    gl = s.get("glosses") or []
+                    if gl:
+                        glosses_by_word[w].append(gl[-1].lower())
+    else:
+        for w in learning_rows:
+            hn = w["headword_norm"]
+            topics_by_word[hn].update(t.lower() for t in w.get("topics", []))
+            tags_by_word[hn].update(t.lower() for t in w.get("tags", []))
+            if w.get("definition_full"):
+                glosses_by_word[hn].append(w["definition_full"].lower())
+
+    teaching_value = lambda w: -((w.get("prevalence") or 0) * 4.0 - (w.get("zipf_written") or 0))
+    veto_tags = set(cur.get("collections", {}).get("defaults", {}).get("veto_tags") or [
+        "vulgar", "offensive", "slur", "derogatory", "obsolete", "archaic", "ethnic", "dated"
+    ])
+
+    for order, sh in enumerate(NEW_SHELVES):
+        slug = sh["slug"]
+        cur_entry = cur.get("collections", {}).get("collections", {}).get(slug, {})
+        manual_list = cur_entry.get("include", [])
+        exclude_set = set(cur_entry.get("exclude", [])) | sh["exclude"]
+        pos_req = sh["pos"]
+
+        candidates = {}
+
+        # Signals 1, 2, 3 applied in order
+        for hn in list(primary.keys()):
+            if hn in exclude_set:
+                continue
+            r = words_by_head_pos.get(hn, {}).get(pos_req) or (primary[hn] if primary[hn].get("pos") == pos_req else None)
+            if not r:
+                continue
+            tags = set(r.get("tags") or ()) | tags_by_word.get(hn, set())
+            if tags & veto_tags:
+                continue
+            p = r.get("prevalence") or 0
+            z = max(r.get("zipf_spoken") or 0, r.get("zipf_written") or 0)
+            if p < 0.65 or z < 2.7:
+                continue
+            full_def = (r.get("definition_full") or "") + " " + " ".join(glosses_by_word.get(hn, []))
+            if not sh["regex"].search(" " + full_def + " "):
+                continue
+
+            # Signal 1: Wiktionary category
+            if any(c in cats_by_word.get(hn, set()) for c in sh["cats"]):
+                candidates[hn] = (r, "wiktionary_category")
+                continue
+            # Signal 2: POS plus semantic tag
+            if any(t in topics_by_word.get(hn, set()) for t in sh["topics"]):
+                candidates[hn] = (r, "pos_semantic_tag")
+                continue
+            # Signal 3: Stage C topic
+            if any(t in (r.get("llm_topics") or []) for t in sh["stage_c"]):
+                candidates[hn] = (r, "stage_c_topic")
+                continue
+
+        # Signal 4: Hand curation / manual forced includes
+        for w in manual_list:
+            if w in exclude_set or w in candidates:
+                continue
+            r = words_by_head_pos.get(w, {}).get(pos_req) or primary.get(w)
+            if r:
+                p = r.get("prevalence") or 0
+                z = max(r.get("zipf_spoken") or 0, r.get("zipf_written") or 0)
+                if p >= 0.65 and z >= 2.7:
+                    candidates[w] = (r, "manual")
+
+        items = list(candidates.values())
+        items.sort(key=lambda item: teaching_value(item[0]))
+        items = items[:COLLECTION_MAX]
+
+        if len(items) < COLLECTION_MIN:
+            print(f"\n  ****************************************************************")
+            print(f"  LOUD BUILD WARNING: collection '{slug}' has only {len(items)} members (< {COLLECTION_MIN})! NOT SHIPPED!")
+            print(f"  ****************************************************************\n")
+            continue
+
+        title = cur_entry.get("title") or sh["title"]
+        desc = cur_entry.get("description") or sh["description"]
+        icon = cur_entry.get("icon") or sh["icon"]
+        defs.append(dict(slug=slug, title=title, description=desc, kind="topic", band=None,
+                         icon=icon, sort_order=200 + order))
+        members[slug] = items
+
     return defs, members
 
 
@@ -1740,6 +1935,8 @@ def emit(db_path: Path, words, examples, synonyms, aliases, phrases, coll_defs, 
     if db_path.exists():
         db_path.unlink()
     con = sqlite3.connect(db_path)
+    # Before the first write, or it is ignored. 8 KB pages: 1 MB less b-tree overhead.
+    con.execute("PRAGMA page_size = 8192")
     con.executescript(SCHEMA.read_text(encoding="utf-8"))
     con.executemany("INSERT INTO meta(key, value) VALUES (?, ?)", meta.items())
     con.executemany(
@@ -1752,7 +1949,8 @@ def emit(db_path: Path, words, examples, synonyms, aliases, phrases, coll_defs, 
           # The norms are per headword; storing them on sense 1 only saves 8 MB of repeats.
           *((w["prevalence"], w["aoa"], w["zipf_spoken"], w["zipf_written"], w["concreteness"])
             if w["sense_index"] == 1 or w["in_learning_set"] else (None,) * 5),
-          w["definition_source"], w["generated_at"]) for w in words],
+          # Null, not 'wiktionary', for the 252k lookup senses: the label alone was 2.7 MB.
+          w["definition_source"] if w["definition_source"] != "wiktionary" else None, w["generated_at"]) for w in words],
     )
     con.executemany("INSERT INTO examples(word_key, text) VALUES (?, ?)", examples)
     con.executemany("INSERT INTO synonyms(word_key, synonym) VALUES (?, ?)", synonyms)
@@ -1774,9 +1972,14 @@ def emit(db_path: Path, words, examples, synonyms, aliases, phrases, coll_defs, 
             [(cid, w.get("word_key") or w.get("phrase_key") or w.get("idiom_key"), pos, src) for pos, (w, src) in enumerate(coll_members.get(d["slug"], []))],
         )
     con.executemany("INSERT INTO pairs(word_a, word_b, note) VALUES (?,?,?)", pairs)
-    con.executemany("INSERT OR IGNORE INTO word_tags(word_key, tag) VALUES (?, ?)", word_tags)
+    # word_tags stays in the pipeline (collections are picked from it) but is
+    # not shipped: the app never reads it and it cost 3.5 MB installed.
     con.execute("INSERT INTO words_fts(words_fts) VALUES ('rebuild')")
-    con.execute("INSERT INTO words_trigram(words_trigram) VALUES ('rebuild')")
+    # External-content FTS lets rows be indexed by hand: one per headword, its
+    # first sense, which is the only row the fuzzy rung keeps anyway.
+    con.execute(
+        "INSERT INTO words_trigram(rowid, headword_norm) SELECT min(id), headword_norm FROM words GROUP BY headword_norm"
+    )
     con.execute("INSERT INTO phrases_fts(phrases_fts) VALUES ('rebuild')")
     con.commit()
     con.execute("PRAGMA journal_mode = DELETE")
@@ -2088,7 +2291,7 @@ def main(argv=None) -> int:
     word_tags = [(k, t) for k, t in word_tags if k in learning_keys or not t.startswith("topic:")]
 
     # ---- stage E: collections, phrases, pairs
-    coll_defs, coll_members = build_collections(learning_rows)
+    coll_defs, coll_members = build_collections(learning_rows, cur=cur, primary=primary, all_words=words, entries=entries, ent_of=ent_of)
     phrase_cap = args.idiom_cap or int(cur.get("phrases", {}).get("max_size") or cur.get("idioms", {}).get("max_size") or 3500)
     phrases = build_phrases(idiom_candidates, rank, cur, phrase_cap)
     p_defs, p_members = phrase_collections(phrases, cur)

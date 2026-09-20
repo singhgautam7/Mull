@@ -71,8 +71,10 @@ class DictionaryInstaller {
     );
     await directory.create(recursive: true);
     // Written to a sibling and renamed, so a crash mid-way never leaves a
-    // half-written dictionary.db behind for the next launch to open.
-    final String tmp = '$dbPath.part';
+    // half-written dictionary.db behind for the next launch to open. The
+    // sibling's name is unique per run: the app and the define sheet are two
+    // isolates that can both find the dictionary missing on a fresh install.
+    final String tmp = '$dbPath.${DateTime.now().microsecondsSinceEpoch}.part';
     // Inflating tens of megabytes is CPU work; it happens off the UI isolate
     // so the first-run screen keeps animating. Fed in slices so the inflater
     // never holds more than a slice and its output at once.

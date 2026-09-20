@@ -35,6 +35,20 @@ void main() {
     near(ThemeFamily.slate.colors(Tone.light).primary, 0x464f51, tolerance: 8);
   });
 
+  test('Clay is neutral-led: its surfaces sit lower and warmer, the accent stays quiet', () {
+    final MullColors light = ThemeFamily.clay.colors(Tone.light);
+    final MullColors dark = ThemeFamily.clay.colors(Tone.dark);
+    near(light.surface, 0xf6f3ee, tolerance: 8);
+    near(light.surfaceContainer, 0xebe6dd, tolerance: 8);
+    near(light.surfaceContainerHigh, 0xddd7cb, tolerance: 8);
+    near(dark.surface, 0x1a1813, tolerance: 8);
+    near(dark.surfaceContainer, 0x252118, tolerance: 8);
+    expect(ThemeFamily.clay.hasAmoled, isFalse);
+    expect(ThemeFamily.byId('clay'), ThemeFamily.clay);
+    expect(ThemeFamily.all.length, 16);
+    expect(ThemeFamily.all.map((ThemeFamily f) => f.id).toSet().length, 16, reason: 'ids are unique');
+  });
+
   test('AMOLED is true black and the Mull tab surface ignores the toggle', () {
     expect(ThemeFamily.mull.colors(Tone.amoled).surface, const Color(0xff000000));
     expect(ThemeFamily.mull.colors(Tone.dark).lingerSurface, const Color(0xff000000));

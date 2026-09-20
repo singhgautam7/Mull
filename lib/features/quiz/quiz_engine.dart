@@ -27,6 +27,21 @@ class QuizEngine {
   QuizEngine(this._dictionary);
   final DictionaryDb _dictionary;
 
+  /// [build] for a shelf of [keys], packaged for `DictionaryDb.compute`. Made
+  /// here, in a synchronous function, so the closure carries only the keys:
+  /// one made inside an async method drags that method's completer along and
+  /// cannot be sent to the worker.
+  static List<QuizQuestion> Function(DictionaryDb db) generator(
+    List<String> keys, {
+    required Set<String> seenKeys,
+    required int minimumWords,
+  }) => (DictionaryDb db) {
+    final List<DictionaryWord> words = db.byKeys(keys);
+    return words.length < minimumWords
+        ? const <QuizQuestion>[]
+        : QuizEngine(db).build(words, seenKeys: seenKeys);
+  };
+
   static const String blank = '______';
 
   /// Seen words first, then unseen, up to [limit] questions.

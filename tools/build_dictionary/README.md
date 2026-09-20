@@ -113,7 +113,7 @@ content-word overlap with the source >= 0.15. A rejected record is regenerated
 once with the reasons attached; rejected twice, the word is dropped. Passing
 rewrites replace sense 1 (`definition_source = 'llm_rewrite'`), the example goes
 first, the synonyms replace WordNet's, and `word_tags` gains `topic:*` and
-`register:*`.
+`register:*` (in the pipeline only; the table is not written to the shipped database).
 
 **E. Collections.** Bands split the learning set by prevalence (`BAND_CUTS`).
 Topic collections are defined in `topic_collections()`: each has a `pick` rule

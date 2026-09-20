@@ -34,7 +34,7 @@ CREATE TABLE words(
   zipf_spoken       REAL,                   -- SUBTLEX-UK
   zipf_written      REAL,                   -- BNC written
   concreteness      REAL,                   -- 1..5
-  definition_source TEXT NOT NULL DEFAULT 'wiktionary',  -- wiktionary | llm_rewrite
+  definition_source TEXT,                  -- 'llm_rewrite', or null for Wiktionary text (2.7 MB cheaper than spelling it out)
   generated_at      TEXT                    -- when definition_source = llm_rewrite
 );
 CREATE INDEX words_headword_norm ON words(headword_norm);
@@ -54,12 +54,18 @@ CREATE TABLE synonyms(
 CREATE INDEX synonyms_word_key ON synonyms(word_key);
 
 -- US spellings, plurals, inflections and variants, all resolving to a word.
+-- WITHOUT ROWID: the primary key is the table, so the 220k rows are stored
+-- once rather than as a heap plus a covering index (7 MB). There is no rowid to
+-- order by; the app orders inflections by alias_norm.
 CREATE TABLE aliases(
   alias_norm TEXT NOT NULL,
   word_key   TEXT NOT NULL REFERENCES words(word_key),
   kind       TEXT NOT NULL,                -- us_spelling | inflection | variant
   PRIMARY KEY(alias_norm, word_key)
-);
+) WITHOUT ROWID;
+-- usSpelling() and inflections() look aliases up by word; without this they
+-- scan the table (8 ms on a laptop, tens on a phone, on every word sheet build).
+CREATE INDEX aliases_word_key ON aliases(word_key);
 
 CREATE TABLE phrases(
   id                INTEGER PRIMARY KEY,
@@ -132,27 +138,23 @@ CREATE TABLE pairs(
   note     TEXT NOT NULL
 );
 
--- Register labels (tag:*) on every shipped sense; Wiktionary topics and the
--- LLM topic and register (topic:*, register:*) on learning-set senses. Nothing
--- in the app reads this in v1; it is what lets a new themed collection be
--- added without reprocessing the source.
-CREATE TABLE word_tags(
-  word_key TEXT NOT NULL REFERENCES words(word_key),
-  tag      TEXT NOT NULL,
-  PRIMARY KEY(word_key, tag)
-);
-
 -- Full-text search over headword and definition. External content so the
 -- text is stored once; rebuilt by the pipeline, never by the app.
+-- detail=none drops term positions (no phrase or NEAR queries; the app only
+-- ever issues AND-ed prefix tokens) and columnsize=0 drops the per-row size
+-- table bm25 reads: together 14 MB. Ranking keeps the same top hits; the tail
+-- of the FTS rung can reorder.
 CREATE VIRTUAL TABLE words_fts USING fts5(
   headword, definition_full,
   content='words', content_rowid='id',
-  tokenize='unicode61'
+  tokenize='unicode61', detail=none, columnsize=0
 );
 
--- Trigram index for typo tolerance: the last rung of the search ladder.
+-- Trigram index for typo tolerance: the last rung of the search ladder. The
+-- pipeline fills it with one row per headword (its first sense), not one per
+-- sense, since the fuzzy query only ever keeps sense 1: 7 MB smaller.
 CREATE VIRTUAL TABLE words_trigram USING fts5(
   headword_norm,
   content='words', content_rowid='id',
-  tokenize='trigram'
+  tokenize='trigram', detail=none, columnsize=0
 );

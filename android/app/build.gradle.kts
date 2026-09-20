@@ -44,3 +44,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // NotificationCompat and ContextCompat for the word-of-the-day reminder.
+    implementation("androidx.core:core-ktx:1.15.0")
+}

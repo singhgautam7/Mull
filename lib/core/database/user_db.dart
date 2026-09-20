@@ -242,7 +242,16 @@ class AppState extends Table {
   ],
 )
 class UserDatabase extends _$UserDatabase {
-  UserDatabase() : super(driftDatabase(name: 'mull_user'));
+  /// One drift server isolate for the process, found by name: the app and
+  /// the define sheet each run their own Dart isolate, and sharing keeps one
+  /// writer and lets a bookmark made in the sheet reach the app's streams.
+  UserDatabase()
+    : super(
+        driftDatabase(
+          name: 'mull_user',
+          native: const DriftNativeOptions(shareAcrossIsolates: true),
+        ),
+      );
 
   /// Test constructor: an in-memory database with the same schema.
   UserDatabase.forTesting(super.executor);

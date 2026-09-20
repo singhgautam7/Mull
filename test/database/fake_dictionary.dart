@@ -133,7 +133,8 @@ DictionaryDb fakeDictionary({
     }
   }
   db.execute("INSERT INTO words_fts(words_fts) VALUES ('rebuild')");
-  db.execute("INSERT INTO words_trigram(words_trigram) VALUES ('rebuild')");
+  // One row per headword, as the pipeline does.
+  db.execute('INSERT INTO words_trigram(rowid, headword_norm) SELECT min(id), headword_norm FROM words GROUP BY headword_norm');
   db.execute("INSERT INTO phrases_fts(phrases_fts) VALUES ('rebuild')");
   return DictionaryDb.forTesting(db);
 }

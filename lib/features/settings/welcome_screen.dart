@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/database/dictionary_db.dart';
-import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -12,6 +10,8 @@ import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/family_card.dart';
+import '../../shared/widgets/two_column_grid.dart';
 import 'settings_controller.dart';
 
 /// HANDOFF 3.14. Three screens, Skip present from the first. 01 what Mull
@@ -26,16 +26,20 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   int _step = 0;
-  String? _start;
+
+  /// The card illustration animates in once, on the first load; coming back
+  /// to page 01 from 02 shows it settled.
+  bool _cardsIntroduced = false;
   bool _wotd = false;
   int _minutes = 8 * 60 + 30;
 
   Future<void> _finish({bool skipped = false}) async {
     final SettingsController ctl = ref.read(settingsProvider.notifier);
+    // Asking to be notified asks the OS too; declined, the setting stays off.
     if (!skipped) await ctl.setWotd(enabled: _wotd, minutes: _minutes);
     await ctl.setOnboarded(value: true);
     if (!mounted) return;
-    context.go(_start == null || skipped ? Routes.home : Routes.scoped(_start!));
+    context.go(Routes.home);
   }
 
   @override
@@ -44,7 +48,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     // The 40px display line at the largest OS scale would break words on a
     // narrow phone; it grows to 1.5x and no further.
     final TextScaler display = MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.5);
-    final List<Collection> collections = ref.watch(collectionsProvider).where((Collection x) => x.kind == 'band').toList();
+    final AppSettings s = ref.watch(settingsProvider);
+    final SettingsController ctl = ref.read(settingsProvider.notifier);
+    final Tone tone = s.toneFor(MediaQuery.platformBrightnessOf(context));
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -101,7 +107,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     // An illustration: it does not scale with text.
-                    MediaQuery.withNoTextScaling(child: const _CardStack()),
+                    MediaQuery.withNoTextScaling(
+                      child: _CardStack(
+                        introduce: !_cardsIntroduced,
+                        onIntroduced: () => _cardsIntroduced = true,
+                      ),
+                    ),
                     const SizedBox(height: Space.xxl),
                     Text('A dictionary, and somewhere to put it when you are idle.', style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
                     const SizedBox(height: Space.lg),
@@ -111,33 +122,30 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                 1 => Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Text('Where would you like to start?', style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
+                    Text('Pick a look.', style: MullType.display.copyWith(color: c.onSurface), textScaler: display),
                     const SizedBox(height: Space.sm),
-                    Text('You can change this at any time.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
+                    Text('Light or dark, and a colour. Change it any time under More.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
                     const SizedBox(height: Space.xl),
-                    for (final Collection col in collections)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Space.row),
-                        child: InkWell(
-                          onTap: () => setState(() => _start = col.slug),
-                          borderRadius: Radii.cardR,
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: _start == col.slug ? c.primaryContainer : c.surfaceContainer,
-                              borderRadius: Radii.cardR,
-                              border: Border.all(color: _start == col.slug ? c.primary : c.outline),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(col.title, style: MullType.titleMedium.copyWith(color: _start == col.slug ? c.onPrimaryContainer : c.onSurface)),
-                                Text('${col.description} ${grouped(col.wordCount)} of them.', style: MullType.bodySmall.copyWith(color: _start == col.slug ? c.onPrimaryContainer : c.onSurfaceVariant)),
-                              ],
-                            ),
+                    SegmentedToggle<ThemeMode>(
+                      options: const <(ThemeMode, String)>[(ThemeMode.light, 'Light'), (ThemeMode.dark, 'Dark'), (ThemeMode.system, 'System')],
+                      selected: s.themeMode,
+                      onChanged: ctl.setThemeMode,
+                    ),
+                    const SizedBox(height: Space.lg),
+                    TwoColumnGrid(
+                      children: <Widget>[
+                        for (final ThemeFamily f in ThemeFamily.all)
+                          FamilyCard(
+                            family: f,
+                            colors: f.colors(f.hasAmoled ? tone : (tone == Tone.amoled ? Tone.dark : tone)),
+                            selected: !s.dynamicColor && s.familyId == f.id,
+                            onTap: () async {
+                              await ctl.setDynamicColor(value: false);
+                              await ctl.setFamily(f.id);
+                            },
                           ),
-                        ),
-                      ),
+                      ],
+                    ),
                   ],
                 ),
                 _ => Column(
@@ -203,48 +211,109 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 }
 
 /// A soft accent-tinted illustration of word cards. Not the app's own UI.
-class _CardStack extends StatelessWidget {
-  const _CardStack();
+/// On first load the three cards arrive one after another: a rise of 16dp
+/// and a fade on `cardBackground` (decelerate, the system brought them), 90 ms
+/// apart, back to front. Calm, no overshoot. Under reduced motion they
+/// cross-fade at 90 ms.
+class _CardStack extends StatefulWidget {
+  const _CardStack({required this.introduce, required this.onIntroduced});
+
+  /// False once the entrance has played: the cards then sit still.
+  final bool introduce;
+  final VoidCallback onIntroduced;
+
+  @override
+  State<_CardStack> createState() => _CardStackState();
+}
+
+class _CardStackState extends State<_CardStack> with SingleTickerProviderStateMixin {
+  static const int _cards = 3;
+  static const Duration _stagger = Duration(milliseconds: 90);
+
+  late final AnimationController _intro = AnimationController(
+    vsync: this,
+    duration: Motion.cardBackground + _stagger * (_cards - 1),
+    value: widget.introduce ? 0 : 1,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.introduce || _intro.isAnimating || _intro.isCompleted) return;
+    if (Motion.reduced(context)) _intro.duration = Motion.reducedFade;
+    _intro.forward().whenComplete(widget.onIntroduced);
+  }
+
+  @override
+  void dispose() {
+    _intro.dispose();
+    super.dispose();
+  }
+
+  /// The slice of the controller card [i] animates over.
+  Animation<double> _entrance(int i) {
+    final double total = _intro.duration!.inMilliseconds.toDouble();
+    final double from = Motion.reduced(context) ? 0 : (_stagger.inMilliseconds * i) / total;
+    final double to = Motion.reduced(context) ? 1 : from + Motion.cardBackground.inMilliseconds / total;
+    return CurvedAnimation(
+      parent: _intro,
+      curve: Interval(from, to, curve: Motion.reduced(context) ? Curves.linear : Motion.decelerate),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    Widget card(String word, String ipa, String def, double dx, double dy, double angle, {bool tint = false}) => Positioned(
-      left: dx,
-      top: dy,
-      child: Transform.rotate(
-        angle: angle,
-        child: Container(
-          width: 220,
-          padding: const EdgeInsets.all(Space.lg),
-          decoration: BoxDecoration(
-            color: tint ? c.primaryContainer : c.surfaceContainer,
-            borderRadius: Radii.cardR,
-            border: Border.all(color: c.outline),
+    final bool reduced = Motion.reduced(context);
+    Widget card(int i, String word, String ipa, String def, double dx, double dy, double angle, {bool tint = false}) {
+      final Animation<double> t = _entrance(i);
+      return Positioned(
+        left: dx,
+        top: dy,
+        child: AnimatedBuilder(
+          animation: t,
+          builder: (BuildContext context, Widget? child) => Opacity(
+            opacity: t.value,
+            child: Transform.translate(
+              offset: Offset(0, reduced ? 0 : 16 * (1 - t.value)),
+              child: child,
+            ),
           ),
-          // The cards behind sit in muted ink, so the tinted one reads as
-          // the front of the stack.
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(word, style: MullType.title.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceVariant)),
-              Text(ipa, style: MullType.monoLabel.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceMuted)),
-              const SizedBox(height: 6),
-              Text(def, style: MullType.bodySmall.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceMuted)),
-            ],
+          child: Transform.rotate(
+            angle: angle,
+            child: Container(
+              width: 220,
+              padding: const EdgeInsets.all(Space.lg),
+              decoration: BoxDecoration(
+                color: tint ? c.primaryContainer : c.surfaceContainer,
+                borderRadius: Radii.cardR,
+                border: Border.all(color: c.outline),
+              ),
+              // The cards behind sit in muted ink, so the tinted one reads as
+              // the front of the stack.
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(word, style: MullType.title.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceVariant)),
+                  Text(ipa, style: MullType.monoLabel.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceMuted)),
+                  const SizedBox(height: 6),
+                  Text(def, style: MullType.bodySmall.copyWith(color: tint ? c.onPrimaryContainer : c.onSurfaceMuted)),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
-    );
+      );
+    }
     return SizedBox(
       height: 250,
       child: Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
-          card('sonder', '/ˈsɒndə/', 'The sense that every passer-by has a life as full as yours.', 40, 0, -0.06),
-          card('petrichor', '/ˈpɛtrɪkɔː/', 'The smell of rain falling on dry earth.', 0, 50, 0.03),
-          // The app's own word is the one in colour.
-          card('mull', '/mʌl/', 'To think about something at length, without hurry.', 70, 100, -0.02, tint: true),
+          card(0, 'sonder', '/ˈsɒndə/', 'The sense that every passer-by has a life as full as yours.', 40, 0, -0.06),
+          card(1, 'petrichor', '/ˈpɛtrɪkɔː/', 'The smell of rain falling on dry earth.', 0, 50, 0.03),
+          // The app's own word is the one in colour, and the last to land.
+          card(2, 'mull', '/mʌl/', 'To think about something at length, without hurry.', 70, 100, -0.02, tint: true),
         ],
       ),
     );

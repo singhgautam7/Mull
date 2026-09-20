@@ -11,6 +11,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
+import '../../shared/widgets/did_you_mean.dart';
 import '../../shared/widgets/fields.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/section_header.dart';
@@ -41,17 +42,25 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
+/// How long the field must be quiet before a keystroke becomes a query. A
+/// keystroke every 60 ms would otherwise queue an FTS query for each.
+const Duration kSearchDebounce = Duration(milliseconds: 100);
+
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _field = TextEditingController();
   final FocusNode _focus = FocusNode();
   String _query = '';
   List<DictionaryWord> _words = const <DictionaryWord>[];
   List<Idiom> _idioms = const <Idiom>[];
-  String? _suggestion;
+  List<DictionaryWord> _suggestions = const <DictionaryWord>[];
   late SearchSegment _segment = widget.initialSegment;
   bool _slow = false;
   List<String> _recent = const <String>[];
   Timer? _recordTimer;
+  Timer? _debounce;
+
+  /// Bumped per keystroke; a result for an older query is dropped.
+  int _generation = 0;
 
   @override
   void initState() {
@@ -68,30 +77,59 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (mounted) setState(() => _recent = r);
   }
 
+  /// A new query handed in by a route (`/search?q=`) while this tab is
+  /// already built, as the define sheet's "Search Mull for it" does.
+  @override
+  void didUpdateWidget(SearchScreen old) {
+    super.didUpdateWidget(old);
+    final String? q = widget.initialQuery;
+    if (q != null && q.isNotEmpty && q != old.initialQuery) _set(q);
+  }
+
   @override
   void dispose() {
     _recordTimer?.cancel();
+    _debounce?.cancel();
     _field.dispose();
     _focus.dispose();
     super.dispose();
   }
 
   void _run(String q) {
-    final DictionaryDb dict = ref.read(dictProvider);
+    _debounce?.cancel();
+    _recordTimer?.cancel();
+    final int generation = ++_generation;
+    if (q.trim().isEmpty) {
+      // Clearing the field brings the recent searches straight back.
+      setState(() {
+        _query = q;
+        _words = const <DictionaryWord>[];
+        _idioms = const <Idiom>[];
+        _suggestions = const <DictionaryWord>[];
+        _slow = false;
+      });
+      return;
+    }
+    _debounce = Timer(kSearchDebounce, () => unawaited(_search(q, generation)));
+  }
+
+  /// The query runs on the dictionary worker; the previous results stay on
+  /// screen until the new ones land, and `_query` moves with them so the
+  /// empty state never shows for a query still in flight.
+  Future<void> _search(String q, int generation) async {
     final Stopwatch sw = Stopwatch()..start();
-    final List<DictionaryWord> words = dict.search(q);
-    final List<Idiom> idioms = dict.searchIdioms(q);
+    final SearchResults r = await ref.read(dictProvider).searchAll(q);
     sw.stop();
+    if (!mounted || generation != _generation) return;
     setState(() {
       _query = q;
-      _words = words;
-      _idioms = idioms;
-      _suggestion = words.isEmpty && q.trim().isNotEmpty ? dict.suggest(q) : null;
+      _words = r.words;
+      _idioms = r.idioms;
+      _suggestions = r.suggestions;
       // A 2dp hairline, only if a query exceeds 120 ms.
       _slow = sw.elapsedMilliseconds > 120;
-      if (words.isEmpty && idioms.isNotEmpty) _segment = SearchSegment.idioms;
+      if (r.words.isEmpty && r.idioms.isNotEmpty) _segment = SearchSegment.idioms;
     });
-    _recordTimer?.cancel();
     if (q.trim().length >= 2) {
       _recordTimer = Timer(const Duration(seconds: 2), () {
         unawaited(ref.read(userRepositoryProvider).recordSearch(q.trim()).then((_) => _loadRecent()));
@@ -218,12 +256,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         Text('No entry for ${_query.trim()}', style: MullType.display.copyWith(fontSize: 28, color: c.onSurface)),
         const SizedBox(height: Space.row),
         Text('The spelling may differ, or this edition may not carry it.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
-        if (_suggestion != null) ...<Widget>[
+        if (_suggestions.isNotEmpty) ...<Widget>[
           const SizedBox(height: Space.lg),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: PillChip(label: 'Did you mean ${_suggestion!}?', onTap: () => _set(_suggestion!)),
-          ),
+          DidYouMean(words: _suggestions, onPick: (DictionaryWord w) => _set(w.headword)),
         ],
         const SizedBox(height: Space.lg),
         InkWell(

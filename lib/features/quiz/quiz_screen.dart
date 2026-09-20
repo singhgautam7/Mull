@@ -65,10 +65,16 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final Map<String, SeenWord> seenMap =
         ref.read(seenMapProvider).value ?? const <String, SeenWord>{};
 
-    final List<DictionaryWord> words = dictionary.byKeys(keys);
-    final List<QuizQuestion> questions = words.length < QuizScreen.minimumWords
-        ? const <QuizQuestion>[]
-        : QuizEngine(dictionary).build(words, seenKeys: seenMap.keys.toSet());
+    // Generation loops over the whole learning set per question, so it runs
+    // on the dictionary worker, not the UI isolate.
+    final List<QuizQuestion> questions = await dictionary.compute(
+      QuizEngine.generator(
+        keys,
+        seenKeys: seenMap.keys.toSet(),
+        minimumWords: QuizScreen.minimumWords,
+      ),
+    );
+    if (!mounted) return;
 
     final int? session = questions.isEmpty
         ? null

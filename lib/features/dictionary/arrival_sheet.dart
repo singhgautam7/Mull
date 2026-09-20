@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_repository.dart';
@@ -13,12 +12,13 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
-import '../../core/utils/format.dart';
 import '../../core/utils/platform_surfaces.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_snackbar.dart';
+import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/did_you_mean.dart';
 import 'word_sheet.dart';
 
 /// Formats an Android package name into a human-readable app name.
@@ -82,7 +82,7 @@ class ArrivalTopRow extends StatelessWidget {
 Future<void> showUnknownWordSheet(
   BuildContext context, {
   required String text,
-  DictionaryWord? nearMatch,
+  List<DictionaryWord> suggestions = const <DictionaryWord>[],
   String? sourceHint,
 }) {
   return showAppBottomSheet<void>(
@@ -91,7 +91,7 @@ Future<void> showUnknownWordSheet(
     showClose: false,
     builder: (BuildContext ctx) => _UnknownWordArrivalSheet(
       text: text,
-      nearMatch: nearMatch,
+      suggestions: suggestions,
       sourceHint: sourceHint,
     ),
   );
@@ -100,12 +100,14 @@ Future<void> showUnknownWordSheet(
 class _UnknownWordArrivalSheet extends ConsumerWidget {
   const _UnknownWordArrivalSheet({
     required this.text,
-    this.nearMatch,
+    required this.suggestions,
     this.sourceHint,
   });
 
   final String text;
-  final DictionaryWord? nearMatch;
+
+  /// The nearest headwords, from `DictionaryDb.suggestions`.
+  final List<DictionaryWord> suggestions;
   final String? sourceHint;
 
   @override
@@ -131,80 +133,42 @@ class _UnknownWordArrivalSheet extends ConsumerWidget {
           style: MullType.body.copyWith(color: c.onSurfaceVariant),
         ),
         const SizedBox(height: Space.xl),
-        if (nearMatch != null) ...<Widget>[
-          Text(
-            'CLOSEST ENTRY',
-            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
-          ),
-          const SizedBox(height: Space.sm),
-          InkWell(
-            onTap: () {
+        if (suggestions.isNotEmpty) ...<Widget>[
+          DidYouMean(
+            words: suggestions,
+            onPick: (DictionaryWord w) {
               Navigator.of(context).pop();
               showWordSheet(
                 context,
-                wordKey: nearMatch!.wordKey,
+                wordKey: w.wordKey,
                 fromOutside: true,
                 sourceHint: sourceHint,
               );
             },
-            borderRadius: Radii.cardR,
-            child: Container(
-              padding: const EdgeInsets.all(Space.lg),
-              decoration: BoxDecoration(
-                color: c.surfaceContainerHigh,
-                borderRadius: Radii.cardR,
-                border: Border.all(color: c.outline),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Text(
-                        nearMatch!.headword,
-                        style: MullType.headwordM.copyWith(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
-                          color: c.onSurface,
-                        ),
-                      ),
-                      const SizedBox(width: Space.sm),
-                      BandChip(bandLabel(nearMatch!.band)),
-                      const Spacer(),
-                      Text(
-                        posLabel(nearMatch!.pos),
-                        style: MullType.label.copyWith(
-                          fontStyle: FontStyle.italic,
-                          color: c.onSurfaceMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: Space.xs),
-                  Text(
-                    nearMatch!.definitionShort,
-                    style: MullType.body.copyWith(color: c.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
           ),
           const SizedBox(height: Space.xl),
         ],
-        AppButton(
-          label: 'Search Mull for it',
-          fullWidth: true,
-          onPressed: () {
-            Navigator.of(context).pop();
-            context.go('${Routes.search}?q=${Uri.encodeComponent(text)}');
-          },
-        ),
-        const SizedBox(height: Space.sm),
-        AppButton(
-          label: 'Not now',
-          type: AppButtonType.secondary,
-          fullWidth: true,
-          onPressed: () => Navigator.of(context).pop(),
+        // One row: the search, and a plain close for "not now".
+        Row(
+          spacing: Space.md,
+          children: <Widget>[
+            Expanded(
+              child: AppButton(
+                label: 'Search Mull for it',
+                fullWidth: true,
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  unawaited(PlatformSurfaces.go(context, '${Routes.search}?q=${Uri.encodeComponent(text)}'));
+                },
+              ),
+            ),
+            AppIconButton(
+              icon: Icons.close_rounded,
+              size: 48,
+              semanticLabel: 'Not now',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
         ),
       ],
     );
@@ -216,6 +180,7 @@ Future<void> showMultipleWordsArrivalSheet(
   BuildContext context, {
   required String text,
   required List<WordMatch> matches,
+  bool everyday = false,
   String? sourceHint,
 }) {
   return showAppBottomSheet<void>(
@@ -225,6 +190,7 @@ Future<void> showMultipleWordsArrivalSheet(
     builder: (BuildContext ctx) => _MultipleWordsArrivalSheet(
       text: text,
       matches: matches,
+      everyday: everyday,
       sourceHint: sourceHint,
     ),
   );
@@ -234,11 +200,17 @@ class _MultipleWordsArrivalSheet extends ConsumerWidget {
   const _MultipleWordsArrivalSheet({
     required this.text,
     required this.matches,
+    required this.everyday,
     this.sourceHint,
   });
 
   final String text;
   final List<WordMatch> matches;
+
+  /// True when nothing in the selection was worth stopping on and
+  /// [matches] is simply every word of it Mull has: offered as a guess,
+  /// not as a find.
+  final bool everyday;
   final String? sourceHint;
 
   @override
@@ -279,12 +251,14 @@ class _MultipleWordsArrivalSheet extends ConsumerWidget {
         const SizedBox(height: Space.lg),
         if (matches.isNotEmpty) ...<Widget>[
           Text(
-            'MULL HAS ${matches.length} OF THEM',
+            everyday ? 'DID YOU MEAN ONE OF THESE' : 'MULL HAS ${matches.length} OF THEM',
             style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
           ),
           const SizedBox(height: Space.xs),
           Text(
-            'Pick one to read, or keep the whole sentence and sort it out later.',
+            everyday
+                ? 'Nothing here is rare, but each word has its own entry.'
+                : 'Pick one to read, or keep the whole sentence and sort it out later.',
             style: MullType.note.copyWith(color: c.onSurfaceMuted),
           ),
           const SizedBox(height: Space.md),
@@ -354,7 +328,7 @@ class _MultipleWordsArrivalSheet extends ConsumerWidget {
             fullWidth: true,
             onPressed: () {
               Navigator.of(context).pop();
-              context.go(Routes.search);
+              unawaited(PlatformSurfaces.go(context, '${Routes.search}?q=${Uri.encodeComponent(text)}'));
             },
           ),
         ],

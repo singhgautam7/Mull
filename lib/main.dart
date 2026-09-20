@@ -8,6 +8,10 @@ import 'app.dart';
 import 'core/database/dictionary_installer.dart';
 import 'core/database/user_db.dart';
 import 'core/providers.dart';
+// Not used here: imported so the AOT build includes `defineMain`, the
+// entrypoint DefineActivity runs. A library main.dart never imports is not
+// in the program at all, pragma or no pragma.
+import 'define_main.dart' show defineMain; // ignore: unused_import
 import 'features/settings/settings_controller.dart';
 
 Future<void> main() async {

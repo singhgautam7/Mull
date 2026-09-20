@@ -88,6 +88,49 @@ class CollectionEntry {
   }
 }
 
+/// A shelf's rows in shelf order, read from the dictionary once per change
+/// of its keys and never in `build()`: a 1,600-word shelf costs 100 ms cold
+/// to materialise, and the screen rebuilds on every scroll-direction change,
+/// filter keystroke and seen write. Rebuilds only sort and filter this.
+final Provider<List<CollectionEntry>> Function(String) shelfEntriesProvider =
+    Provider.autoDispose.family<List<CollectionEntry>, String>((
+      Ref ref,
+      String slug,
+    ) {
+      final DictionaryDb dict = ref.watch(dictProvider);
+      final List<String> keys =
+          ref.watch(
+            collectionKeysProvider.select(
+              (Map<String, List<String>> m) => m[slug],
+            ),
+          ) ??
+          const <String>[];
+      final String? kind = ref.watch(
+        collectionBySlugProvider.select(
+          (Map<String, Collection> m) => m[slug]?.kind,
+        ),
+      );
+      final Map<String, DictionaryWord> wordsByKey = <String, DictionaryWord>{
+        for (final DictionaryWord w in dict.byKeys(keys)) w.wordKey: w,
+      };
+      final Map<String, Phrase> phrasesByKey = <String, Phrase>{
+        for (final Phrase p in dict.phrasesByKeys(keys)) p.phraseKey: p,
+      };
+      final List<CollectionEntry> entries = <CollectionEntry>[
+        for (final String k in keys)
+          if (wordsByKey[k] case final DictionaryWord w)
+            CollectionEntry.word(w)
+          else if (phrasesByKey[k] case final Phrase p)
+            CollectionEntry.phrase(p),
+      ];
+      if (entries.isEmpty && kind == 'idiom') {
+        for (final Idiom i in dict.collectionIdioms(slug)) {
+          entries.add(CollectionEntry.idiom(i));
+        }
+      }
+      return entries;
+    });
+
 /// Shelf screen supporting Card and Table views, real-time filtering,
 /// sort menu, view switcher, and overflow menu with "Mull these".
 class CollectionScreen extends ConsumerStatefulWidget {
@@ -123,6 +166,12 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   bool _buttonsVisible = true;
   double _scrollTravel = 0.0;
 
+  /// False until the push transition has played. Reading a 1,600-row shelf
+  /// costs 100 ms or more on a phone; done during the route's first frame it
+  /// swallows the whole 240 ms `page.push`, so skeletons hold the space
+  /// until the animation is over.
+  bool _ready = false;
+
   UserRepository get _user => ref.read(userRepositoryProvider);
 
   @override
@@ -130,6 +179,20 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     super.initState();
     unawaited(_user.setAppState(UserRepository.kLastOpened, widget.slug));
     unawaited(_user.recordCollectionOpened(widget.slug));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final Animation<double>? push = ModalRoute.of(context)?.animation;
+      if (push == null || push.isCompleted) {
+        setState(() => _ready = true);
+        return;
+      }
+      void onStatus(AnimationStatus status) {
+        if (status != AnimationStatus.completed) return;
+        push.removeStatusListener(onStatus);
+        if (mounted) setState(() => _ready = true);
+      }
+      push.addStatusListener(onStatus);
+    });
   }
 
   @override
@@ -501,33 +564,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final bool own = collection?.isUsers ?? false;
     final String title = collection?.title ?? '';
 
-    // Collect all keys in order
-    final List<String> allKeys =
-        ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[];
-    final List<DictionaryWord> fetchedWords = dict.byKeys(allKeys);
-    final List<Phrase> fetchedPhrases = dict.phrasesByKeys(allKeys);
-
-    final Map<String, DictionaryWord> wordsByKey = <String, DictionaryWord>{
-      for (final DictionaryWord w in fetchedWords) w.wordKey: w,
-    };
-    final Map<String, Phrase> phrasesByKey = <String, Phrase>{
-      for (final Phrase p in fetchedPhrases) p.phraseKey: p,
-    };
-
-    final List<CollectionEntry> rawEntries = <CollectionEntry>[];
-    for (final String k in allKeys) {
-      if (wordsByKey.containsKey(k)) {
-        rawEntries.add(CollectionEntry.word(wordsByKey[k]!));
-      } else if (phrasesByKey.containsKey(k)) {
-        rawEntries.add(CollectionEntry.phrase(phrasesByKey[k]!));
-      }
-    }
-
-    if (rawEntries.isEmpty && collection?.kind == 'idiom') {
-      for (final Idiom i in dict.collectionIdioms(widget.slug)) {
-        rawEntries.add(CollectionEntry.idiom(i));
-      }
-    }
+    final List<CollectionEntry> rawEntries = _ready
+        ? ref.watch(shelfEntriesProvider(widget.slug))
+        : const <CollectionEntry>[];
 
     // Sort entries
     List<CollectionEntry> sortedEntries = List<CollectionEntry>.of(rawEntries);
@@ -714,7 +753,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                     runSpacing: Space.xs,
                                     children: <Widget>[
                                       Text(
-                                        '${displayItems.length} items · $seenCount seen',
+                                        // The collection's own count while the rows are still to come.
+                                        '${_ready ? displayItems.length : collection?.wordCount ?? 0} items · $seenCount seen',
                                         style: MullType.monoLabel.copyWith(
                                           color: c.onSurfaceMuted,
                                         ),
@@ -731,7 +771,25 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               ],
                             ),
                           ),
-                          if (displayItems.isEmpty)
+                          if (!_ready)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(
+                                Space.screen,
+                                Space.sm,
+                                Space.screen,
+                                Space.bottomSafe + 48,
+                              ),
+                              sliver: SliverList.separated(
+                                itemCount: 6,
+                                separatorBuilder: (BuildContext _, int _) =>
+                                    const SizedBox(height: Space.row),
+                                itemBuilder: (BuildContext _, int _) =>
+                                    _viewMode == CollectionViewMode.card
+                                    ? const SkeletonCard()
+                                    : const SkeletonRow(),
+                              ),
+                            )
+                          else if (displayItems.isEmpty)
                             SliverFillRemaining(
                               hasScrollBody: false,
                               child: rawEntries.isEmpty

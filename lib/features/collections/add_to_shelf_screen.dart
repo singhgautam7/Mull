@@ -19,6 +19,7 @@ import '../../shared/widgets/fields.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/states.dart';
 import '../dictionary/search_screen.dart';
+import 'collection_screen.dart' show CollectionEntry, shelfEntriesProvider;
 
 /// HANDOFF 26 (board D1): one search, many words, each row a toggle that
 /// says whether the entry is on the shelf. Adding is silent, removing raises
@@ -45,20 +46,38 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _field.dispose();
     _focus.dispose();
     super.dispose();
   }
 
+  Timer? _debounce;
+  int _generation = 0;
+
+  /// Debounced and off the UI isolate, as the Search tab is.
   void _run(String q) {
-    final DictionaryDb dict = ref.read(dictProvider);
-    setState(() {
-      _query = q;
-      if (widget.phrases) {
-        _idioms = dict.searchIdioms(q);
-      } else {
-        _words = dict.search(q);
-      }
+    _debounce?.cancel();
+    final int generation = ++_generation;
+    if (q.trim().isEmpty) {
+      setState(() {
+        _query = q;
+        _words = const <DictionaryWord>[];
+        _idioms = const <Idiom>[];
+      });
+      return;
+    }
+    _debounce = Timer(kSearchDebounce, () async {
+      final SearchResults r = await ref.read(dictProvider).searchAll(q);
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _query = q;
+        if (widget.phrases) {
+          _idioms = r.idioms;
+        } else {
+          _words = r.words;
+        }
+      });
     });
   }
 
@@ -127,7 +146,7 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
               Expanded(
                 child: typing
                     ? _results(c, tick, onShelf, builtIn)
-                    : _shelf(c, dict, userKeys, builtIn, tick, onShelf),
+                    : _shelf(c, userKeys, builtIn, tick, onShelf),
               ),
               _Footer(addedNow: _addedNow, total: total, onDone: () => context.pop()),
             ],
@@ -186,50 +205,35 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
   }
 
   /// Before a query: the shelf itself, newest first, every row ticked, so a
-  /// word can come off without being searched for.
+  /// word can come off without being searched for. The rows come from the
+  /// shelf provider, read once per change of the shelf, and the list is
+  /// built lazily: a 1,600-word shelf is not 1,600 widgets.
   Widget _shelf(
     MullColors c,
-    DictionaryDb dict,
     List<String> userKeys,
     Set<String> builtIn,
     Widget Function(String key) tick,
     Set<String> onShelf,
   ) {
-    final List<String> order = <String>[...userKeys, ...builtIn];
-    final List<(String, SearchResult)> entries;
-    if (widget.phrases) {
-      final Map<String, Phrase> byKey = <String, Phrase>{
-        for (final Phrase p in dict.phrasesByKeys(order)) p.phraseKey: p,
-      };
-      entries = <(String, SearchResult)>[
-        for (final String k in order)
-          if (byKey[k] case final Phrase p) (k, SearchResult.phrase(p)),
-      ];
-    } else {
-      final Map<String, DictionaryWord> byKey = <String, DictionaryWord>{
-        for (final DictionaryWord w in dict.byKeys(order)) w.wordKey: w,
-      };
-      entries = <(String, SearchResult)>[
-        for (final String k in order)
-          if (byKey[k] case final DictionaryWord w) (k, SearchResult.word(w)),
-      ];
-    }
+    final Map<String, CollectionEntry> byKey = <String, CollectionEntry>{
+      for (final CollectionEntry e in ref.watch(shelfEntriesProvider(widget.slug)))
+        e.key: e,
+    };
+    final List<(String, SearchResult)> entries = <(String, SearchResult)>[
+      for (final String k in <String>[...userKeys, ...builtIn])
+        if (byKey[k] case final CollectionEntry e)
+          if (e.isWord != widget.phrases) (k, e.toSearchResult()),
+    ];
     if (entries.isEmpty) {
       return const EmptyState(
         title: 'Nothing here yet',
         message: 'Search above, or paste a table from the overflow.',
       );
     }
-    return ListView(
-      padding: const EdgeInsets.only(bottom: Space.lg),
-      children: <Widget>[
-        SectionHeader(
-          label: 'On this shelf · ${entries.length}',
-          trailing: const SectionNote('newest first'),
-        ),
-        for (final (String key, SearchResult r) in entries)
-          if (widget.phrases)
-            Padding(
+    Widget row(int i) {
+      final (String key, SearchResult r) = entries[i];
+      return widget.phrases
+          ? Padding(
               padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.row),
               child: SearchResultCard(
                 result: r,
@@ -238,22 +242,36 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
                 onTap: () => unawaited(_toggle(key, onShelf, builtIn)),
               ),
             )
-          else
-            SearchResultRow(
+          : SearchResultRow(
               result: r,
               query: '',
               tinted: true,
               trailing: tick(key),
               onTap: () => unawaited(_toggle(key, onShelf, builtIn)),
+            );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: Space.lg),
+      itemCount: entries.length + 2,
+      itemBuilder: (BuildContext context, int i) {
+        if (i == 0) {
+          return SectionHeader(
+            label: 'On this shelf · ${entries.length}',
+            trailing: const SectionNote('newest first'),
+          );
+        }
+        if (i == entries.length + 1) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(Space.screen, Space.lg, Space.screen, 0),
+            child: Text(
+              'what is already here, so a word can come off without searching for it',
+              style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted, height: 1.6),
             ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Space.screen, Space.lg, Space.screen, 0),
-          child: Text(
-            'what is already here, so a word can come off without searching for it',
-            style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted, height: 1.6),
-          ),
-        ),
-      ],
+          );
+        }
+        return row(i - 1);
+      },
     );
   }
 }

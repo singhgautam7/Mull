@@ -13,6 +13,14 @@ import 'core/utils/platform_surfaces.dart';
 import 'features/settings/install_screen.dart';
 import 'features/settings/settings_controller.dart';
 
+/// The theme for one brightness from the settings and, with dynamic colour
+/// on, the wallpaper seed. Shared by the app and the define sheet so the two
+/// never differ.
+ThemeData themeFor(AppSettings s, Color? seed, Brightness b) {
+  final Tone tone = s.toneFor(b);
+  return seed == null ? AppTheme.of(s.family, tone) : AppTheme.fromSeed(seed, tone);
+}
+
 class MullApp extends ConsumerStatefulWidget {
   const MullApp({super.key});
 
@@ -43,6 +51,11 @@ class _MullAppState extends ConsumerState<MullApp> {
     final BuildContext? ctx = rootNavigatorKey.currentContext;
     if (!mounted || ctx == null || !ctx.mounted) return;
     if (ref.read(dictionaryProvider) is! AsyncData<DictionaryDb>) return;
+    // The define sheet handing the user over to a screen of the app.
+    if (data['route'] case final String route) {
+      _router.go(route);
+      return;
+    }
     await PlatformSurfaces.handleIncomingIntent(context: ctx, ref: ref, data: data);
   }
 
@@ -55,12 +68,6 @@ class _MullAppState extends ConsumerState<MullApp> {
     final Color? seed = s.dynamicColor
         ? ref.watch(wallpaperSeedProvider).value
         : null;
-    ThemeData themeFor(Brightness b) {
-      final Tone tone = s.toneFor(b);
-      return seed == null
-          ? AppTheme.of(s.family, tone)
-          : AppTheme.fromSeed(seed, tone);
-    }
 
     // The install state is shown while the dictionary is unpacked; the router
     // takes over once it is open. The two cross-fade (`sheet`, decelerate) so
@@ -84,8 +91,8 @@ class _MullAppState extends ConsumerState<MullApp> {
           title: 'Mull',
           debugShowCheckedModeBanner: false,
           themeMode: s.themeMode,
-          theme: themeFor(Brightness.light),
-          darkTheme: themeFor(Brightness.dark),
+          theme: themeFor(s, seed, Brightness.light),
+          darkTheme: themeFor(s, seed, Brightness.dark),
           home: const InstallScreen(),
         ),
       );
@@ -98,6 +105,9 @@ class _MullAppState extends ConsumerState<MullApp> {
           dict: dict.value,
           prefs: ref.read(prefsProvider),
         );
+        // The reminder reads that schedule; re-arm it from the saved setting
+        // so an install that predates the alarm gets one.
+        await PlatformSurfaces.scheduleReminder();
         if (mounted) await _checkInitialIntent();
       });
     }
@@ -108,8 +118,8 @@ class _MullAppState extends ConsumerState<MullApp> {
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
       themeMode: s.themeMode,
-      theme: themeFor(Brightness.light),
-      darkTheme: themeFor(Brightness.dark),
+      theme: themeFor(s, seed, Brightness.light),
+      darkTheme: themeFor(s, seed, Brightness.dark),
       // The text size setting sits on top of the OS scale.
       builder: (BuildContext context, Widget? child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

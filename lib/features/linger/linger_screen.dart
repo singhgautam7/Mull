@@ -190,8 +190,9 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
           _enteredAt = DateTime.now();
         });
         if (_pager.hasClients) _pager.jumpToPage(0);
-        // Let that first card reach the screen before the rest are read.
-        await Future<void>.delayed(Duration.zero);
+        // Let that first card reach the screen before the rest are read. A
+        // zero-length timer fires before the frame; this waits for it.
+        await WidgetsBinding.instance.endOfFrame;
         if (!mounted) {
           _extending = false;
           return;

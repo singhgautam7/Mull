@@ -81,7 +81,8 @@ must still resolve. Add a test that proves a bookmark survives a simulated DB sw
 normalised, indexed `headword_norm` column (lowercased, diacritics stripped, no
 punctuation) for exact and prefix lookup. Search order: exact → prefix → FTS → trigram
 fuzzy fallback for typos. Search must return in under 50ms on a mid-range device with the
-full dataset loaded.
+full dataset loaded. Both FTS tables are `detail=none, columnsize=0` and the trigram table
+holds one row per headword: no phrase or NEAR queries, ever, only AND-ed `"token"*` prefixes.
 
 **D6. The dictionary is built by a script, not by the app.** See
 `tools/build_dictionary/`. The app never transforms dictionary data at runtime.
@@ -117,7 +118,8 @@ full dataset loaded.
   never on entry.
 - Queues are 30 cards, extended near the end, deduplicated by `word_key`, never
   persisted; the mix is.
-- `word_tags` is retained deliberately even though v1 does not read it.
+- `word_tags` lives in the pipeline only (collections are picked from it) and is not
+  shipped: the app never reads it and it cost 3.5 MB installed.
 - Four presets (Anything, Quick wins, Stretch me, Review) are created on first run, not
   editable, duplicable. Their sources are refreshed on every dictionary install.
 
@@ -173,8 +175,12 @@ lib/features/            home · linger (the Mull tab: screen, word card, mix sh
                          dictionary (search, word/idiom/note/add-to-list sheets, arrival
                          sheets) · stats · settings (more, settings, theme, info pages, data,
                          export, import, welcome, debug)
-android/.../kotlin/      MainActivity (TTS channel, arrivals, widget refresh) · WordOfDayWidget
-                         (reads only `widget.schedule` from prefs; never a database)
+lib/define_main.dart     the `defineMain` entrypoint: the word sheet alone, for DefineActivity
+android/.../kotlin/      MullApplication (one FlutterEngineGroup) · MainActivity (the app) ·
+                         DefineActivity (translucent, PROCESS_TEXT / DEFINE / SEND, finishes with
+                         its sheet) · PlatformChannels (TTS, arrivals, widget refresh, hand-off,
+                         finish; shared by both activities) · WordOfDayWidget (reads only
+                         `widget.schedule` from prefs; never a database)
 tool/                    generate_icons_test.dart draws the launcher art; icon_masks_test.dart
                          previews it under the launcher masks into build/icon_preview/
 lib/shared/widgets/      reusable components from HANDOFF.md
@@ -190,6 +196,12 @@ specs/                   design handoff (gitignored)
   colours anywhere. No orphaned tokens. A hex value outside the token file is a bug.
 - Read colours as `context.colors.<role>`, type as `MullType.<step>`, everything else from
   `Space`, `Radii`, `IconSpec`, `Motion`.
+- Sixteen families: Mull's five (mull, vellum, foxglove, slate, clay), Perch's (perch,
+  ember, fern) and Dally's accents (azure, tide, meadow, blush, iris, coral, citron, neon),
+  all re-derived at Mull's chroma from their oklch hue. Dally's Ink, Paper and Void are
+  Azure in dark, light and true black, which here are tones. The welcome flow's second
+  page is the picker (`FamilyCard`, shared with the theme screen); there is no "where to
+  start" page and no first-run scoped play.
 - Dynamic colour takes one wallpaper seed and derives the family at Mull's chroma (0.11).
   Fixed hues (list swatches) are stored as an index into `MullColors.tagHues` and
   re-derived per theme.
@@ -224,8 +236,10 @@ specs/                   design handoff (gitignored)
 flutter build apk --release
 ```
 
-Measured: 24.6 MB (arm64) with the old 4 MB sample dictionary; the full dictionary
-asset is ~49 MB gzipped. No signing config yet.
+Measured (September 2026, full dictionary): arm64 release APK 58.6 MB, AAB 97.2 MB (the AAB
+carries debug symbols for three ABIs; the APK is what a device downloads). The dictionary
+asset is 36.2 MB gzipped, 95.5 MB installed. R8 and resource shrinking are on by default in
+Flutter's release build. No signing config yet.
 
 ## Data, quiz and platform (pass 02)
 
@@ -242,26 +256,37 @@ asset is ~49 MB gzipped. No signing config yet.
   `quiz_sessions` / `quiz_answers` and never `seen`. Distractors: same POS, band within one,
   shelf first, no synonym either way, similar definition length. Cloze blanks inflections
   through `QuizEngine.inflectionPattern`. "Words I got wrong" is the `quiz_wrong` mix source.
-- Arrivals: `PROCESS_TEXT` and `SEND` land in `MainActivity`, which hands the extras to Dart once
-  (pulled on launch, pushed via `onIntentReceived` while running). One word opens its sheet;
-  longer text keeps only the sentence around the word (`PlatformSurfaces.sentenceAround`);
-  exactly one uncommon word opens directly, otherwise the picker offers learning-set and
-  rarer-band words. `source_hint` is the calling package, shown formatted, never raw.
+- Arrivals: `PROCESS_TEXT`, `ACTION_DEFINE` and `SEND` land in `DefineActivity`, a translucent
+  activity in the caller's task (`excludeFromRecents`, standard launch) that runs the
+  `defineMain` entrypoint (`lib/define_main.dart`): a see-through host that pulls the arrival
+  once the dictionary is open, shows the sheet, and calls `finish` when the last sheet is gone
+  (`_FinishWhenEmpty`). It never opens the app. "See in Mull" and "Search Mull for it" go
+  through `PlatformSurfaces.go`, which is the router inside the app and `openInApp` (start
+  `MainActivity` on a route in its own task, finish the sheet) inside the define host. Both
+  activities take their engine from the process's `FlutterEngineGroup` and destroy it with
+  the activity. One word opens its sheet; longer text keeps only the sentence around the word
+  (`PlatformSurfaces.sentenceAround`); exactly one uncommon word opens directly, otherwise the
+  picker offers learning-set and rarer-band words. `sourceHint` is the referrer package
+  (`DefineActivity` writes it into the intent before reading it back), shown formatted, never
+  raw. `MainActivity` only ever receives a widget tap (`word_key`) or a hand-off (`route`).
 - Widget: Dart writes a 30-day `widget.schedule` to prefs; the Kotlin provider picks today's
   entry, so it rolls over daily and survives a reboot without the app. Colours live in
   `res/values*/widget_colors.xml` (light, night, and Android 12 dynamic via `system_*`).
 - Backup: only `app_flutter/mull_user.sqlite` (domain `root`) is included; naming one include is
   what excludes the dictionary, and lint rejects an `<exclude>` outside an include. Verified
   with `bmgr backupnow` on an emulator: 135 KB measured, dictionary.db absent.
-- No new permissions: `RECEIVE_BOOT_COMPLETED` is not needed, the system re-sends
-  `APPWIDGET_UPDATE` after boot.
-- Main-isolate budget: the dictionary's indexed queries are milliseconds and stay synchronous,
-  but the trigram fuzzy step costs tens of ms per unmatched word, so anything that can fuzzy
-  many words (arrivals, word import) goes through `DictionaryDb.matchWords`, which runs
-  `batchMatchWords` on a worker isolate with its own read-only connection.
-  `test/database/off_main_isolate_test.dart` watches the event loop during the real install
-  and a name-heavy match and fails on a stall over 100 ms. Search's fuzzy fallback is still one
-  synchronous query per keystroke.
+- The widget needs no boot receiver (the system re-sends `APPWIDGET_UPDATE`); the
+  reminder's alarm does, which is why `RECEIVE_BOOT_COMPLETED` is declared.
+- Main-isolate budget: the dictionary's indexed queries are sub-millisecond and stay
+  synchronous. Anything that loops over many rows goes through `DictionaryDb.compute`, one
+  long-lived worker isolate per open dictionary with its own read-only connection (its page
+  cache stays warm between keystrokes): search per keystroke (`searchAll`, debounced
+  `kSearchDebounce` = 100 ms in the Search tab and the add-to-shelf picker), quiz generation
+  (`QuizEngine.generator`), and word matching (`matchWords`). Build the closure you hand to
+  `compute` in a synchronous function: one made inside an `async` method captures that
+  method's completer and cannot be sent. An in-memory test dictionary runs `compute` inline,
+  so only `test/database/off_main_isolate_test.dart` (real asset, real worker) proves a
+  closure is sendable; add a case there for any new `compute` caller.
 - `LoadingHairline` waits the HANDOFF's 120 ms on its own; pass `visible` for the whole load.
   Shelves hold `SkeletonCard` / `SkeletonRow` placeholders until the user streams emit; the
   Mull tab serves the first card before hydrating the rest of the batch.
@@ -271,13 +296,19 @@ asset is ~49 MB gzipped. No signing config yet.
 - Seven taps on the version line under More opens the debug route.
 - The Mull tab's overflow offers "Open full entry" and "Progress"; "Show me fewer like
   this" from HANDOFF 3.2 is not implemented (there is no signal to act on yet).
-- Word of the day notifications are a setting only; no scheduling plugin is wired.
-  Adding one needs `flutter_local_notifications` and core library desugaring.
+- Word of the day notifications are native, no plugin: `WordOfDayReminder.kt` arms one
+  inexact `AlarmManager` alarm (10-minute window, so no `SCHEDULE_EXACT_ALARM`) from the
+  saved `wotd.*` prefs; `ReminderReceiver` posts today's entry from the same `widget.schedule`
+  the launcher widget reads and re-arms tomorrow, and re-arms after boot and app update.
+  `SettingsController.setWotd` asks for `POST_NOTIFICATIONS` first (declined, the setting
+  stays off) and then calls `PlatformSurfaces.scheduleReminder`; the app also re-arms on
+  every launch. The two permissions in the manifest are `POST_NOTIFICATIONS` and
+  `RECEIVE_BOOT_COMPLETED`; still no `INTERNET`. `PRIVACY_POLICY.md` lists them.
 - The emulator on this Mac is arm64 (Apple Silicon): build with
   `--target-platform android-arm64`, and `--profile` when a debug APK is too big to install.
 - List reorder by drag (HANDOFF 3.7) is not implemented; `reorderList` exists in the
   repository for when it is.
-- The committed dictionary is the full lookup build (~49 MB gzipped, ~127 MB installed).
+- The committed dictionary is the full lookup build (36 MB gzipped, 95 MB installed).
   The learning-set definitions need stage C of the pipeline (an API key) to be the
   rewritten ones; a `--wiktionary-fallback` build keeps Wiktionary text and says so.
 - Pronunciation is a method channel to Android's `TextToSpeech` in `MainActivity.kt`, not a
@@ -299,3 +330,56 @@ asset is ~49 MB gzipped. No signing config yet.
   installs or opens a database in a widget test.
 - HANDOFF 1.4 lists the headword steps at weight 400 in the table but says twice that
   display sizes take 600 with -0.022em tracking; the code follows the rule text.
+
+### Things that get worse as data grows (audit, September 2026)
+
+Found on the full dictionary in a profile build (arm64 emulator; a mid-range phone is
+roughly 3x slower), fixed in the same pass. The rule after each is what keeps it fixed.
+
+- **A dictionary query in `build()` runs on every rebuild, and rebuilds come from streams
+  you do not see.** The shelf screen used to materialise all 1,599 rows inside `build()`
+  (110 to 167 ms cold) on every `setState`, including the scroll-direction toggle of the Mull
+  button. Now `shelfEntriesProvider(slug)` (autoDispose family) reads them once per change of
+  the shelf's keys and the picker reuses it. Rule: read the dictionary in a provider or
+  `initState`, never in `build()`; a rebuild may only sort and filter what is in memory.
+- **Every column the app filters by is indexed in `schema.sql`.** `aliases` had no index on
+  `word_key`, so `usSpelling()` and `inflections()` scanned 220k rows (8 ms host, 40 ms or
+  more on a phone) per word sheet build. Rule: `EXPLAIN QUERY PLAN` a new query and reject
+  `SCAN` on any table over a few thousand rows.
+- **Search is debounced and off the UI isolate.** It was three synchronous queries per
+  keystroke: p50 5.5 ms, p95 23 ms, first FTS hit of a session 120 to 180 ms. Rule: nothing
+  joins the keystroke path without the debounce and without going through `compute`.
+- **Providers that hold a table are `autoDispose`.** `_noteProvider` / `_contextsProvider`
+  (one live Drift watch per word ever opened) and `statsProvider` (re-reads the unbounded
+  `seen_events` log on every seen change) were not. Rule: a `.family` keyed by a word, and
+  anything that reads a whole table, is `autoDispose`.
+- **To let a frame land, await `WidgetsBinding.instance.endOfFrame`**, not
+  `Future.delayed(Duration.zero)`: the timer fires before the frame (measured: the Mull tab
+  hydrated its other 29 cards 11 ms before the first card's frame).
+- **Anything that loops over the learning set runs on the worker.** Quiz generation was a
+  synchronous burst (4.8k candidates, a sort per question).
+- **Never let an arrival start a second `MainActivity`.** `singleTop` only reuses the top of
+  the target task; a `PROCESS_TEXT` from another app lands in *that app's* task, so it created a
+  new `MainActivity` instance, a new engine and a second run of `main()` in Mull's process. The
+  launch transition then held the whole display for 5 s waiting for a first frame
+  (`BLASTSyncEngine: Sync group timeout`), PSS reached 580 MB with two engines and `lmkd` began
+  killing other apps. That was the "Define in Mull freezes the phone" bug of September 2026.
+  Rule: intents from outside go to `DefineActivity`; never add an arrival intent filter to
+  `MainActivity`. A Dart entrypoint in its own library must be imported from `main.dart` (or
+  AOT drops it) and started with its library URI (`package:mull/define_main.dart`), or the
+  engine logs `Could not resolve main entrypoint function` and draws nothing.
+- **A debug build is not a device test for start-up.** In JIT a second engine loads the 123 MB
+  kernel again and takes seconds to its first frame; release takes ~90 ms. Measure launch and
+  arrival paths on a release APK.
+- **Platform-thread work in `MainActivity` is lazy.** `TextToSpeech` was bound, with
+  `setLanguage`, in `configureFlutterEngine`; a slow engine there during a cold start is the
+  one thing on the platform main thread that can be a real ANR (a stalled Dart isolate is a
+  frozen frame, not an ANR). It now binds on the first speak.
+- **Still open, by design for now:** `seenMapProvider` streams the whole `seen` table on
+  every `markSeen` and `collectionProgressProvider` recounts every collection against it
+  (about 7k lookups per swipe; bounded by the learning set). `collectionKeysProvider` re-runs
+  22 dictionary queries and `shelfKindsProvider` 44 `IN (...)` queries on every bookmark
+  toggle. `seenStates()` and `hasAnyWord()` bind one parameter per key; SQLite's limit is
+  32,766, so a 33k-word imported shelf would throw. Rule: derive from what is already in
+  memory when a user table changes; chunk any new `IN (...)` over 250 keys as `_inChunks`
+  does; compute aggregates in SQL, never by reading rows into Dart.
