@@ -185,22 +185,31 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   ),
                 ),
               ),
-              Row(
-                spacing: Space.md,
-                children: <Widget>[
-                  Expanded(
-                    child: AppButton(
-                      label: switch (_step) { 0 => 'Start', 1 => 'Continue', _ => 'Done' },
-                      fullWidth: true,
-                      onPressed: () => _step < 2 ? setState(() => _step++) : _finish(),
+              // The buttons are pinned below the scroll area, so content
+              // scrolls up to meet them. Without the top padding they sit
+              // flush against the clipped last row and read as stuck to it
+              // rather than placed below it. The bottom inset is the
+              // SafeArea's (gesture bar or three-button nav) plus the
+              // Space.xl this Padding's parent already carries.
+              Padding(
+                padding: const EdgeInsets.only(top: Space.lg),
+                child: Row(
+                  spacing: Space.md,
+                  children: <Widget>[
+                    Expanded(
+                      child: AppButton(
+                        label: switch (_step) { 0 => 'Start', 1 => 'Continue', _ => 'Done' },
+                        fullWidth: true,
+                        onPressed: () => _step < 2 ? setState(() => _step++) : _finish(),
+                      ),
                     ),
-                  ),
-                  AppButton(
-                    label: _step == 2 ? 'Not now' : 'Skip',
-                    type: AppButtonType.outlined,
-                    onPressed: () => _step == 2 ? _finish() : _finish(skipped: true),
-                  ),
-                ],
+                    AppButton(
+                      label: _step == 2 ? 'Not now' : 'Skip',
+                      type: AppButtonType.outlined,
+                      onPressed: () => _step == 2 ? _finish() : _finish(skipped: true),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

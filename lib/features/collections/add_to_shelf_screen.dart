@@ -216,7 +216,9 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
     Set<String> onShelf,
   ) {
     final Map<String, CollectionEntry> byKey = <String, CollectionEntry>{
-      for (final CollectionEntry e in ref.watch(shelfEntriesProvider(widget.slug)))
+      for (final CollectionEntry e
+          in ref.watch(shelfEntriesProvider(widget.slug)).value ??
+              const <CollectionEntry>[])
         e.key: e,
     };
     final List<(String, SearchResult)> entries = <(String, SearchResult)>[

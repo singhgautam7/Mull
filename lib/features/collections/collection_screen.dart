@@ -88,12 +88,15 @@ class CollectionEntry {
   }
 }
 
-/// A shelf's rows in shelf order, read from the dictionary once per change
-/// of its keys and never in `build()`: a 1,600-word shelf costs 100 ms cold
-/// to materialise, and the screen rebuilds on every scroll-direction change,
-/// filter keystroke and seen write. Rebuilds only sort and filter this.
-final Provider<List<CollectionEntry>> Function(String) shelfEntriesProvider =
-    Provider.autoDispose.family<List<CollectionEntry>, String>((
+/// A shelf's rows in shelf order, read on the worker isolate once per change
+/// of its keys and never in `build()`: a 1,600-word shelf cost 13.7 ms of
+/// synchronous sqlite in the frame that first watched it (100 ms cold), and
+/// the screen rebuilds on every scroll-direction change, filter keystroke
+/// and seen write. Rebuilds only sort and filter what this has already
+/// returned.
+final FutureProvider<List<CollectionEntry>> Function(String)
+shelfEntriesProvider =
+    FutureProvider.autoDispose.family<List<CollectionEntry>, String>((
       Ref ref,
       String slug,
     ) {
@@ -110,25 +113,28 @@ final Provider<List<CollectionEntry>> Function(String) shelfEntriesProvider =
           (Map<String, Collection> m) => m[slug]?.kind,
         ),
       );
-      final Map<String, DictionaryWord> wordsByKey = <String, DictionaryWord>{
-        for (final DictionaryWord w in dict.byKeys(keys)) w.wordKey: w,
-      };
-      final Map<String, Phrase> phrasesByKey = <String, Phrase>{
-        for (final Phrase p in dict.phrasesByKeys(keys)) p.phraseKey: p,
-      };
-      final List<CollectionEntry> entries = <CollectionEntry>[
-        for (final String k in keys)
-          if (wordsByKey[k] case final DictionaryWord w)
-            CollectionEntry.word(w)
-          else if (phrasesByKey[k] case final Phrase p)
-            CollectionEntry.phrase(p),
-      ];
-      if (entries.isEmpty && kind == 'idiom') {
-        for (final Idiom i in dict.collectionIdioms(slug)) {
-          entries.add(CollectionEntry.idiom(i));
-        }
-      }
-      return entries;
+      // The closure `shelfRows` sends is built in a synchronous method; the
+      // entries are assembled here, where the rows have landed, because
+      // CollectionEntry belongs to this screen and not to the dictionary.
+      return dict
+          .shelfRows(keys, idiomSlug: kind == 'idiom' ? slug : null)
+          .then((ShelfRows rows) {
+            final Map<String, DictionaryWord> wordsByKey =
+                <String, DictionaryWord>{
+                  for (final DictionaryWord w in rows.words) w.wordKey: w,
+                };
+            final Map<String, Phrase> phrasesByKey = <String, Phrase>{
+              for (final Phrase p in rows.phrases) p.phraseKey: p,
+            };
+            return <CollectionEntry>[
+              for (final String k in keys)
+                if (wordsByKey[k] case final DictionaryWord w)
+                  CollectionEntry.word(w)
+                else if (phrasesByKey[k] case final Phrase p)
+                  CollectionEntry.phrase(p),
+              for (final Idiom i in rows.idioms) CollectionEntry.idiom(i),
+            ];
+          });
     });
 
 /// Shelf screen supporting Card and Table views, real-time filtering,
@@ -564,9 +570,13 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final bool own = collection?.isUsers ?? false;
     final String title = collection?.title ?? '';
 
-    final List<CollectionEntry> rawEntries = _ready
-        ? ref.watch(shelfEntriesProvider(widget.slug))
-        : const <CollectionEntry>[];
+    // Null until the worker answers: the skeletons hold the shape until then,
+    // exactly as they do during the push transition.
+    final List<CollectionEntry>? entries = _ready
+        ? ref.watch(shelfEntriesProvider(widget.slug)).value
+        : null;
+    final bool loaded = entries != null;
+    final List<CollectionEntry> rawEntries = entries ?? const <CollectionEntry>[];
 
     // Sort entries
     List<CollectionEntry> sortedEntries = List<CollectionEntry>.of(rawEntries);
@@ -754,7 +764,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                     children: <Widget>[
                                       Text(
                                         // The collection's own count while the rows are still to come.
-                                        '${_ready ? displayItems.length : collection?.wordCount ?? 0} items · $seenCount seen',
+                                        '${loaded ? displayItems.length : collection?.wordCount ?? 0} items · $seenCount seen',
                                         style: MullType.monoLabel.copyWith(
                                           color: c.onSurfaceMuted,
                                         ),
@@ -771,7 +781,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               ],
                             ),
                           ),
-                          if (!_ready)
+                          if (!loaded)
                             SliverPadding(
                               padding: const EdgeInsets.fromLTRB(
                                 Space.screen,

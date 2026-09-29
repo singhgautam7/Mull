@@ -52,15 +52,23 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     final MullColors c = context.colors;
     final List<Collection> all = ref.watch(collectionsProvider);
     final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
-    // The dictionary's shelves are here at once; the user's own and the seen
-    // progress arrive a frame later from the user database. Until then the
-    // sections hold their shape with placeholders rather than jumping.
+    // The dictionary's shelves are here at once; their word keys come off
+    // the worker isolate, and the user's own and the seen progress a frame
+    // later from the user database. Until then the sections hold their shape
+    // with placeholders rather than jumping.
     final bool settling = ref.watch(userCollectionsProvider).isLoading ||
+        ref.watch(collectionKeysSettlingProvider) ||
         ref.watch(seenMapProvider).isLoading;
     final ({Set<String> withWords, Set<String> withPhrases}) kinds = ref.watch(shelfKindsProvider);
     final String q = _search.text.trim().toLowerCase();
 
     Progress of(Collection x) => progress[x.slug] ?? const Progress(0, 0);
+    // A placeholder that flashes is worse than none: while the counts settle
+    // the real card is shown (its count is the dictionary's own, its bar
+    // simply empty), and the skeleton only takes over if the read is still
+    // out after the threshold. A fast open never renders one.
+    Widget settle(Widget skeleton, Widget real) =>
+        settling ? Delayed(placeholder: real, child: skeleton) : real;
     bool visibleFor(Collection x, _Filter f) {
       if (q.isNotEmpty && !x.title.toLowerCase().contains(q) && !x.description.toLowerCase().contains(q)) return false;
       return switch (f) {
@@ -178,9 +186,12 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                 ],
               ),
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.only(bottom: Space.bottomSafe),
-                  children: <Widget>[
+                // Lazy: 22 topic cards built up front was 39 ms of the
+                // Shelves tab's first frame once the queries came off it,
+                // and only four of them are ever on screen.
+                child: CustomScrollView(
+                  slivers: <Widget>[
+                    SliverList.list(children: <Widget>[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
                       child: Container(
@@ -234,7 +245,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                       ),
                     ),
                     const SizedBox(height: Space.section),
-                    if (bands.isNotEmpty) ...<Widget>[
+                    ]),
+                    if (bands.isNotEmpty)
+                      SliverList.list(children: <Widget>[
                       const SectionHeader(label: 'Bands', trailing: SectionNote('easiest first')),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
@@ -245,52 +258,69 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             children: <Widget>[
                               for (int i = 0; i < bands.length; i++) ...<Widget>[
                                 if (i > 0) Divider(color: c.divider, height: 1),
-                                if (settling)
-                                  const SkeletonRow()
-                                else
+                                settle(
+                                  const SkeletonRow(),
                                   BandRow(collection: bands[i], progress: of(bands[i]), onTap: () => context.push(Routes.collection(bands[i].slug))),
+                                ),
                               ],
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: Space.section),
-                    ],
+                      ]),
                     if (topics.isNotEmpty) ...<Widget>[
-                      SectionHeader(label: 'Topics · ${topics.length}', trailing: const SectionNote('pick by interest')),
-                      Padding(
+                      SliverToBoxAdapter(
+                        child: SectionHeader(label: 'Topics · ${topics.length}', trailing: const SectionNote('pick by interest')),
+                      ),
+                      SliverPadding(
                         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                        child: TwoColumnGrid(
+                        sliver: SliverList.separated(
+                          itemCount: TwoColumnGrid.rowsFor(topics.length),
+                          separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
+                          itemBuilder: (BuildContext context, int r) {
+                            Widget card(Collection t) => settle(
+                              const SkeletonCard(),
+                              TopicCard(collection: t, progress: of(t), onTap: () => context.push(Routes.collection(t.slug))),
+                            );
+                            final int i = r * 2;
+                            return TwoColumnGrid.row(
+                              card(topics[i]),
+                              i + 1 < topics.length ? card(topics[i + 1]) : null,
+                            );
+                          },
+                        ),
+                      ),
+                      const SliverToBoxAdapter(child: SizedBox(height: Space.section)),
+                    ],
+                    SliverList.list(children: <Widget>[
+                    if (settling && yours.isEmpty && _filter == _Filter.all && q.isEmpty)
+                      // Bookmarks and From my reading always exist, so two
+                      // rows is the least the section will be. Nothing is
+                      // drawn until the read has actually taken a moment.
+                      Delayed(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
-                            for (final Collection t in topics)
-                              if (settling)
-                                const SkeletonCard()
-                              else
-                                TopicCard(collection: t, progress: of(t), onTap: () => context.push(Routes.collection(t.slug))),
+                            const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                              child: Container(
+                                decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
+                                clipBehavior: Clip.antiAlias,
+                                child: Column(
+                                  children: <Widget>[
+                                    const SkeletonRow(),
+                                    Divider(color: c.divider, height: 1),
+                                    const SkeletonRow(),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: Space.section),
-                    ],
-                    if (settling && _filter == _Filter.all && q.isEmpty) ...<Widget>[
-                      // Bookmarks and From my reading always exist, so two
-                      // rows is the least the section will be.
-                      const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                        child: Container(
-                          decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            children: <Widget>[
-                              const SkeletonRow(),
-                              Divider(color: c.divider, height: 1),
-                              const SkeletonRow(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ] else if (yours.isNotEmpty) ...<Widget>[
+                      )
+                    else if (yours.isNotEmpty) ...<Widget>[
                       const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
                       YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
                     ],
@@ -301,6 +331,8 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           child: Text('No shelves match', style: MullType.body.copyWith(color: c.onSurfaceMuted)),
                         ),
                       ),
+                    const SizedBox(height: Space.bottomSafe),
+                    ]),
                   ],
                 ),
               ),

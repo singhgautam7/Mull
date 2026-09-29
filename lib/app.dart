@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/database/dictionary_db.dart';
 import 'core/providers.dart';
@@ -14,6 +15,7 @@ import 'core/utils/wallpaper_seed.dart';
 import 'core/utils/platform_surfaces.dart';
 import 'features/settings/install_screen.dart';
 import 'features/settings/settings_controller.dart';
+import 'shared/widgets/states.dart';
 
 /// The theme for one brightness from the settings and, with dynamic colour
 /// on, the wallpaper seed. Shared by the app and the define sheet so the two
@@ -127,7 +129,14 @@ class _MullAppState extends ConsumerState<MullApp> {
           themeMode: s.themeMode,
           theme: themeFor(s, seed, Brightness.light),
           darkTheme: themeFor(s, seed, Brightness.dark),
-          home: const InstallScreen(),
+          // A warm start opens the dictionary in well under the threshold,
+          // so the install state never renders and the splash hands over
+          // straight to the route. Only a real unpack is slow enough to
+          // reach it.
+          home: const Delayed(
+            placeholder: Scaffold(body: SizedBox.shrink()),
+            child: InstallScreen(),
+          ),
         ),
       );
     }
@@ -135,17 +144,27 @@ class _MullAppState extends ConsumerState<MullApp> {
       _widgetSynced = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
+        // Read before the first await: `ref` is not safe once the widget has
+        // been unmounted, and the widget can go between these calls.
+        final AppSettings settings = ref.read(settingsProvider);
+        final Color? widgetSeed = ref.read(_widgetThemeKeyProvider).seed;
+        final SharedPreferences prefs = ref.read(prefsProvider);
         await PlatformSurfaces.syncWidgetTheme(
-          settings: ref.read(settingsProvider),
-          seed: ref.read(_widgetThemeKeyProvider).seed,
-          prefs: ref.read(prefsProvider),
+          settings: settings,
+          seed: widgetSeed,
+          prefs: prefs,
         );
+        // Each of these is a platform round trip, and the dictionary closes
+        // with the tree: a teardown mid-startup must not leave one reading a
+        // closed database.
+        if (!mounted) return;
         await PlatformSurfaces.syncWidgetSchedule(
           dict: dict.value,
-          prefs: ref.read(prefsProvider),
+          prefs: prefs,
         );
         // The reminder reads that schedule; re-arm it from the saved setting
         // so an install that predates the alarm gets one.
+        if (!mounted) return;
         await PlatformSurfaces.scheduleReminder();
         if (mounted) await _checkInitialIntent();
       });

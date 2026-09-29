@@ -146,63 +146,87 @@ final Provider<Map<String, Collection>> collectionBySlugProvider =
       },
     );
 
-/// Word keys per collection slug: the dictionary's read once, the user's
-/// live. Progress is this against seen.
+/// Every dictionary collection's word keys, read on the worker isolate.
+///
+/// 8,084 strings over 27 collections: 22 ms of synchronous sqlite and Dart
+/// that used to land in whichever screen watched it first, which was Home's
+/// or the Shelves tab's first `build()`. It does not depend on user data, so
+/// it is read once per open dictionary and never again.
+final FutureProvider<Map<String, List<String>>> dictionaryCollectionKeysProvider =
+    FutureProvider<Map<String, List<String>>>(
+      (Ref ref) => ref.watch(dictProvider).collectionKeysBySlug(),
+    );
+
+/// Word keys per collection slug: the dictionary's read once on the worker,
+/// the user's live. Progress is this against seen.
+///
+/// Empty for the frame or two before the worker answers. Every reader either
+/// falls back (a collection keeps the dictionary's own `wordCount`, progress
+/// reads 0 / 0) or shows the placeholders that
+/// [collectionKeysSettlingProvider] gates, so nothing here blocks a frame.
 final Provider<Map<String, List<String>>> collectionKeysProvider =
     Provider<Map<String, List<String>>>((Ref ref) {
-      final DictionaryDb dict = ref.watch(dictProvider);
+      final Map<String, List<String>> builtInKeys =
+          ref.watch(dictionaryCollectionKeysProvider).value ??
+          const <String, List<String>>{};
       final Map<String, List<String>> userKeys =
           ref.watch(userCollectionKeysProvider).value ??
           const <String, List<String>>{};
       final Map<String, List<String>> result = <String, List<String>>{};
-      for (final Collection c in dict.collections()) {
-        final List<String> builtIn = dict.collectionWordKeys(<String>[c.slug]);
-        final List<String>? extra = userKeys[c.slug];
-        if (extra != null && extra.isNotEmpty) {
-          final Set<String> combined = <String>{...builtIn, ...extra};
-          result[c.slug] = combined.toList();
-        } else {
-          result[c.slug] = builtIn;
-        }
+      for (final MapEntry<String, List<String>> e in builtInKeys.entries) {
+        final List<String>? extra = userKeys[e.key];
+        result[e.key] = extra == null || extra.isEmpty
+            ? e.value
+            : <String>{...e.value, ...extra}.toList();
       }
       for (final MapEntry<String, List<String>> entry in userKeys.entries) {
-        if (!result.containsKey(entry.key)) {
-          result[entry.key] = entry.value;
-        }
+        result.putIfAbsent(entry.key, () => entry.value);
       }
       return result;
     });
 
+/// Whether the keys behind counts and progress are still being read. The
+/// screens hold their shape with placeholders while it is true.
+final Provider<bool> collectionKeysSettlingProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(dictionaryCollectionKeysProvider).isLoading ||
+      ref.watch(userCollectionKeysProvider).isLoading,
+);
+
 /// Tracks which collections contain words and which contain phrases.
+///
+/// A dictionary collection's kind settles this without a query: the pipeline
+/// fills `band` and `topic` from `words` and `idiom` from `phrases`, and
+/// `test/database/shelf_kinds_test.dart` holds the shipped dictionary to it.
+/// Only the user's own shelves can hold either, so only those are asked, two
+/// queries each and existence only. Before this the loop asked all 27 shelves and
+/// its 44 queries were the whole 69 ms first build of the Shelves tab, paid
+/// again on every bookmark toggle.
 final Provider<({Set<String> withWords, Set<String> withPhrases})>
 shelfKindsProvider =
     Provider<({Set<String> withWords, Set<String> withPhrases})>((Ref ref) {
       final DictionaryDb dict = ref.watch(dictProvider);
       final List<Collection> all = ref.watch(collectionsProvider);
-      final Map<String, List<String>> allKeys = ref.watch(
-        collectionKeysProvider,
-      );
+      final Map<String, List<String>> userKeys =
+          ref.watch(userCollectionKeysProvider).value ??
+          const <String, List<String>>{};
 
       final Set<String> withWords = <String>{};
       final Set<String> withPhrases = <String>{};
 
       for (final Collection c in all) {
-        if (c.kind == 'band') {
-          withWords.add(c.slug);
-        } else if (c.kind == 'idiom') {
-          withPhrases.add(c.slug);
-        }
-        final List<String> keys = allKeys[c.slug] ?? const <String>[];
-        if (keys.isNotEmpty) {
-          // Existence only: fetching every row of every shelf here held the
-          // Shelves tab's first frame.
-          if (!withWords.contains(c.slug) && dict.hasAnyWord(keys)) {
+        if (!c.isUsers) {
+          if (c.kind == 'idiom') {
+            withPhrases.add(c.slug);
+          } else {
             withWords.add(c.slug);
           }
-          if (!withPhrases.contains(c.slug) && dict.hasAnyPhrase(keys)) {
-            withPhrases.add(c.slug);
-          }
+          continue;
         }
+        final List<String> keys = userKeys[c.slug] ?? const <String>[];
+        if (keys.isEmpty) continue;
+        if (dict.hasAnyWord(keys)) withWords.add(c.slug);
+        if (dict.hasAnyPhrase(keys)) withPhrases.add(c.slug);
       }
 
       return (withWords: withWords, withPhrases: withPhrases);

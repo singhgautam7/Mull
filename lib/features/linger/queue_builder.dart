@@ -31,7 +31,7 @@ class QueueBuilder {
         .where((String source) => source != wrongQuizSource)
         .toList();
     return <String>{
-      ..._dict.collectionWordKeys(collectionSources),
+      ...await _dict.collectionWordKeysAsync(collectionSources),
       ...await _user.collectionWordKeysFor(collectionSources),
       if (sources.contains(wrongQuizSource)) ...await _user.wrongQuizKeys(),
     }.toList();

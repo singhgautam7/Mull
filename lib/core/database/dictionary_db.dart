@@ -216,6 +216,34 @@ class SearchResults {
   final List<DictionaryWord> suggestions;
 }
 
+/// The rows behind one shelf, read in one trip to the worker: whichever of
+/// the shelf's keys are words, whichever are phrases, and the idioms of an
+/// idiom collection when it holds neither.
+@immutable
+class ShelfRows {
+  const ShelfRows(this.words, this.phrases, this.idioms);
+
+  static const ShelfRows empty = ShelfRows(
+    <DictionaryWord>[],
+    <Phrase>[],
+    <Idiom>[],
+  );
+
+  final List<DictionaryWord> words;
+  final List<Phrase> phrases;
+  final List<Idiom> idioms;
+}
+
+/// Everything one Mull card draws, read in one trip to the worker.
+@immutable
+class WordEntry {
+  const WordEntry(this.word, this.examples, this.synonyms);
+
+  final DictionaryWord word;
+  final List<String> examples;
+  final List<String> synonyms;
+}
+
 /// The shipped dictionary, opened read-only (rule D3). Never written to by
 /// the app; replaced wholesale on update. Nothing here touches user data and
 /// nothing here shares a connection with [UserDatabase].
@@ -330,13 +358,20 @@ class DictionaryDb {
   bool hasAnyPhrase(Iterable<String> keys) =>
       _exists('phrases', 'phrase_key', keys);
 
+  /// 250 keys a query, as [_inChunks] does: an imported shelf can hold more
+  /// than SQLite will bind (32,766), and it stops on the first chunk that
+  /// answers, so a shelf whose first words are words costs one query.
   bool _exists(String table, String column, Iterable<String> keys) {
     final List<String> list = keys.toList();
-    if (list.isEmpty) return false;
-    final String marks = List<String>.filled(list.length, '?').join(',');
-    return _db
-        .select('SELECT 1 FROM $table WHERE $column IN ($marks) LIMIT 1', list)
-        .isNotEmpty;
+    for (int i = 0; i < list.length; i += 250) {
+      final List<String> chunk = list.sublist(i, min(i + 250, list.length));
+      final String marks = List<String>.filled(chunk.length, '?').join(',');
+      final bool hit = _db
+          .select('SELECT 1 FROM $table WHERE $column IN ($marks) LIMIT 1', chunk)
+          .isNotEmpty;
+      if (hit) return true;
+    }
+    return false;
   }
 
   List<Phrase> phrasesByKeys(Iterable<String> keys) {
@@ -595,6 +630,71 @@ class DictionaryDb {
         .map((Row r) => r['word_key'] as String)
         .toList();
   }
+
+  /// One batch of Mull cards, off the UI isolate.
+  ///
+  /// Three indexed queries per card: thirty of them is ninety round trips
+  /// and 3 ms of synchronous sqlite, which is a dropped frame on the card
+  /// the user is already reading. Keys with no row are skipped, so the
+  /// result can be shorter than [keys].
+  Future<List<WordEntry>> wordEntries(List<String> keys) =>
+      compute((DictionaryDb db) => <WordEntry>[
+        for (final String k in keys)
+          if (db.byKey(k) case final DictionaryWord w)
+            WordEntry(w, db.examples(k), db.synonyms(k)),
+      ]);
+
+  /// [collectionWordKeys] off the UI isolate: a mix over every band reads
+  /// 5,151 keys, which is 3 ms in the frame that asks for them.
+  Future<List<String>> collectionWordKeysAsync(Iterable<String> slugs) {
+    final List<String> list = slugs.toList();
+    return compute((DictionaryDb db) => db.collectionWordKeys(list));
+  }
+
+  /// One shelf's rows, off the UI isolate and 250 keys a query.
+  ///
+  /// A 1,600-word shelf costs 13.7 ms of synchronous sqlite to materialise
+  /// and an imported one can hold more keys than SQLite will bind, so this
+  /// never runs inline. [idiomSlug] is set only for an idiom collection,
+  /// whose members are phrase keys the word tables do not answer for.
+  Future<ShelfRows> shelfRows(List<String> keys, {String? idiomSlug}) =>
+      compute((DictionaryDb db) {
+        final List<DictionaryWord> words = <DictionaryWord>[];
+        final List<Phrase> phrases = <Phrase>[];
+        for (int i = 0; i < keys.length; i += 250) {
+          final List<String> chunk = keys.sublist(i, min(i + 250, keys.length));
+          words.addAll(db.byKeys(chunk));
+          phrases.addAll(db.phrasesByKeys(chunk));
+        }
+        return ShelfRows(
+          words,
+          phrases,
+          words.isEmpty && phrases.isEmpty && idiomSlug != null
+              ? db.collectionIdioms(idiomSlug)
+              : const <Idiom>[],
+        );
+      });
+
+  /// Every collection's word keys in one trip to the worker, in position
+  /// order, keyed by slug.
+  ///
+  /// The map is what counts and progress are derived from, so it is read
+  /// whole; reading it 27 queries at a time on the UI isolate cost 22 ms in
+  /// whichever `build()` touched it first. The closure is built here, in a
+  /// synchronous method, because one made inside an `async` method captures
+  /// that method's completer and cannot be sent.
+  Future<Map<String, List<String>>> collectionKeysBySlug() =>
+      compute((DictionaryDb db) {
+        final Map<String, List<String>> out = <String, List<String>>{};
+        for (final Row r in db._db.select(
+          'SELECT c.slug AS slug, cw.word_key AS word_key '
+          'FROM collection_words cw JOIN collections c ON c.id = cw.collection_id '
+          "WHERE c.kind != 'pairs' ORDER BY c.slug, cw.position",
+        )) {
+          (out[r['slug'] as String] ??= <String>[]).add(r['word_key'] as String);
+        }
+        return out;
+      });
 
   /// Slugs of the collections a word belongs to.
   List<String> collectionsOf(String wordKey) => _db

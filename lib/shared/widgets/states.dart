@@ -118,6 +118,60 @@ class ErrorStateView extends StatelessWidget {
   );
 }
 
+/// Nothing at all until [after] has passed, then [child].
+///
+/// A loader that flashes is worse than no loader: a bare state that arrives
+/// and leaves before it can be read reads as a glitch, not as progress. Work
+/// that finishes inside the threshold shows [placeholder] (nothing, by
+/// default) and the screen arrives whole.
+///
+/// [LoadingHairline] holds its own, shorter grace: the HANDOFF gives the
+/// search hairline 120 ms.
+class Delayed extends StatefulWidget {
+  const Delayed({
+    required this.child,
+    this.after = threshold,
+    this.placeholder = const SizedBox.shrink(),
+    super.key,
+  });
+
+  /// Long enough that a local query, a database open or a provider that only
+  /// has to sort what is already in memory never reaches it.
+  static const Duration threshold = Duration(milliseconds: 250);
+
+  final Widget child;
+  final Duration after;
+
+  /// What stands in before the threshold. Nothing, unless the slot has to
+  /// keep its size.
+  final Widget placeholder;
+
+  @override
+  State<Delayed> createState() => _DelayedState();
+}
+
+class _DelayedState extends State<Delayed> {
+  Timer? _timer;
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.after, () {
+      if (mounted) setState(() => _shown = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _shown ? widget.child : widget.placeholder;
+}
+
 /// A 2dp `primary` hairline at 60% opacity, shown only if a query exceeds
 /// 120 ms. No spinners, no skeleton shimmer in search. The wait is built in:
 /// pass [visible] for the whole load and the hairline holds back on its own,

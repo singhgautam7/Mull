@@ -475,7 +475,7 @@ void main() {
   );
 
   testWidgets(
-    'CollectionsScreen holds card-shaped placeholders until the user streams land',
+    'CollectionsScreen draws the real shelves at once and never flashes a placeholder',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{'onboarded': true});
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -505,14 +505,19 @@ void main() {
             ),
           ),
         );
-        // First frame: the dictionary's shelves are known, so their slots are
-        // drawn at the real card and row shapes, but as placeholders.
-        expect(find.byType(SkeletonCard), findsOneWidget);
-        expect(find.byType(SkeletonRow), findsNWidgets(3));
-        expect(find.byType(TopicCard), findsNothing);
+        // First frame: the dictionary's shelves are known, so the real cards
+        // and rows are drawn. The counts and progress arrive behind them; a
+        // placeholder is held back until the read has actually taken a
+        // moment, and a local open never gets there.
+        expect(find.byType(SkeletonCard), findsNothing);
+        expect(find.byType(SkeletonRow), findsNothing);
+        expect(find.byType(TopicCard), findsOneWidget);
+        expect(find.text('Easy Words'), findsOneWidget);
 
-        for (int i = 0; i < 10 && find.byType(SkeletonCard).evaluate().isNotEmpty; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 20));
+        // Well past Delayed.threshold: still nothing, because the streams
+        // and the worker have long since answered.
+        for (int i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 25));
           await tester.pump();
         }
         expect(find.byType(SkeletonCard), findsNothing);

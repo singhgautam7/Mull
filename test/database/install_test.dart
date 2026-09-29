@@ -78,6 +78,18 @@ void main() {
           child: const MullApp(),
         ),
       );
+      // Nothing is drawn for the first moment: a launch that opens an
+      // already-installed dictionary must not flash the install state.
+      expect(find.text('Setting the dictionary down on your phone.'), findsNothing);
+      expect(find.byType(InstallScreen), findsNothing);
+
+      // A real unpack takes seconds, so it does cross the threshold.
+      for (int i = 0;
+          i < 40 && find.byType(InstallScreen).evaluate().isEmpty;
+          i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await tester.pump();
+      }
       expect(find.text('Setting the dictionary down on your phone.'), findsOneWidget);
 
       // Let the real gunzip finish, then settle.

@@ -12,7 +12,8 @@ storage access framework) · csv (shelf CSV and pasted tables) · pdf (the print
 sheet) · flutter_animate (unused so far).
 Package `com.grs.dictionary`, Android only, minSdk 24.
 
-**UI source of truth:** `specs/design/HANDOFF.md` (gitignored, on disk). Read it before
+**UI source of truth:** `specs/design/mull-design-language/project/specs/design/HANDOFF.md`
+(gitignored, on disk). Read it before
 building or changing any screen. Perch at `/Users/gautam/Desktop/Projects/Personal/Perch`
 is the read-only reference for how Material 3 Expressive is executed: where HANDOFF.md and
 Perch disagree on layout or intent, HANDOFF.md wins; on execution (colour roles, motion
@@ -216,7 +217,7 @@ specs/                   design handoff (gitignored)
 
 ## Standing instructions
 
-- Read `specs/design/HANDOFF.md` before any UI work.
+- Read `specs/design/mull-design-language/project/specs/design/HANDOFF.md` before any UI work.
 - Perch at `/Users/gautam/Desktop/Projects/Personal/Perch` is the read-only M3E reference.
 - Never break existing functionality when adding features.
 - No new packages without stating the justification first.
@@ -380,9 +381,64 @@ roughly 3x slower), fixed in the same pass. The rule after each is what keeps it
   frozen frame, not an ANR). It now binds on the first speak.
 - **Still open, by design for now:** `seenMapProvider` streams the whole `seen` table on
   every `markSeen` and `collectionProgressProvider` recounts every collection against it
-  (about 7k lookups per swipe; bounded by the learning set). `collectionKeysProvider` re-runs
-  22 dictionary queries and `shelfKindsProvider` 44 `IN (...)` queries on every bookmark
-  toggle. `seenStates()` and `hasAnyWord()` bind one parameter per key; SQLite's limit is
-  32,766, so a 33k-word imported shelf would throw. Rule: derive from what is already in
-  memory when a user table changes; chunk any new `IN (...)` over 250 keys as `_inChunks`
-  does; compute aggregates in SQL, never by reading rows into Dart.
+  (about 8k map lookups per swipe, sub-millisecond, bounded by the learning set).
+  `seenStates()` binds one parameter per key; SQLite's limit is 32,766, so a 33k-word
+  imported shelf would still throw there. `statsProvider` reads the whole `seen_events` log
+  across the Drift isolate on every open; the loop is trivial but the transfer grows with
+  use, and only `perDay` could be narrowed to 30 days (the heatmap and the longest run need
+  all of it). Rule: derive from what is already in memory when a user table changes; chunk
+  any new `IN (...)` over 250 keys as `_inChunks` and `_exists` do; compute aggregates in
+  SQL, never by reading rows into Dart.
+
+### Things that get worse as data grows (audit, 29 September 2026)
+
+Measured on the full dictionary, host and a profile build on the arm64 emulator. The rule
+after each is what keeps it fixed.
+
+- **A synchronous `Provider` first watched in `build()` runs *in* that build.** The rule
+  above ("read the dictionary in a provider, never in `build()`") is not satisfied by being
+  a provider: a plain `Provider` computes lazily on first watch, which is inside the frame
+  that watched it. `shelfKindsProvider` was 44 `IN (...)` queries and the whole **69.1 ms**
+  first build of the Shelves tab; `collectionKeysProvider` was 27 queries and 8,084 key
+  strings, **22 ms**, and was Home's **85.9 ms** first build. Both now answer in **0.09 ms**
+  because the reading moved to a `FutureProvider` over `DictionaryDb.compute`
+  (`dictionaryCollectionKeysProvider`, `shelfEntriesProvider`, `wordEntries`,
+  `collectionWordKeysAsync`) with a synchronous facade that yields an empty map for a frame.
+  Rule: if a provider loops over rows, it is a `FutureProvider` backed by `compute`; if
+  callers need a plain value, give them a facade that falls back, and a `…SettlingProvider`
+  for the screens to hold their shape with.
+- **Derive from the schema's invariant instead of asking per row.** A dictionary shelf's
+  kind already settles what is on it (`band`/`topic` hold words, `idiom` holds phrases), so
+  `shelfKindsProvider` asks nothing of the 22 dictionary shelves and only the user's own.
+  `test/database/shelf_kinds_test.dart` holds the shipped dictionary to it, because the
+  failure would otherwise be silent. Rule: an invariant the pipeline guarantees may be
+  assumed in the app only with a test against the shipped dictionary.
+- **`ListView(children: [...])` builds every child, however the data is paged.** The Shelves
+  tab constructed all 27 shelf cards on open: once the queries were off the frame, that was
+  the entire **39 ms** that remained, with four cards on screen. It is now a
+  `CustomScrollView` whose topics are a `SliverList.separated` over `TwoColumnGrid.row`
+  pairs (**about 20 ms** on the emulator, most of it first-time text layout). Rule: any list
+  whose length grows with the data is a builder or a sliver, never a child list. The Mull
+  tab's `PageView.builder` already was: `test/linger/lazy_cards_test.dart` pins it at one
+  card in the tree on open and after three pages, against a 200-word pool.
+- **A loader that flashes is worse than no loader.** A warm start drew `InstallScreen` for
+  one frame while the already-installed dictionary opened, which read as a glitch. `Delayed`
+  (`shared/widgets/states.dart`, 250 ms) renders nothing until the work has actually taken a
+  moment; `LoadingHairline` keeps its own HANDOFF 120 ms. Rule: every loading state is behind
+  `Delayed` or `LoadingHairline`, and where there is something honest to show meanwhile
+  (a card whose count the dictionary already knows) that is the `placeholder`, not a
+  skeleton. The native splash already holds to Flutter's first frame; what it handed over to
+  was the problem.
+- **The mix chip has one appearance and no view-dependent state at all.** HANDOFF 11.2 used
+  to fill it `surfaceContainerHigh` at 78% and drop it to 0.34 opacity after the first
+  swipe. Both were faults. 0.34 is inside Material's disabled range (0.38), so a live
+  control read as unavailable; and the fill made an opaque pill 8dp above the pager's clip
+  edge (`Positioned.fill(top: pad.top + 96 - 34)`), so a card swiping out was guillotined
+  directly under it and the pair read as a card sliding behind a header. The chip sits
+  entirely above the viewport and never has anything drawn under it, so the fill bought
+  nothing else. It is now unfilled and constant: no opacity, no scale, no `_chipFaded`.
+  **HANDOFF 11.2 was rewritten to match (30 September 2026)**, so the code and the handoff
+  agree; do not reintroduce the fade from an older copy of the spec. Rule: an ordinary
+  control does not change appearance because the view scrolled, and nothing floating over
+  the Mull tab's pager carries a fill it does not need. The clip edge itself is inherent to
+  a vertical pager and stays.

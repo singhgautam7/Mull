@@ -3,7 +3,6 @@
 // at the sizes the picker shows them: 4x1 for search, 4x2 for word of the
 // day. Run: flutter test tool/widget_previews_test.dart
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';

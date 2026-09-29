@@ -48,21 +48,13 @@ class LingerScreen extends ConsumerStatefulWidget {
   ConsumerState<LingerScreen> createState() => _LingerScreenState();
 }
 
-class _CardData {
-  const _CardData(this.word, this.examples, this.synonyms);
-
-  final DictionaryWord word;
-  final List<String> examples;
-  final List<String> synonyms;
-}
-
 class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBindingObserver {
   final PageController _pager = PageController();
   MixSpec? _mix;
   String? _scope;
   List<String> _queue = <String>[];
   final Set<String> _served = <String>{};
-  final Map<String, _CardData> _cards = <String, _CardData>{};
+  final Map<String, WordEntry> _cards = <String, WordEntry>{};
   Set<String> _seenBefore = <String>{};
   Set<String> _noted = <String>{};
   bool _exhausted = false;
@@ -71,7 +63,6 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
   DateTime _enteredAt = DateTime.now();
   final DateTime _sessionStart = DateTime.now();
   bool _softStopShown = false;
-  bool _chipFaded = false;
   bool _extending = false;
 
   static const Duration _kSoftStop = Duration(minutes: 30);
@@ -120,7 +111,6 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
       _queue = <String>[];
       _served.clear();
       _index = 0;
-      _chipFaded = false;
     });
     MixSpec? active = await _mixes.active();
     if (widget.mixId != null && widget.mixId != active?.id) {
@@ -166,60 +156,69 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     if (_pager.hasClients) _pager.jumpToPage(0);
   }
 
-  /// Appends the next batch. The queue is never loaded whole, and on an
-  /// empty queue the first card is served as soon as it alone is ready: the
-  /// other twenty-nine are hydrated behind it, after that frame has drawn.
+  /// Appends the next batch, never the whole pool: [kQueueBatchSize] keys,
+  /// read on the worker isolate so extending at the boundary cannot stutter
+  /// the card the user is on. On an empty queue the first card is served as
+  /// soon as it alone is ready and the rest are read behind it, after that
+  /// frame has drawn.
   Future<void> _extend() async {
     if (_extending || _mix == null) return;
     _extending = true;
-    final QueueBuilder builder = ref.read(queueBuilderProvider);
-    final List<String> batch = await builder.build(_mix!, exclude: _served);
-    if (!mounted) {
-      _extending = false;
-      return;
-    }
-    final List<String> hydrated = <String>[];
-    for (final String key in batch) {
-      if (!_hydrate(key)) continue;
-      hydrated.add(key);
-      if (_queue.isEmpty && hydrated.length == 1) {
+    try {
+      final QueueBuilder builder = ref.read(queueBuilderProvider);
+      final List<String> batch = await builder.build(_mix!, exclude: _served);
+      if (!mounted) return;
+      if (batch.isEmpty) {
         setState(() {
-          _served.add(key);
-          _queue = <String>[key];
           _loading = false;
-          _enteredAt = DateTime.now();
+          if (_queue.isEmpty) _exhausted = true;
         });
-        if (_pager.hasClients) _pager.jumpToPage(0);
-        // Let that first card reach the screen before the rest are read. A
-        // zero-length timer fires before the frame; this waits for it.
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted) {
-          _extending = false;
-          return;
+        return;
+      }
+
+      if (_queue.isEmpty) {
+        final List<WordEntry> first = await _dict.wordEntries(batch.take(1).toList());
+        if (!mounted) return;
+        if (first.isNotEmpty) {
+          final WordEntry entry = first.first;
+          setState(() {
+            _cards[entry.word.wordKey] = entry;
+            _served.add(entry.word.wordKey);
+            _queue = <String>[entry.word.wordKey];
+            _loading = false;
+            _enteredAt = DateTime.now();
+          });
+          if (_pager.hasClients) _pager.jumpToPage(0);
+          // Let that first card reach the screen before the rest are read. A
+          // zero-length timer fires before the frame; this waits for it.
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted) return;
         }
       }
-    }
-    final Map<String, SeenWord> seen = await _user.seenStates(batch);
-    if (!mounted) {
-      _extending = false;
-      return;
-    }
-    setState(() {
-      _seenBefore = <String>{..._seenBefore, ...seen.keys};
-      _served.addAll(batch);
-      _queue = <String>[..._queue, ...hydrated.where((String k) => !_queue.contains(k))];
-      if (batch.isEmpty && _queue.isEmpty) _exhausted = true;
-    });
-    _extending = false;
-  }
 
-  /// Reads one card's entry, examples and synonyms into [_cards].
-  bool _hydrate(String key) {
-    if (_cards.containsKey(key)) return true;
-    final DictionaryWord? w = _dict.byKey(key);
-    if (w == null) return false;
-    _cards[key] = _CardData(w, _dict.examples(key), _dict.synonyms(key));
-    return true;
+      final List<WordEntry> rest = await _dict.wordEntries(
+        <String>[for (final String k in batch) if (!_cards.containsKey(k)) k],
+      );
+      final Map<String, SeenWord> seen = await _user.seenStates(batch);
+      if (!mounted) return;
+      setState(() {
+        for (final WordEntry e in rest) {
+          _cards[e.word.wordKey] = e;
+        }
+        _seenBefore = <String>{..._seenBefore, ...seen.keys};
+        _served.addAll(batch);
+        final Set<String> inQueue = _queue.toSet();
+        _queue = <String>[
+          ..._queue,
+          for (final String k in batch)
+            if (_cards.containsKey(k) && inQueue.add(k)) k,
+        ];
+        _loading = false;
+        if (_queue.isEmpty) _exhausted = true;
+      });
+    } finally {
+      _extending = false;
+    }
   }
 
   /// Seen is written on card exit, after the dwell threshold, never on entry.
@@ -236,7 +235,6 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     setState(() {
       _index = i;
       _enteredAt = DateTime.now();
-      if (!_chipFaded) _chipFaded = true;
       if (!_softStopShown && DateTime.now().difference(_sessionStart) >= _kSoftStop) _softStopShown = true;
     });
     if (i >= _queue.length - 5 && !_exhausted) unawaited(_extend());
@@ -326,7 +324,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                           itemCount: _queue.length + 1,
                           itemBuilder: (BuildContext context, int i) {
                             if (i == _queue.length) return _endCard(scopeTitle);
-                            final _CardData data = _cards[_queue[i]]!;
+                            final WordEntry data = _cards[_queue[i]]!;
                             return AnimatedBuilder(
                               animation: _pager,
                               builder: (BuildContext context, Widget? child) {
@@ -377,16 +375,9 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                       title: scopeTitle ?? _scope!,
                       onClose: () => context.go(Routes.mull),
                     )
-                  : AnimatedOpacity(
-                      duration: Motion.of(context, Motion.fast),
-                      opacity: _chipFaded ? 0.34 : 1,
-                      child: _MixChip(
-                        name: _mix?.name ?? '',
-                        onTap: () {
-                          setState(() => _chipFaded = false);
-                          unawaited(_openMixSheet());
-                        },
-                      ),
+                  : _MixChip(
+                      name: _mix?.name ?? '',
+                      onTap: () => unawaited(_openMixSheet()),
                     ),
             ),
             // HANDOFF: the hairline, and only if the first card takes more
@@ -470,8 +461,12 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
   }
 }
 
-/// 32dp, `surfaceContainerHigh` at 78%, 1px outline, a shuffle glyph, the
-/// mix name, a chevron. Neutral, never a play button.
+/// 32dp, unfilled, 1px outline, a shuffle glyph, the mix name, a chevron.
+/// Neutral, never a play button.
+///
+/// One appearance, always. It is an ordinary filter control: it does not fade,
+/// shrink or otherwise answer to how far the pager has been swiped, and it
+/// carries no fill. See HANDOFF 11.2, which was rewritten to match.
 class _MixChip extends StatelessWidget {
   const _MixChip({required this.name, required this.onTap});
 
@@ -485,7 +480,7 @@ class _MixChip extends StatelessWidget {
       button: true,
       label: 'Mix: $name',
       child: Material(
-        color: c.surfaceContainerHigh.withValues(alpha: 0.78),
+        color: Colors.transparent,
         shape: StadiumBorder(side: BorderSide(color: c.outline)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(

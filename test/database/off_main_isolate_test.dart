@@ -117,5 +117,33 @@ void main() {
       throwsA(contains('boom')),
       reason: 'a failure in the worker surfaces to the caller',
     );
+
+    // The reads the Shelves tab, a shelf screen and the Mull tab do on open.
+    // Each closure is built in a synchronous method; this is what proves it.
+    final Map<String, List<String>> keysBySlug = await dict.collectionKeysBySlug();
+    expect(keysBySlug['everyday'], dict.collectionWordKeys(<String>['everyday']));
+    expect(keysBySlug.keys, containsAll(<String>['everyday', 'core']));
+
+    final Duration keysStall = await longestStall(() async {
+      await dict.collectionKeysBySlug();
+    });
+    expect(keysStall, lessThan(budget), reason: 'shelf keys ran on the UI isolate');
+
+    final ShelfRows rows = await dict.shelfRows(shelf);
+    expect(
+      rows.words.map((DictionaryWord w) => w.wordKey).toSet(),
+      dict.byKeys(shelf).map((DictionaryWord w) => w.wordKey).toSet(),
+    );
+    expect(rows.idioms, isEmpty, reason: 'a band shelf has no idioms');
+
+    final List<WordEntry> cards = await dict.wordEntries(shelf.take(30).toList());
+    expect(cards, hasLength(30));
+    expect(cards.first.examples, dict.examples(cards.first.word.wordKey));
+    expect(cards.first.synonyms, dict.synonyms(cards.first.word.wordKey));
+
+    expect(
+      await dict.collectionWordKeysAsync(<String>['everyday']),
+      dict.collectionWordKeys(<String>['everyday']),
+    );
   }, timeout: const Timeout(Duration(minutes: 2)));
 }
