@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The status-bar glyph: an open page with two lines. White on alpha, as
-     Android requires; the system tints it. -->
+<!-- The status-bar glyph from the icon family (ic_stat_notification.svg). White on
+     alpha, as Android requires; the system tints it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M6,3h9l4,4v14a1,1 0,0 1,-1 1H6a1,1 0,0 1,-1 -1V4a1,1 0,0 1,1 -1zM8,11h8v2H8zM8,15h8v2H8z" />
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+  <group android:translateX="12" android:translateY="12">
+    <group android:scaleX="0.4" android:scaleY="0.4">
+      <group android:translateX="-54" android:translateY="-54">
+        <group android:translateX="-1" android:translateY="-6">
+          <path android:pathData="M55 79 Q45 73.5 35 74.5 L35 51 A10 10 0 0 1 55 51 L55 79" android:strokeColor="#FFFFFF" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+          <path android:pathData="M55 57 L55 51 A10 10 0 0 1 75 51 L75 74.5 Q65 73.5 55 79" android:strokeColor="#FFFFFF" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+        </group>
+      </group>
+    </group>
+  </group>
 </vector>
