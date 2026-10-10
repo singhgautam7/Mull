@@ -27,9 +27,6 @@ flutter analyze                                          # lints must stay clean
 flutter test                                             # unit + widget tests
 dart run build_runner build --delete-conflicting-outputs # Drift codegen
 flutter build apk --release --target-platform android-arm64   # 26.9 MB with the sample DB
-flutter test tool/generate_icons_test.dart               # redraw the icon art
-flutter test tool/icon_masks_test.dart                   # preview it masked and themed, build/icon_preview/sheet.png
-dart run flutter_launcher_icons                          # launcher icon
 dart run flutter_native_splash:create                    # splash
 cd tools/build_dictionary && .venv/bin/python build_dictionary.py --llm   # needs ANTHROPIC_API_KEY; see its README
 cd tools/build_dictionary && .venv/bin/python test_build.py
@@ -182,8 +179,6 @@ android/.../kotlin/      MullApplication (one FlutterEngineGroup) · MainActivit
                          its sheet) · PlatformChannels (TTS, arrivals, widget refresh, hand-off,
                          finish; shared by both activities) · WordOfDayWidget (reads only
                          `widget.schedule` from prefs; never a database)
-tool/                    generate_icons_test.dart draws the launcher art; icon_masks_test.dart
-                         previews it under the launcher masks into build/icon_preview/
 lib/shared/widgets/      reusable components from HANDOFF.md
 tools/build_dictionary/  the pipeline, its schema, curation files and self-checks
 assets/db/               dictionary.db.gz + dictionary.version (committed, binary, deliberate)
@@ -317,11 +312,9 @@ Flutter's release build. No signing config yet.
   rewritten ones; a `--wiktionary-fallback` build keeps Wiktionary text and says so.
 - Pronunciation is a method channel to Android's `TextToSpeech` in `MainActivity.kt`, not a
   plugin: `flutter_tts` applied the Kotlin Gradle Plugin, which Flutter is deprecating.
-- The icon art is drawn to the board's numbers in `tool/generate_icons_test.dart`, with the
-  mark set in JetBrains Mono (`tool/fonts/`, OFL). Re-run the tool, then the two generators.
-  The monochrome layer is a stencil (solid page, the spine, mark and ribbon cut out) drawn
-  1.45x larger than the colour book: Android keeps only its alpha and launchers draw themed
-  icons smaller. A monochrome drawn like the colour layers renders as a blank book.
+- The launcher icon, monochrome layer, notification glyph and splash art come from the icon
+  family in `specs/design/app-icon/` (see its `icon.md`): the SVGs are converted to vector
+  drawables in `res/`, and the legacy and splash PNGs are rendered from the same SVGs.
 - Text never has a fixed height. The word card body flexes (a long definition steps the
   headword down one size, then the body scrolls, the action row is pinned) and
   `test/ui/font_scale_test.dart` renders every screen and sheet at the largest OS font scale
