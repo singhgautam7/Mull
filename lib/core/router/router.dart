@@ -185,8 +185,16 @@ GoRouter buildRouter({required bool onboarded}) {
               return NavShell(
                 index: shell.currentIndex,
                 tabCount: shell.route.branches.length,
-                onSelect: (int i) =>
-                    shell.goBranch(i, initialLocation: i == shell.currentIndex),
+                onSelect: (int i) {
+                  // Tapping Search again while it is showing raises the
+                  // keyboard, as YouTube Music and Spotify do. A fresh focus
+                  // token is what tells the screen to take focus again.
+                  if (i == shell.currentIndex && state.uri.path == Routes.search) {
+                    context.go('${Routes.search}?focus=${DateTime.now().millisecondsSinceEpoch}');
+                    return;
+                  }
+                  shell.goBranch(i, initialLocation: i == shell.currentIndex);
+                },
                 child: shell,
               );
             },

@@ -205,6 +205,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   selected: _segment,
                   counts: typing ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length} : const <Object?, int>{},
                   onChanged: (SearchSegment s) => setState(() => _segment = s),
+                  accent: true,
                 ),
               ),
               LoadingHairline(visible: _slow),

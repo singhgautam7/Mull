@@ -103,6 +103,9 @@ class PillChip extends StatelessWidget {
 /// Height 38 (34 collapsed), `surfaceContainerHigh` track, 4dp padding,
 /// selected thumb = `surface` + 1px outline, label `titleSmall`. Counts sit
 /// inside the label in `monoLabel`. Cards/Table, Words/Idioms, Light/Dark/System.
+///
+/// [accent] is Kuber's connected toggle (its Expense | Income | Transfer):
+/// 48 high, 4dp gaps, the selected segment a `primary` pill.
 class SegmentedToggle<T> extends StatelessWidget {
   const SegmentedToggle({
     required this.options,
@@ -110,6 +113,7 @@ class SegmentedToggle<T> extends StatelessWidget {
     required this.onChanged,
     this.counts = const <Object?, int>{},
     this.compact = false,
+    this.accent = false,
     super.key,
   });
 
@@ -118,19 +122,21 @@ class SegmentedToggle<T> extends StatelessWidget {
   final ValueChanged<T> onChanged;
   final Map<Object?, int> counts;
   final bool compact;
+  final bool accent;
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     return Container(
       // A minimum, not a height: at a large font scale the track grows.
-      constraints: BoxConstraints(minHeight: compact ? 34 : 38),
+      constraints: BoxConstraints(minHeight: accent ? 48 : (compact ? 34 : 38)),
       padding: const EdgeInsets.all(Space.xs),
       decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
       // The thumb fills the track's height whatever the text scale.
       child: IntrinsicHeight(
         child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: accent ? Space.xs : 0,
         children: <Widget>[
           for (final (T value, String label) in options)
             Expanded(
@@ -144,9 +150,11 @@ class SegmentedToggle<T> extends StatelessWidget {
                     duration: Motion.of(context, Motion.lensSwap),
                     curve: Motion.curveOf(context, Motion.spring),
                     decoration: BoxDecoration(
-                      color: value == selected ? c.surface : Colors.transparent,
+                      color: value == selected ? (accent ? c.primary : c.surface) : Colors.transparent,
                       borderRadius: Radii.fullR,
-                      border: Border.all(color: value == selected ? c.outline : Colors.transparent),
+                      border: accent
+                          ? null
+                          : Border.all(color: value == selected ? c.outline : Colors.transparent),
                     ),
                     alignment: Alignment.center,
                     child: Row(
@@ -159,14 +167,20 @@ class SegmentedToggle<T> extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: MullType.titleSmall.copyWith(
-                              color: value == selected ? c.onSurface : c.onSurfaceVariant,
+                              color: value == selected
+                                  ? (accent ? c.onPrimary : c.onSurface)
+                                  : c.onSurfaceVariant,
                             ),
                           ),
                         ),
                         if (counts[value] != null)
                           Text(
                             '${counts[value]}',
-                            style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                            style: MullType.monoLabel.copyWith(
+                              color: accent && value == selected
+                                  ? c.onPrimary.withValues(alpha: 0.8)
+                                  : c.onSurfaceVariant,
+                            ),
                           ),
                       ],
                     ),
