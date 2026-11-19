@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/utils/platform_surfaces.dart';
 
 import '../../core/theme/palette.dart';
@@ -11,6 +12,9 @@ enum Spelling { british, american }
 
 /// How search results are drawn. RECENT is a history list and stays compact.
 enum SearchStyle { card, table }
+
+/// When the floating header's pill shows (Kuber v7.0.0-c "Show the pill").
+enum PillMode { always, scrollUp, scrollStop }
 
 /// Device-level settings that must be known before the first frame, kept in
 /// SharedPreferences. User data (notes, lists, mixes) lives in the user
@@ -31,6 +35,11 @@ class AppSettings {
     this.wotdEnabled = false,
     this.wotdMinutes = 8 * 60 + 30,
     this.onboarded = false,
+    this.motionPreference = MotionPreference.auto,
+    this.deviceClass = DeviceClass.unknown,
+    this.floatingHeader = true,
+    this.pillMode = PillMode.always,
+    this.expressiveColors = true,
   });
 
   final String familyId;
@@ -55,6 +64,27 @@ class AppSettings {
   /// Minutes after midnight the word of the day arrives.
   final int wotdMinutes;
   final bool onboarded;
+
+  /// The Motion setting. Auto resolves from [deviceClass] (and the phone's
+  /// Remove animations, applied per build by the MotionScope in app.dart).
+  final MotionPreference motionPreference;
+
+  /// Cached result of the one-off RAM check; [DeviceClass.unknown] until it
+  /// has run once, off the startup path.
+  final DeviceClass deviceClass;
+
+  /// Floating header: off means no page's header is sticky.
+  final bool floatingHeader;
+
+  /// When the pill shows. Ignored while [floatingHeader] is off.
+  final PillMode pillMode;
+
+  /// Expressive colours: on, surfaces carry a tint of the family; off, one
+  /// neutral ramp for every family. Accents never change.
+  final bool expressiveColors;
+
+  /// Effective level before the phone's Remove animations is applied.
+  MotionLevel get motionLevel => resolveMotionLevel(motionPreference, deviceClass);
 
   ThemeFamily get family => ThemeFamily.byId(familyId);
 
@@ -83,6 +113,11 @@ class AppSettings {
     bool? wotdEnabled,
     int? wotdMinutes,
     bool? onboarded,
+    MotionPreference? motionPreference,
+    DeviceClass? deviceClass,
+    bool? floatingHeader,
+    PillMode? pillMode,
+    bool? expressiveColors,
   }) => AppSettings(
     familyId: familyId ?? this.familyId,
     themeMode: themeMode ?? this.themeMode,
@@ -97,6 +132,11 @@ class AppSettings {
     wotdEnabled: wotdEnabled ?? this.wotdEnabled,
     wotdMinutes: wotdMinutes ?? this.wotdMinutes,
     onboarded: onboarded ?? this.onboarded,
+    motionPreference: motionPreference ?? this.motionPreference,
+    deviceClass: deviceClass ?? this.deviceClass,
+    floatingHeader: floatingHeader ?? this.floatingHeader,
+    pillMode: pillMode ?? this.pillMode,
+    expressiveColors: expressiveColors ?? this.expressiveColors,
   );
 
   static const String kFamily = 'theme.family';
@@ -112,6 +152,14 @@ class AppSettings {
   static const String kWotd = 'wotd.enabled';
   static const String kWotdMinutes = 'wotd.minutes';
   static const String kOnboarded = 'app.onboarded';
+  static const String kMotion = 'motion.preference';
+  static const String kDeviceClass = 'motion.deviceClass';
+  static const String kFloatingHeader = 'header.floating';
+  static const String kPillMode = 'header.pill';
+  static const String kExpressive = 'theme.expressive';
+
+  static T _named<T extends Enum>(List<T> values, String? name, T fallback) =>
+      values.firstWhere((T v) => v.name == name, orElse: () => fallback);
 
   static AppSettings read(SharedPreferences prefs) => AppSettings(
     familyId: prefs.getString(kFamily) ?? 'mull',
@@ -132,6 +180,11 @@ class AppSettings {
     wotdEnabled: prefs.getBool(kWotd) ?? false,
     wotdMinutes: prefs.getInt(kWotdMinutes) ?? 8 * 60 + 30,
     onboarded: prefs.getBool(kOnboarded) ?? false,
+    motionPreference: _named(MotionPreference.values, prefs.getString(kMotion), MotionPreference.auto),
+    deviceClass: _named(DeviceClass.values, prefs.getString(kDeviceClass), DeviceClass.unknown),
+    floatingHeader: prefs.getBool(kFloatingHeader) ?? true,
+    pillMode: _named(PillMode.values, prefs.getString(kPillMode), PillMode.always),
+    expressiveColors: prefs.getBool(kExpressive) ?? true,
   );
 }
 
@@ -144,7 +197,11 @@ final Provider<SharedPreferences> prefsProvider = Provider<SharedPreferences>(
 /// synchronous and a change repaints exactly the widgets that selected on it.
 class SettingsController extends Notifier<AppSettings> {
   @override
-  AppSettings build() => AppSettings.read(ref.watch(prefsProvider));
+  AppSettings build() {
+    final AppSettings s = AppSettings.read(ref.watch(prefsProvider));
+    MullHaptics.enabled = s.haptics;
+    return s;
+  }
 
   SharedPreferences get _prefs => ref.read(prefsProvider);
 
@@ -195,6 +252,7 @@ class SettingsController extends Notifier<AppSettings> {
 
   Future<void> setHaptics({required bool value}) async {
     state = state.copyWith(haptics: value);
+    MullHaptics.enabled = value;
     await _prefs.setBool(AppSettings.kHaptics, value);
   }
 
@@ -207,6 +265,41 @@ class SettingsController extends Notifier<AppSettings> {
     await _prefs.setBool(AppSettings.kWotd, on);
     if (minutes != null) await _prefs.setInt(AppSettings.kWotdMinutes, minutes);
     await PlatformSurfaces.scheduleReminder();
+  }
+
+  Future<void> setMotionPreference(MotionPreference value) async {
+    state = state.copyWith(motionPreference: value);
+    await _prefs.setString(AppSettings.kMotion, value.name);
+  }
+
+  /// Runs once per install, after the first frame: [probe] returns (total RAM
+  /// in MB, isLowRamDevice), null off Android. Cached, so the next cold start
+  /// reads it with the other prefs and never asks again.
+  Future<void> checkDevice(Future<(int, bool)?> Function() probe) async {
+    if (state.deviceClass != DeviceClass.unknown) return;
+    try {
+      final (int, bool)? r = await probe();
+      final DeviceClass c = r == null ? DeviceClass.normal : classifyDevice(ramMb: r.$1, lowRamFlag: r.$2);
+      state = state.copyWith(deviceClass: c);
+      await _prefs.setString(AppSettings.kDeviceClass, c.name);
+    } on Object catch (e) {
+      debugPrint('Mull: device class check failed (non-fatal): $e');
+    }
+  }
+
+  Future<void> setFloatingHeader({required bool value}) async {
+    state = state.copyWith(floatingHeader: value);
+    await _prefs.setBool(AppSettings.kFloatingHeader, value);
+  }
+
+  Future<void> setPillMode(PillMode value) async {
+    state = state.copyWith(pillMode: value);
+    await _prefs.setString(AppSettings.kPillMode, value.name);
+  }
+
+  Future<void> setExpressiveColors({required bool value}) async {
+    state = state.copyWith(expressiveColors: value);
+    await _prefs.setBool(AppSettings.kExpressive, value);
   }
 
   Future<void> setOnboarded({required bool value}) async {

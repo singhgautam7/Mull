@@ -59,6 +59,18 @@ class PlatformSurfaces {
     }
   }
 
+  /// Total RAM in MB and Android's low-RAM flag, for the Motion level's Auto.
+  /// Null off Android (tests), which Auto treats as a normal phone.
+  static Future<(int, bool)?> deviceMemory() async {
+    try {
+      final Map<Object?, Object?>? m = await _channel.invokeMapMethod<Object?, Object?>('deviceMemory');
+      if (m == null) return null;
+      return ((m['totalMb'] as int?) ?? 0, (m['lowRam'] as bool?) ?? false);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   /// The installed version name (`1.0.0`), or null off Android.
   static Future<String?> appVersion() async {
     try {
