@@ -26,7 +26,7 @@ flutter run                                              # run on a device
 flutter analyze                                          # lints must stay clean
 flutter test                                             # unit + widget tests
 dart run build_runner build --delete-conflicting-outputs # Drift codegen
-flutter build apk --release --target-platform android-arm64   # 26.9 MB with the sample DB
+flutter build apk --release --obfuscate --split-debug-info=build/symbols --target-platform android-arm64   # 26.9 MB with the sample DB; keep build/symbols per release for `flutter symbolize`
 dart run flutter_native_splash:create                    # splash
 cd tools/build_dictionary && .venv/bin/python build_dictionary.py --llm   # needs ANTHROPIC_API_KEY; see its README
 cd tools/build_dictionary && .venv/bin/python test_build.py
@@ -229,8 +229,11 @@ specs/                   design handoff (gitignored)
 ## Release
 
 ```bash
-flutter build apk --release
+flutter build apk --release --obfuscate --split-debug-info=build/symbols
+flutter build appbundle --release --obfuscate --split-debug-info=build/symbols --target-platform android-arm64
 ```
+
+Keep `build/symbols` per release for `flutter symbolize` (Mull has no crash upload, so it is only for reading a stack trace by hand).
 
 Measured (September 2026, full dictionary): arm64 release APK 58.6 MB, AAB 97.2 MB (the AAB
 carries debug symbols for three ABIs; the APK is what a device downloads). The dictionary
