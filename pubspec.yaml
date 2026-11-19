@@ -40,7 +40,6 @@ dependencies:
   path: ^1.9.1
   shared_preferences: ^2.5.5
   dynamic_color: ^2.1.0
-  flutter_animate: ^4.5.2
   share_plus: ^13.3.0
   file_picker: ^13.1.0
   csv: ^6.0.0
