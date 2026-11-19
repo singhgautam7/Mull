@@ -14,7 +14,8 @@ void main() {
       expect(
         (channel(actual, shift) - channel(expected, shift)).abs(),
         lessThanOrEqualTo(tolerance),
-        reason: '${actual.toARGB32().toRadixString(16)} vs ${expectedHex.toRadixString(16)}',
+        reason:
+            '${actual.toARGB32().toRadixString(16)} vs ${expectedHex.toRadixString(16)}',
       );
     }
   }
@@ -31,7 +32,11 @@ void main() {
 
   test('the other families land on their handoff primaries', () {
     near(ThemeFamily.vellum.colors(Tone.light).primary, 0xa06f30, tolerance: 8);
-    near(ThemeFamily.foxglove.colors(Tone.light).primary, 0x945798, tolerance: 8);
+    near(
+      ThemeFamily.foxglove.colors(Tone.light).primary,
+      0x945798,
+      tolerance: 8,
+    );
     near(ThemeFamily.slate.colors(Tone.light).primary, 0x464f51, tolerance: 8);
   });
 
@@ -43,18 +48,36 @@ void main() {
     near(light.surfaceContainerHigh, 0xddd7cb, tolerance: 8);
     near(dark.surface, 0x1a1813, tolerance: 8);
     near(dark.surfaceContainer, 0x252118, tolerance: 8);
-    expect(ThemeFamily.clay.hasAmoled, isFalse);
     expect(ThemeFamily.byId('clay'), ThemeFamily.clay);
-    expect(ThemeFamily.all.length, 16);
-    expect(ThemeFamily.all.map((ThemeFamily f) => f.id).toSet().length, 16, reason: 'ids are unique');
+    expect(ThemeFamily.all.length, 19);
+    expect(
+      ThemeFamily.all.map((ThemeFamily f) => f.id).toSet().length,
+      19,
+      reason: 'ids are unique',
+    );
   });
 
   test('AMOLED is true black and the Mull tab surface ignores the toggle', () {
-    expect(ThemeFamily.mull.colors(Tone.amoled).surface, const Color(0xff000000));
-    expect(ThemeFamily.mull.colors(Tone.dark).lingerSurface, const Color(0xff000000));
-    expect(ThemeFamily.mull.colors(Tone.amoled).lingerSurface, const Color(0xff000000));
-    expect(ThemeFamily.mull.colors(Tone.light).lingerSurface, const Color(0xffffffff));
-    expect(ThemeFamily.vellum.colors(Tone.light).lingerSurface, const Color(0xffffffff));
+    expect(
+      ThemeFamily.mull.colors(Tone.amoled).surface,
+      const Color(0xff000000),
+    );
+    expect(
+      ThemeFamily.mull.colors(Tone.dark).lingerSurface,
+      const Color(0xff000000),
+    );
+    expect(
+      ThemeFamily.mull.colors(Tone.amoled).lingerSurface,
+      const Color(0xff000000),
+    );
+    expect(
+      ThemeFamily.mull.colors(Tone.light).lingerSurface,
+      const Color(0xffffffff),
+    );
+    expect(
+      ThemeFamily.vellum.colors(Tone.light).lingerSurface,
+      const Color(0xffffffff),
+    );
   });
 
   test('dynamic colour keeps Mull\'s chroma', () {

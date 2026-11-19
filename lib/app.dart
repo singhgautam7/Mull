@@ -23,7 +23,10 @@ import 'shared/widgets/states.dart';
 /// never differ.
 ThemeData themeFor(AppSettings s, Color? seed, Brightness b) {
   final Tone tone = s.toneFor(b);
-  return seed == null ? AppTheme.of(s.family, tone) : AppTheme.fromSeed(seed, tone);
+  final bool x = s.expressiveColors;
+  return seed == null
+      ? AppTheme.of(s.family, tone, expressive: x)
+      : AppTheme.fromSeed(seed, tone, expressive: x);
 }
 
 /// The Motion level for everything below: the setting resolved with the
@@ -52,7 +55,7 @@ class MullMotionScope extends ConsumerWidget {
 }
 
 /// What the widgets' colours depend on, so the push fires on exactly those.
-typedef _WidgetThemeKey = ({String family, ThemeMode mode, bool amoled, Color? seed});
+typedef _WidgetThemeKey = ({String family, ThemeMode mode, bool amoled, bool expressive, Color? seed});
 
 final Provider<_WidgetThemeKey> _widgetThemeKeyProvider = Provider<_WidgetThemeKey>((Ref ref) {
   final AppSettings s = ref.watch(settingsProvider);
@@ -60,6 +63,7 @@ final Provider<_WidgetThemeKey> _widgetThemeKeyProvider = Provider<_WidgetThemeK
     family: s.familyId,
     mode: s.themeMode,
     amoled: s.amoled,
+    expressive: s.expressiveColors,
     seed: s.dynamicColor ? ref.watch(wallpaperSeedProvider).value : null,
   );
 });
@@ -152,6 +156,9 @@ class _MullAppState extends ConsumerState<MullApp> {
           key: const ValueKey<String>('install'),
           title: 'Mull',
           debugShowCheckedModeBanner: false,
+      // The theme ripple reveals a change; an implicit theme tween under it
+      // would fight it.
+      themeAnimationDuration: Duration.zero,
           themeMode: s.themeMode,
           theme: themeFor(s, seed, Brightness.light),
           darkTheme: themeFor(s, seed, Brightness.dark),
@@ -204,6 +211,9 @@ class _MullAppState extends ConsumerState<MullApp> {
       key: const ValueKey<String>('app'),
       title: 'Mull',
       debugShowCheckedModeBanner: false,
+      // The theme ripple reveals a change; an implicit theme tween under it
+      // would fight it.
+      themeAnimationDuration: Duration.zero,
       routerConfig: _router,
       themeMode: s.themeMode,
       theme: themeFor(s, seed, Brightness.light),

@@ -101,11 +101,13 @@ class MullColors extends ThemeExtension<MullColors> {
 
   bool get isDark => tone != Tone.light;
 
+  /// Pure black's page, and its swatch on the theme screen.
+  static const Color pureBlack = Color(0xFF000000);
+
   /// HANDOFF 1.3, AMOLED: the Mull tab's page background is true black in dark
   /// and pure white in light, regardless of the toggle and regardless of
   /// family. Card surfaces inside it keep [surfaceContainer].
-  Color get lingerSurface =>
-      isDark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+  Color get lingerSurface => isDark ? pureBlack : const Color(0xFFFFFFFF);
 
   /// Seven fixed list hues off the accent wheel. A list stores its index, not
   /// an ARGB value, so it re-derives per theme and stays legible in light,
@@ -185,10 +187,7 @@ class MullColors extends ThemeExtension<MullColors> {
     return MullColors(
       surface: l(surface, other.surface),
       surfaceContainer: l(surfaceContainer, other.surfaceContainer),
-      surfaceContainerHigh: l(
-        surfaceContainerHigh,
-        other.surfaceContainerHigh,
-      ),
+      surfaceContainerHigh: l(surfaceContainerHigh, other.surfaceContainerHigh),
       outline: l(outline, other.outline),
       divider: l(divider, other.divider),
       onSurface: l(onSurface, other.onSurface),
@@ -232,7 +231,6 @@ class ThemeFamily {
     required this.primaryLightness,
     required this.primaryChroma,
     required this.primaryContainerChroma,
-    required this.hasAmoled,
     this.lightSurfaceSink = 0,
     double? darkNeutralChroma,
   }) : darkNeutralChroma = darkNeutralChroma ?? neutralChroma;
@@ -251,7 +249,10 @@ class ThemeFamily {
   final double primaryLightness;
   final double primaryChroma;
   final double primaryContainerChroma;
-  final bool hasAmoled;
+
+  /// Pure black is on offer for every family (Kuber). Kept as a getter for
+  /// callers that still gate on it.
+  bool get hasAmoled => true;
 
   /// How far below the shared construction the light surfaces sit, so a
   /// greige family can carry its character in the surfaces (HANDOFF 1.3,
@@ -273,7 +274,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.11,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily vellum = ThemeFamily(
@@ -286,7 +286,6 @@ class ThemeFamily {
     primaryLightness: 0.58,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily foxglove = ThemeFamily(
@@ -299,7 +298,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily slate = ThemeFamily(
@@ -312,7 +310,6 @@ class ThemeFamily {
     primaryLightness: 0.42,
     primaryChroma: 0.012,
     primaryContainerChroma: 0.006,
-    hasAmoled: true,
   );
 
   /// The warm greige behind the pass 02 widget mock-ups. Neutral-led: the
@@ -327,7 +324,6 @@ class ThemeFamily {
     primaryLightness: 0.50,
     primaryChroma: 0.055,
     primaryContainerChroma: 0.02,
-    hasAmoled: false,
     lightSurfaceSink: 0.025,
     darkNeutralChroma: 1.2,
   );
@@ -343,7 +339,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.11,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily ember = ThemeFamily(
@@ -356,7 +351,6 @@ class ThemeFamily {
     primaryLightness: 0.58,
     primaryChroma: 0.11,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily fern = ThemeFamily(
@@ -369,7 +363,6 @@ class ThemeFamily {
     primaryLightness: 0.54,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   // Dally's accents as families, each keyed by the oklch hue of its light
@@ -385,7 +378,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily tide = ThemeFamily(
@@ -398,7 +390,6 @@ class ThemeFamily {
     primaryLightness: 0.50,
     primaryChroma: 0.09,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily meadow = ThemeFamily(
@@ -411,7 +402,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily blush = ThemeFamily(
@@ -424,7 +414,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily iris = ThemeFamily(
@@ -437,7 +426,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily coral = ThemeFamily(
@@ -450,7 +438,6 @@ class ThemeFamily {
     primaryLightness: 0.56,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily citron = ThemeFamily(
@@ -463,7 +450,43 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
+  );
+
+  // Kuber's additions, same hue-keyed derivation as the families above.
+  static const ThemeFamily saffron = ThemeFamily(
+    id: 'saffron',
+    name: 'Saffron',
+    blurb: 'gold',
+    neutralHue: 90,
+    neutralChroma: 1.25,
+    primaryHue: 90,
+    primaryLightness: 0.60,
+    primaryChroma: 0.12,
+    primaryContainerChroma: 0.05,
+  );
+
+  static const ThemeFamily sky = ThemeFamily(
+    id: 'sky',
+    name: 'Sky',
+    blurb: 'light blue',
+    neutralHue: 238,
+    neutralChroma: 1,
+    primaryHue: 238,
+    primaryLightness: 0.56,
+    primaryChroma: 0.11,
+    primaryContainerChroma: 0.04,
+  );
+
+  static const ThemeFamily ruby = ThemeFamily(
+    id: 'ruby',
+    name: 'Ruby',
+    blurb: 'red',
+    neutralHue: 18,
+    neutralChroma: 1.15,
+    primaryHue: 18,
+    primaryLightness: 0.50,
+    primaryChroma: 0.16,
+    primaryContainerChroma: 0.05,
   );
 
   static const ThemeFamily neon = ThemeFamily(
@@ -476,7 +499,6 @@ class ThemeFamily {
     primaryLightness: 0.60,
     primaryChroma: 0.14,
     primaryContainerChroma: 0.05,
-    hasAmoled: true,
   );
 
   static const List<ThemeFamily> all = <ThemeFamily>[
@@ -495,6 +517,9 @@ class ThemeFamily {
     iris,
     coral,
     citron,
+    saffron,
+    sky,
+    ruby,
     neon,
   ];
 
@@ -516,12 +541,56 @@ class ThemeFamily {
       primaryLightness: 0.52,
       primaryChroma: 0.11,
       primaryContainerChroma: 0.04,
-      hasAmoled: true,
     );
   }
 
-  MullColors colors(Tone tone) =>
-      tone == Tone.light ? _light() : _dark(amoled: tone == Tone.amoled);
+  /// [expressive] off swaps the background roles for one neutral grey ramp
+  /// shared by every family (Kuber's `applySurfaceRule`); accents, tag hues
+  /// and danger never change.
+  MullColors colors(Tone tone, {bool expressive = true}) {
+    final MullColors c = tone == Tone.light
+        ? _light()
+        : _dark(amoled: tone == Tone.amoled, expressive: expressive);
+    return expressive ? c : _neutral(c, tone);
+  }
+
+  /// The neutral ramp, chroma 0, at Kuber's lightness steps. Pure black keeps
+  /// the page and containers it already built (at chroma 0, see [_dark]) and
+  /// only takes the text roles.
+  MullColors _neutral(MullColors c, Tone tone) {
+    Color g(double l) => Oklch(l, 0, 0).toColor();
+    if (tone == Tone.light) {
+      return c.copyWith(
+        surface: g(1),
+        surfaceContainer: g(0.965),
+        surfaceContainerHigh: g(0.935),
+        outline: g(0.885),
+        divider: g(0.91),
+        onSurface: g(0.20),
+        onSurfaceVariant: g(0.48),
+        onSurfaceMuted: g(0.62),
+        icon: g(0.30),
+        iconMuted: g(0.45),
+        inverseSurface: g(0.22),
+        onInverseSurface: g(0.97),
+      );
+    }
+    final bool pure = tone == Tone.amoled;
+    return c.copyWith(
+      surface: pure ? null : g(0.205),
+      surfaceContainer: pure ? null : g(0.255),
+      surfaceContainerHigh: pure ? null : g(0.30),
+      outline: pure ? null : g(0.36),
+      divider: pure ? null : g(0.33),
+      onSurface: g(0.96),
+      onSurfaceVariant: g(0.74),
+      onSurfaceMuted: g(0.60),
+      icon: g(0.90),
+      iconMuted: g(0.74),
+      inverseSurface: g(0.93),
+      onInverseSurface: g(0.20),
+    );
+  }
 
   Oklch _n(double l, double c, {bool dark = false}) =>
       Oklch(l, c * (dark ? darkNeutralChroma : neutralChroma), neutralHue);
@@ -560,24 +629,20 @@ class ThemeFamily {
     );
   }
 
-  MullColors _dark({required bool amoled}) {
-    // AMOLED drops the page to true black and sinks the containers under it;
-    // everything else keeps its dark value.
+  MullColors _dark({required bool amoled, bool expressive = true}) {
+    // Pure black (Kuber's rule): the page is #000000, the containers a
+    // near-black ramp at the family hue (grey when expressive is off).
     final double pcd = primaryChroma * 0.81;
+    Color pb(double l, double c) =>
+        Oklch(l, expressive ? c : 0, neutralHue).toColor();
     return MullColors(
-      surface: amoled
-          ? const Oklch(0, 0, 0).toColor()
-          : _nd(0.205, 0.012).toColor(),
-      surfaceContainer: _nd(
-        amoled ? 0.13 : 0.255,
-        amoled ? 0.012 : 0.014,
-      ).toColor(),
-      surfaceContainerHigh: _nd(
-        amoled ? 0.15 : 0.30,
-        amoled ? 0.012 : 0.016,
-      ).toColor(),
-      outline: _nd(amoled ? 0.30 : 0.36, amoled ? 0.014 : 0.016).toColor(),
-      divider: _nd(amoled ? 0.24 : 0.30, 0.014).toColor(),
+      surface: amoled ? MullColors.pureBlack : _nd(0.205, 0.012).toColor(),
+      surfaceContainer: amoled ? pb(0.18, 0.008) : _nd(0.255, 0.014).toColor(),
+      surfaceContainerHigh: amoled
+          ? pb(0.215, 0.010)
+          : _nd(0.30, 0.016).toColor(),
+      outline: amoled ? pb(0.33, 0.014) : _nd(0.36, 0.016).toColor(),
+      divider: amoled ? pb(0.25, 0.012) : _nd(0.30, 0.014).toColor(),
       onSurface: _nd(0.96, 0.005).toColor(),
       onSurfaceVariant: _nd(0.72, 0.012).toColor(),
       onSurfaceMuted: _nd(0.60, 0.012).toColor(),
@@ -585,13 +650,19 @@ class ThemeFamily {
       iconMuted: _nd(0.72, 0.012).toColor(),
       primary: _p(0.74, pcd).toColor(),
       primaryPressed: _p(0.68, pcd).toColor(),
-      primaryContainer: _p(0.28, pcd * 0.46).toColor(),
+      primaryContainer: amoled
+          ? _p(0.27, 0.05).toColor()
+          : _p(0.28, pcd * 0.46).toColor(),
       onPrimary: _nd(0.14, 0.01).toColor(),
       onPrimaryContainer: _p(0.90, pcd * 0.46).toColor(),
       accent: _p(0.85, pcd * 0.69).toColor(),
       success: const Oklch(0.72, 0.11, 145).toColor(),
       danger: const Oklch(0.72, 0.14, 25).toColor(),
-      dangerContainer: Oklch(amoled ? 0.20 : 0.26, 0.05, 25).toColor(),
+      dangerContainer: Oklch(
+        amoled ? 0.28 : 0.26,
+        amoled ? 0.08 : 0.05,
+        25,
+      ).toColor(),
       onDangerContainer: const Oklch(0.82, 0.11, 25).toColor(),
       inverseSurface: _nd(0.93, 0.008).toColor(),
       onInverseSurface: _nd(0.20, 0.02).toColor(),

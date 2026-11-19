@@ -4,28 +4,34 @@ import 'palette.dart';
 import 'tokens.dart';
 import 'typography.dart';
 
-/// Builds, and caches, one [ThemeData] per (family, tone).
+/// Builds, and caches, one [ThemeData] per (family, tone, expressive).
 ///
 /// `ThemeData` construction is not free and a theme is stable for the life of
 /// a setting, so it is built once and handed out on every rebuild after that.
 abstract final class AppTheme {
   static final Map<String, ThemeData> _cache = <String, ThemeData>{};
 
-  static ThemeData of(ThemeFamily family, Tone tone) {
-    return _cache.putIfAbsent('${family.id}:${tone.name}', () {
-      return _build(family.colors(tone), tone != Tone.light);
+  static ThemeData of(ThemeFamily family, Tone tone, {bool expressive = true}) {
+    return _cache.putIfAbsent('${family.id}:${tone.name}:$expressive', () {
+      return _build(
+        family.colors(tone, expressive: expressive),
+        tone != Tone.light,
+      );
     });
   }
 
   /// Android dynamic colour, keyed by the wallpaper seed so it caches like any
   /// other theme.
-  static ThemeData fromSeed(Color seed, Tone tone) {
-    return _cache.putIfAbsent('seed:${seed.toARGB32()}:${tone.name}', () {
-      return _build(
-        ThemeFamily.fromSeed(seed).colors(tone),
-        tone != Tone.light,
-      );
-    });
+  static ThemeData fromSeed(Color seed, Tone tone, {bool expressive = true}) {
+    return _cache.putIfAbsent(
+      'seed:${seed.toARGB32()}:${tone.name}:$expressive',
+      () {
+        return _build(
+          ThemeFamily.fromSeed(seed).colors(tone, expressive: expressive),
+          tone != Tone.light,
+        );
+      },
+    );
   }
 
   static ThemeData _build(MullColors c, bool isDark) {
@@ -76,11 +82,7 @@ abstract final class AppTheme {
           side: BorderSide(color: c.outline),
         ),
       ),
-      dividerTheme: DividerThemeData(
-        color: c.divider,
-        thickness: 1,
-        space: 1,
-      ),
+      dividerTheme: DividerThemeData(color: c.divider, thickness: 1, space: 1),
       appBarTheme: AppBarTheme(
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
