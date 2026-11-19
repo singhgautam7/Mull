@@ -46,6 +46,12 @@ android {
 
     buildTypes {
         release {
+            // Flutter turns both on for a release build anyway; stated here so
+            // it stays certain. No keep rules of our own: the manifest classes
+            // are kept by AGP, and jni and jni_flutter ship theirs.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
