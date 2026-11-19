@@ -35,9 +35,10 @@ class MullNavPill extends StatelessWidget {
   final int index;
   final ValueChanged<int> onSelect;
 
-  /// An inactive item is 44 wide (12 + 20 + 12); the row gap is 2.
-  static const double _item = 44;
-  static const double _gap = 2;
+  /// An inactive item is 48 wide (14 + 20 + 14) and 48 tall: a full touch
+  /// target with no gap between items.
+  static const double _item = 48;
+  static const double _gap = 0;
 
   /// A selected item is the icon, 8, the label, and 11 / 14 of padding.
   static const double _labelExtra = 11 + 20 + 8 + 14 - _item;
@@ -64,7 +65,10 @@ class MullNavPill extends StatelessWidget {
     return RepaintBoundary(
       child: Container(
         height: 56,
-        padding: const EdgeInsets.all(Space.sm),
+        // 8 at the sides, 4 above and below: the items are 48 tall (touch
+        // target) while the indicator keeps its 40 dp look (inset 4).
+        // (The 1 px border sits inside the 56, hence xs - 1.)
+        padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: Space.xs - 1),
         decoration: BoxDecoration(
           color: c.surface,
           borderRadius: Radii.fullR,
@@ -78,6 +82,8 @@ class MullNavPill extends StatelessWidget {
             // One painter driven by two spring values; the items above never
             // repaint it.
             Positioned.fill(
+              top: Space.xs,
+              bottom: Space.xs,
               child: NavIndicator(left: left, right: right, color: c.primaryContainer, destination: index),
             ),
             Row(
@@ -227,7 +233,7 @@ class _NavItemState extends State<_NavItem> {
         onHighlightChanged: (bool v) => setState(() => _pressed = v),
         customBorder: const StadiumBorder(),
         child: SizedBox(
-          height: 40,
+          height: IconSpec.tapTarget,
           // Label width 0 to auto on springDefault (clamped, never negative);
           // the padding grows with it. Icon and label change together.
           child: TweenAnimationBuilder<double>(
@@ -241,7 +247,7 @@ class _NavItemState extends State<_NavItem> {
               builder: (BuildContext context, Color? color, Widget? _) => Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  SizedBox(width: 12 - t),
+                  SizedBox(width: 14 - 3 * t),
                   AnimatedScale(
                     scale: _pressed && level != MotionLevel.off ? 0.9 : 1,
                     duration: Motion.fastCurve.settle,
@@ -273,7 +279,7 @@ class _NavItemState extends State<_NavItem> {
                         ),
                       ),
                     ),
-                  SizedBox(width: 12 + 2 * t),
+                  const SizedBox(width: 14),
                 ],
               ),
             ),

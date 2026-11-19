@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mull/app/nav_bar.dart';
 import 'package:mull/app/nav_shell.dart';
 import 'package:mull/core/theme/app_theme.dart';
 import 'package:mull/core/theme/palette.dart';
@@ -154,5 +155,16 @@ void main() {
     expect(sc[3].offset, 0);
     expect(router.routerDelegate.currentConfiguration.uri.queryParameters['focus'], isNotNull);
     h.dispose();
+  });
+
+  testWidgets('every nav item is at least a 48 x 48 touch target', (WidgetTester tester) async {
+    await pump(tester);
+    final Finder items = find.descendant(of: find.byType(MullNavPill), matching: find.byType(InkWell));
+    expect(items, findsNWidgets(5));
+    for (final Element e in items.evaluate()) {
+      final Size size = tester.getSize(find.byWidget(e.widget));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
   });
 }
