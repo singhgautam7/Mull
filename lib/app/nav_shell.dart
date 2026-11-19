@@ -1,13 +1,76 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../core/theme/tokens.dart';
 import 'nav_bar.dart';
 
+/// The Mull tab pages vertically, so a tap on it while active does nothing.
+const int kMullTab = 1;
+const int kSearchTab = 3;
+
+/// A tap on a nav destination.
+///
+/// Another tab: switch to it as before. The active tab: scroll its list back
+/// to the top and stop there, nothing is popped (Kuber). Search also raises
+/// the keyboard, as YouTube Music and Spotify do: a fresh `focus` token is
+/// what tells the screen to take focus again. The Mull tab does nothing.
+void onTabSelected(BuildContext context, StatefulNavigationShell shell, int i, {required String searchPath}) {
+  if (i != shell.currentIndex) {
+    shell.goBranch(i);
+    return;
+  }
+  if (i == kMullTab) return;
+  scrollTabToTop(shell.route.branches[i].navigatorKey.currentContext);
+  if (i == kSearchTab) context.go('$searchPath?focus=${DateTime.now().millisecondsSinceEpoch}');
+}
+
+/// Scrolls the first vertical scroll view of the topmost route under [nav]
+/// to its start. Runs only on the tap. A no-op at the top.
+void scrollTabToTop(BuildContext? nav) {
+  if (nav == null) return;
+  // Each route wraps its page in a PrimaryScrollController; the last one
+  // found is the route on top.
+  Element? route;
+  void findRoute(Element e) {
+    if (e.widget is PrimaryScrollController) {
+      route = e;
+      return;
+    }
+    e.visitChildren(findRoute);
+  }
+
+  nav.visitChildElements(findRoute);
+  ScrollPosition? pos;
+  void findScrollable(Element e) {
+    if (pos != null) return;
+    if (e is StatefulElement && e.state is ScrollableState) {
+      final ScrollableState s = e.state as ScrollableState;
+      if (axisDirectionToAxis(s.axisDirection) == Axis.vertical) {
+        pos = s.position;
+        return;
+      }
+    }
+    e.visitChildren(findScrollable);
+  }
+
+  route?.visitChildren(findScrollable);
+  final ScrollPosition? p = pos;
+  if (p == null || p.pixels <= p.minScrollExtent) return;
+  // Never jump: a jump lays out every row on the way in one frame. Longer
+  // trips get more frames, on an even-speed curve.
+  final double screens = (p.pixels - p.minScrollExtent) / p.viewportDimension;
+  final int ms = (250 + screens * 40).clamp(250, 800).round();
+  p.animateTo(
+    p.minScrollExtent,
+    duration: Duration(milliseconds: ms),
+    curve: Curves.easeInOutSine,
+  );
+}
+
 /// True while a full-screen surface wants the pill gone (the multi-select
 /// header, a full-screen word view). The pill leaves downward on `navHide`.
-final NotifierProvider<NavHidden, bool> navHiddenProvider =
-    NotifierProvider<NavHidden, bool>(NavHidden.new);
+final NotifierProvider<NavHidden, bool> navHiddenProvider = NotifierProvider<NavHidden, bool>(NavHidden.new);
 
 class NavHidden extends Notifier<bool> {
   @override
@@ -22,13 +85,7 @@ class NavHidden extends Notifier<bool> {
 /// comes back on any scroll-up, as in Perch. The Mull tab pages vertically,
 /// so scrolling there never hides it.
 class NavShell extends ConsumerStatefulWidget {
-  const NavShell({
-    required this.child,
-    required this.index,
-    required this.onSelect,
-    this.tabCount = 5,
-    super.key,
-  });
+  const NavShell({required this.child, required this.index, required this.onSelect, this.tabCount = 5, super.key});
 
   final Widget child;
   final int index;
@@ -122,10 +179,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
                         final double t = pageCurved.value;
                         if (t == 1.0 || reduced) return child!;
                         final double dx = _forward ? (1.0 - t) : -(1.0 - t);
-                        return FractionalTranslation(
-                          translation: Offset(dx, 0.0),
-                          child: child,
-                        );
+                        return FractionalTranslation(translation: Offset(dx, 0.0), child: child);
                       },
                       child: widget.child,
                     ),
@@ -149,7 +203,9 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
                         ),
                       );
                     },
-                    child: Center(child: MullNavPill(index: widget.index, onSelect: widget.onSelect)),
+                    child: Center(
+                      child: MullNavPill(index: widget.index, onSelect: widget.onSelect),
+                    ),
                   ),
                 ),
               ),
