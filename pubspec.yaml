@@ -47,6 +47,12 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # The on-device perf harness (integration_test/perf_test.dart). Both ship
+  # with the Flutter SDK; dev only, nothing reaches the app.
+  integration_test:
+    sdk: flutter
+  flutter_driver:
+    sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
