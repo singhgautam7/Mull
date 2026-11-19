@@ -402,7 +402,9 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
             // never look alike.
             Positioned(
               left: Space.screen,
-              top: pad.top + 22,
+              // The chips are 32 tall and pad themselves to a 48 dp touch
+              // target, so they sit Space.sm higher to look where they did.
+              top: pad.top + 22 - Space.sm,
               child: _scope != null
                   ? _ScopeChip(
                       title: scopeTitle ?? _scope!,
@@ -509,7 +511,15 @@ class _MixChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return Semantics(
+    // The 8 dp above and below make the touch target 48 tall; the chip itself
+    // stays 32 (HANDOFF). Taps in the margin go to the same handler.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      excludeFromSemantics: true,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.sm),
+        child: Semantics(
       button: true,
       label: 'Mix: $name',
       child: Pressable(
@@ -537,6 +547,8 @@ class _MixChip extends StatelessWidget {
           ),
         ),
       )),
+        ),
+      ),
     );
   }
 }
@@ -552,6 +564,26 @@ class _ScopeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
+    // Padded to 48 tall (and 8 at the end) so the close button's touch target
+    // is 48 x 48 around its 22 dp circle; the chip itself is unchanged.
+    return Stack(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: Space.sm, bottom: Space.sm, right: Space.sm),
+          child: _body(c),
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: IconSpec.tapTarget,
+          child: GestureDetector(behavior: HitTestBehavior.translucent, excludeFromSemantics: true, onTap: onClose),
+        ),
+      ],
+    );
+  }
+
+  Widget _body(MullColors c) {
     return Material(
       color: c.primaryContainer,
       shape: const StadiumBorder(),
