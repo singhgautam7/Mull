@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -205,15 +206,18 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
 
     if (_loading || _questions.isEmpty) {
       return Scaffold(
-        body: SafeArea(
-          child: Column(
+        // Nothing scrolls here, so the header stays fixed.
+        body: HeaderPage(
+          floating: false,
+          header: AppHeader(
+            title: 'Quiz',
+            subtitle: shelfTitle,
+            onBack: () => Navigator.of(context).pop(),
+          ),
+          body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              AppHeader(
-                title: 'Quiz',
-                subtitle: shelfTitle,
-                onBack: () => Navigator.of(context).pop(),
-              ),
+              HeaderPage.gap(),
               LoadingHairline(visible: _loading),
               if (!_loading)
                 const Expanded(
@@ -495,8 +499,6 @@ class _QuizOptionCard extends StatefulWidget {
 }
 
 class _QuizOptionCardState extends State<_QuizOptionCard> {
-  bool _pressed = false;
-
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
@@ -556,18 +558,11 @@ class _QuizOptionCardState extends State<_QuizOptionCard> {
           opacity: gone ? 0 : 1,
           child: Padding(
               padding: const EdgeInsets.only(bottom: Space.sm),
-              child: GestureDetector(
+              child: Pressable(
+                kind: PressKind.card,
                 onTap: widget.onTap,
-                onTapDown: widget.onTap == null ? null : (_) => setState(() => _pressed = true),
-                onTapUp: (_) => setState(() => _pressed = false),
-                onTapCancel: () => setState(() => _pressed = false),
-                behavior: HitTestBehavior.opaque,
-                // The finger's own feedback: down at once, `instant`, linear.
-                child: AnimatedScale(
-                  scale: _pressed ? 0.98 : 1,
-                  duration: Motion.instant,
-                  curve: Curves.linear,
-                  child: AnimatedContainer(
+                enabled: widget.onTap != null,
+                child: AnimatedContainer(
                     duration: reveal,
                     curve: curve,
                     constraints: const BoxConstraints(minHeight: 56),
@@ -608,9 +603,7 @@ class _QuizOptionCardState extends State<_QuizOptionCard> {
                         ),
                       ],
                     ),
-                  ),
-                ),
-              ),
+                  )),
             ),
         ),
       ),
@@ -667,19 +660,20 @@ class _AnswerDetailCard extends ConsumerWidget {
           const SizedBox(height: Space.sm),
           Row(
             children: <Widget>[
-              TextButton.icon(
+              AppButton(
+                compact: true,
+                type: AppButtonType.muted,
+                icon: Icons.open_in_new_rounded,
+                label: 'Open the entry',
                 onPressed: onOpenEntry,
-                icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                label: const Text('Open the entry'),
               ),
               const SizedBox(width: Space.sm),
-              TextButton.icon(
+              AppButton(
+                compact: true,
+                type: AppButtonType.muted,
+                icon: isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                label: isBookmarked ? 'Bookmarked' : 'Bookmark',
                 onPressed: () => ref.read(userRepositoryProvider).toggleBookmark(word.wordKey),
-                icon: Icon(
-                  isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                  size: 16,
-                ),
-                label: Text(isBookmarked ? 'Bookmarked' : 'Bookmark'),
               ),
             ],
           ),
@@ -814,7 +808,7 @@ class _QuizResultViewState extends ConsumerState<_QuizResultView> {
                     ),
                     const SizedBox(height: Space.sm),
                     for (final ({DictionaryWord word, bool skipped}) item in widget.missed) ...<Widget>[
-                      InkWell(
+                      Pressable(kind: PressKind.row, child: InkWell(
                         onTap: () => showWordSheet(context, wordKey: item.word.wordKey),
                         borderRadius: Radii.cardR,
                         child: Container(
@@ -877,7 +871,7 @@ class _QuizResultViewState extends ConsumerState<_QuizResultView> {
                             ],
                           ),
                         ),
-                      ),
+                      )),
                       const SizedBox(height: Space.xs),
                     ],
                     const SizedBox(height: Space.md),
@@ -885,7 +879,7 @@ class _QuizResultViewState extends ConsumerState<_QuizResultView> {
 
                   // WHAT YOU GOT RIGHT (collapsed by default)
                   if (widget.correctWords.isNotEmpty) ...<Widget>[
-                    InkWell(
+                    Pressable(kind: PressKind.row, child: InkWell(
                       onTap: () => setState(() => _correctExpanded = !_correctExpanded),
                       borderRadius: Radii.cardR,
                       child: Container(
@@ -919,7 +913,7 @@ class _QuizResultViewState extends ConsumerState<_QuizResultView> {
                             if (_correctExpanded) ...<Widget>[
                               const SizedBox(height: Space.md),
                               for (final DictionaryWord word in widget.correctWords) ...<Widget>[
-                                InkWell(
+                                Pressable(kind: PressKind.row, child: InkWell(
                                   onTap: () => showWordSheet(context, wordKey: word.wordKey),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -946,13 +940,13 @@ class _QuizResultViewState extends ConsumerState<_QuizResultView> {
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               ],
                             ],
                           ],
                         ),
                       ),
-                    ),
+                    )),
                     const SizedBox(height: Space.lg),
                   ],
 

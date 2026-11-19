@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -178,6 +179,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   /// until the animation is over.
   bool _ready = false;
 
+  /// Rows being removed by a bulk delete: key to (position, row). They stay
+  /// in the list while they shrink out (`MotionListItem`), after the data
+  /// has already dropped them, and go once `onRemoved` fires.
+  final Map<String, (int, CollectionEntry)> _leaving = <String, (int, CollectionEntry)>{};
+
   UserRepository get _user => ref.read(userRepositoryProvider);
 
   @override
@@ -216,8 +222,14 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   void _openAdd({bool phrases = false}) =>
       unawaited(context.push(Routes.shelfAdd(widget.slug, phrases: phrases)));
 
-  Future<void> _deleteSelected(List<String> keys) async {
+  Future<void> _deleteSelected(List<String> keys, List<CollectionEntry> shown) async {
     final List<String> removed = keys.toList();
+    setState(() {
+      for (final String k in removed) {
+        final int at = shown.indexWhere((CollectionEntry e) => e.key == k);
+        if (at >= 0) _leaving[k] = (at, shown[at]);
+      }
+    });
     for (final String k in removed) {
       await _user.removeFromCollection(widget.slug, k);
     }
@@ -535,9 +547,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   }
 
   void _handleItemLongPress(CollectionEntry entry, bool own) async {
-    if (ref.read(settingsProvider).haptics) {
-      unawaited(HapticFeedback.lightImpact());
-    }
+    MullHaptics.longPress();
     if (own) {
       setState(() {
         _selecting = true;
@@ -604,11 +614,21 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     // Real-time filter
     final String q = _searchQuery.trim().toLowerCase();
     final List<CollectionEntry> displayItems = q.isEmpty
-        ? sortedEntries
+        ? List<CollectionEntry>.of(sortedEntries)
         : sortedEntries.where((CollectionEntry e) {
             return e.title.toLowerCase().contains(q) ||
                 e.definition.toLowerCase().contains(q);
           }).toList();
+
+    if (_leaving.isNotEmpty) {
+      // Re-seat the rows that are shrinking out where they were.
+      final List<MapEntry<String, (int, CollectionEntry)>> gone = _leaving.entries.toList()
+        ..sort((MapEntry<String, (int, CollectionEntry)> a, MapEntry<String, (int, CollectionEntry)> b) => a.value.$1.compareTo(b.value.$1));
+      for (final MapEntry<String, (int, CollectionEntry)> g in gone) {
+        if (displayItems.any((CollectionEntry e) => e.key == g.key)) continue;
+        displayItems.insert(math.min(g.value.$1, displayItems.length), g.value.$2);
+      }
+    }
 
     final int seenCount = rawEntries
         .where((CollectionEntry e) => seen.containsKey(e.key))
@@ -618,65 +638,75 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        body: SafeArea(
-          bottom: false,
-          child: Stack(
+        body: Stack(
             children: <Widget>[
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (_selecting)
-                    _SelectionHeader(
-                      count: _selected.length,
-                      onClose: () => setState(() {
-                        _selecting = false;
-                        _selected.clear();
-                      }),
-                      onBookmark: () async {
-                        for (final String k in _selected) {
-                          await _user.addBookmark(k);
-                        }
-                        setState(() {
+              HeaderPage(
+                // Selecting swaps in a contextual header that stays put.
+                floating: !_selecting,
+                header: _selecting
+                    ? AppHeader(
+                        title: '${_selected.length} selected',
+                        onBack: () => setState(() {
                           _selecting = false;
                           _selected.clear();
-                        });
-                      },
-                      onDelete: own
-                          ? () => _deleteSelected(_selected.toList())
-                          : null,
-                    )
-                  else
-                    AppHeader(
-                      title: title,
-                      onBack: () => context.pop(),
-                      actions: <Widget>[
-                        Builder(
-                          builder: (BuildContext anchor) => AppIconButton(
-                            icon: Icons.add_rounded,
-                            semanticLabel: 'Add',
-                            onPressed: () => unawaited(_showAddMenu(anchor)),
+                        }),
+                        backLabel: 'Cancel selection',
+                        actions: <Widget>[
+                          AppIconButton(
+                            icon: Icons.bookmark_border_rounded,
+                            semanticLabel: 'Bookmark selected',
+                            onPressed: _selected.isEmpty
+                                ? null
+                                : () async {
+                                    for (final String k in _selected) {
+                                      await _user.addBookmark(k);
+                                    }
+                                    setState(() {
+                                      _selecting = false;
+                                      _selected.clear();
+                                    });
+                                  },
                           ),
-                        ),
-                        Builder(
-                          builder: (BuildContext anchor) => AppIconButton(
-                            icon: Icons.more_horiz_rounded,
-                            semanticLabel: 'More',
-                            onPressed: () => unawaited(
-                              _overflow(anchor, collection, rawEntries),
+                          if (own)
+                            AppIconButton(
+                              icon: Icons.delete_outline_rounded,
+                              semanticLabel: 'Remove selected',
+                              onPressed: _selected.isEmpty
+                                  ? null
+                                  : () => _deleteSelected(_selected.toList(), displayItems),
+                            ),
+                        ],
+                      )
+                    : AppHeader(
+                        title: title,
+                        onBack: () => context.pop(),
+                        actions: <Widget>[
+                          Builder(
+                            builder: (BuildContext anchor) => AppIconButton(
+                              icon: Icons.add_rounded,
+                              semanticLabel: 'Add',
+                              onPressed: () => unawaited(_showAddMenu(anchor)),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-
-                  Expanded(
-                    child: NotificationListener<ScrollNotification>(
+                          Builder(
+                            builder: (BuildContext anchor) => AppIconButton(
+                              icon: Icons.more_horiz_rounded,
+                              semanticLabel: 'More',
+                              onPressed: () => unawaited(
+                                _overflow(anchor, collection, rawEntries),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                body: NotificationListener<ScrollNotification>(
                       onNotification: (ScrollNotification n) {
                         _onScroll(n);
                         return false;
                       },
                       child: CustomScrollView(
                         slivers: <Widget>[
+                          HeaderPage.sliverGap(),
                           // Top row: Search bar + info row
                           SliverToBoxAdapter(
                             child: Column(
@@ -782,21 +812,27 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                             ),
                           ),
                           if (!loaded)
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(
-                                Space.screen,
-                                Space.sm,
-                                Space.screen,
-                                Space.bottomSafe + 48,
-                              ),
-                              sliver: SliverList.separated(
-                                itemCount: 6,
-                                separatorBuilder: (BuildContext _, int _) =>
-                                    const SizedBox(height: Space.row),
-                                itemBuilder: (BuildContext _, int _) =>
-                                    _viewMode == CollectionViewMode.card
-                                    ? const SkeletonCard()
-                                    : const SkeletonRow(),
+                            // Behind the threshold: the push transition and a
+                            // read that answers inside it draw nothing.
+                            SliverToBoxAdapter(
+                              child: Delayed(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    Space.screen,
+                                    Space.sm,
+                                    Space.screen,
+                                    Space.bottomSafe + 48,
+                                  ),
+                                  child: Column(
+                                    spacing: Space.row,
+                                    children: <Widget>[
+                                      for (int n = 0; n < 6; n++)
+                                        _viewMode == CollectionViewMode.card
+                                            ? const SkeletonCard()
+                                            : const SkeletonRow(),
+                                    ],
+                                  ),
+                                ),
                               ),
                             )
                           else if (displayItems.isEmpty)
@@ -832,31 +868,52 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                 Space.screen,
                                 Space.bottomSafe + 48,
                               ),
-                              sliver: SliverList.separated(
+                              sliver: SliverList.builder(
                                 itemCount: displayItems.length,
-                                separatorBuilder: (BuildContext _, int _) =>
-                                    const SizedBox(height: Space.row),
+                                findChildIndexCallback: (Key k) {
+                                  final int at = displayItems.indexWhere(
+                                    (CollectionEntry e) => ValueKey<String>(e.key) == k,
+                                  );
+                                  return at < 0 ? null : at;
+                                },
                                 itemBuilder: (BuildContext context, int i) {
                                   final CollectionEntry item = displayItems[i];
-                                  return SearchResultCard(
-                                    result: item.toSearchResult(),
-                                    query: _searchQuery,
-                                    selecting: _selecting,
-                                    selected: _selected.contains(item.key),
-                                    onTap: () => _handleItemTap(item),
-                                    onLongPress: () =>
-                                        _handleItemLongPress(item, own),
+                                  // The gap between cards is part of the row,
+                                  // so it shrinks away with it.
+                                  return MotionListItem(
+                                    key: ValueKey<String>(item.key),
+                                    present: !_leaving.containsKey(item.key),
+                                    onRemoved: () => setState(() => _leaving.remove(item.key)),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(bottom: Space.row),
+                                      child: SearchResultCard(
+                                        result: item.toSearchResult(),
+                                        query: _searchQuery,
+                                        selecting: _selecting,
+                                        selected: _selected.contains(item.key),
+                                        onTap: () => _handleItemTap(item),
+                                        onLongPress: () =>
+                                            _handleItemLongPress(item, own),
+                                      ),
+                                    ),
                                   );
                                 },
                               ),
                             )
                           else ...<Widget>[
+                            // Only the page header is sticky: the column
+                            // header scrolls away with the rows.
                             SliverPersistentHeader(
-                              pinned: true,
                               delegate: _TableHeader(c),
                             ),
                             SliverList.builder(
                               itemCount: displayItems.length,
+                              findChildIndexCallback: (Key k) {
+                                final int at = displayItems.indexWhere(
+                                  (CollectionEntry e) => ValueKey<String>(e.key) == k,
+                                );
+                                return at < 0 ? null : at;
+                              },
                               itemBuilder: (BuildContext context, int i) {
                                 final CollectionEntry item = displayItems[i];
                                 final String? ex =
@@ -864,7 +921,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                     (item.isWord
                                         ? dict.examples(item.key).firstOrNull
                                         : null);
-                                return WordTableRow(
+                                return MotionListItem(
+                                  key: ValueKey<String>(item.key),
+                                  present: !_leaving.containsKey(item.key),
+                                  onRemoved: () => setState(() => _leaving.remove(item.key)),
+                                  child: WordTableRow(
                                   title: item.title,
                                   definition: item.definition,
                                   example: ex,
@@ -874,7 +935,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                                   onTap: () => _handleItemTap(item),
                                   onLongPress: () =>
                                       _handleItemLongPress(item, own),
-                                );
+                                  ));
                               },
                             ),
                             const SliverToBoxAdapter(
@@ -884,8 +945,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                         ],
                       ),
                     ),
-                  ),
-                ],
               ),
               if (!_selecting)
                 Positioned(
@@ -949,72 +1008,14 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                   ),
                 ),
             ],
-          ),
         ),
       ),
     );
   }
 }
 
-/// Multi-select: the header turns `primaryContainer`, shows "{n} selected"
-/// and bookmark/delete actions.
-class _SelectionHeader extends StatelessWidget {
-  const _SelectionHeader({
-    required this.count,
-    required this.onClose,
-    required this.onBookmark,
-    this.onDelete,
-  });
-
-  final int count;
-  final VoidCallback onClose;
-  final VoidCallback onBookmark;
-  final VoidCallback? onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Container(
-      color: c.primaryContainer,
-      padding: const EdgeInsets.fromLTRB(Space.lg, 14, Space.lg, Space.md),
-      child: Row(
-        children: <Widget>[
-          AppIconButton(
-            icon: Icons.close_rounded,
-            semanticLabel: 'Cancel selection',
-            onPressed: onClose,
-            tint: c.onPrimaryContainer,
-            background: Colors.transparent,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '$count selected',
-              style: MullType.headerTitle.copyWith(color: c.onPrimaryContainer),
-            ),
-          ),
-          AppIconButton(
-            icon: Icons.bookmark_border_rounded,
-            semanticLabel: 'Bookmark selected',
-            onPressed: count == 0 ? null : onBookmark,
-            tint: c.onPrimaryContainer,
-            background: Colors.transparent,
-          ),
-          if (onDelete != null)
-            AppIconButton(
-              icon: Icons.delete_outline_rounded,
-              semanticLabel: 'Remove selected',
-              onPressed: count == 0 ? null : onDelete,
-              tint: c.onPrimaryContainer,
-              background: Colors.transparent,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Sticky three-column header: WORD / DEFINITION / EXAMPLE.
+/// Three-column header: WORD / DEFINITION / EXAMPLE. Not pinned: it scrolls
+/// with the rows (only the page header is sticky).
 class _TableHeader extends SliverPersistentHeaderDelegate {
   _TableHeader(this.c);
 
@@ -1097,7 +1098,9 @@ class WordTableRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return InkWell(
+    return Pressable(
+      kind: PressKind.row,
+      child: InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Container(
@@ -1183,6 +1186,6 @@ class WordTableRow extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }

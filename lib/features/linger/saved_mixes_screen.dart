@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/mix_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -25,64 +26,92 @@ import 'mix_sheet.dart';
 /// "Your mixes". A mix row's subtitle is its sources and familiarity, not a
 /// count of words owned, because a mix is a query and a list is a collection
 /// of words.
-class SavedMixesScreen extends ConsumerWidget {
+class SavedMixesScreen extends ConsumerStatefulWidget {
   const SavedMixesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SavedMixesScreen> createState() => _SavedMixesScreenState();
+}
+
+class _SavedMixesScreenState extends ConsumerState<SavedMixesScreen> {
+  /// A mix being deleted: id to (position, mix). It stays in the list while
+  /// it shrinks out, after the data has already dropped it.
+  final Map<int, (int, MixSpec)> _leaving = <int, (int, MixSpec)>{};
+
+  @override
+  Widget build(BuildContext context) {
     final List<MixSpec> saved = (ref.watch(mixesProvider).value ?? const <MixSpec>[])
         .where((MixSpec m) => !m.isPreset)
         .toList();
+    for (final MapEntry<int, (int, MixSpec)> g in (_leaving.entries.toList()
+      ..sort((MapEntry<int, (int, MixSpec)> a, MapEntry<int, (int, MixSpec)> b) => a.value.$1.compareTo(b.value.$1)))) {
+      if (saved.any((MixSpec m) => m.id == g.key)) continue;
+      saved.insert(saved.length < g.value.$1 ? saved.length : g.value.$1, g.value.$2);
+    }
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            AppHeader(
-              title: 'Your mixes',
-              onBack: () => context.pop(),
-              actions: <Widget>[
-                Builder(
-                  builder: (BuildContext anchor) => AppIconButton(
-                    icon: Icons.more_horiz_rounded,
-                    semanticLabel: 'More',
-                    onPressed: () async {
-                      final String? action = await showAppMenu<String>(
-                        context: context,
-                        anchorContext: anchor,
-                        minWidth: 180,
-                        entries: const <AppMenuEntry<String>>[
-                          AppMenuEntry<String>(
-                            value: 'how_to_use',
-                            label: 'How to use',
-                            icon: Icons.help_outline_rounded,
-                          ),
-                        ],
-                      );
-                      if (action == 'how_to_use' && context.mounted) {
-                        await showHowToUseMixesSheet(context);
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Expanded(
-              child: saved.isEmpty
-                  ? const EmptyState(
-                      title: 'No mixes saved yet',
-                      message: 'Change the sources on the Mull tab and save the selection. It will appear here and in the mix sheet.',
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                      itemCount: saved.length,
-                      separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
-                      itemBuilder: (BuildContext context, int i) => MixRow(mix: saved[i]),
-                    ),
+      body: HeaderPage(
+        header: AppHeader(
+          title: 'Your mixes',
+          onBack: () => context.pop(),
+          actions: <Widget>[
+            Builder(
+              builder: (BuildContext anchor) => AppIconButton(
+                icon: Icons.more_horiz_rounded,
+                semanticLabel: 'More',
+                onPressed: () async {
+                  final String? action = await showAppMenu<String>(
+                    context: context,
+                    anchorContext: anchor,
+                    minWidth: 180,
+                    entries: const <AppMenuEntry<String>>[
+                      AppMenuEntry<String>(
+                        value: 'how_to_use',
+                        label: 'How to use',
+                        icon: Icons.help_outline_rounded,
+                      ),
+                    ],
+                  );
+                  if (action == 'how_to_use' && context.mounted) {
+                    await showHowToUseMixesSheet(context);
+                  }
+                },
+              ),
             ),
           ],
         ),
+        body: saved.isEmpty
+            ? Column(
+                children: <Widget>[
+                  HeaderPage.gap(),
+                  const Expanded(
+                    child: EmptyState(
+                      title: 'No mixes saved yet',
+                      message: 'Change the sources on the Mull tab and save the selection. It will appear here and in the mix sheet.',
+                    ),
+                  ),
+                ],
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
+                itemCount: saved.length + 1,
+                itemBuilder: (BuildContext context, int i) {
+                  if (i == 0) return HeaderPage.gap();
+                  final MixSpec m = saved[i - 1];
+                  // The gap below a row is part of it, so it shrinks away with it.
+                  return MotionListItem(
+                    key: ValueKey<int?>(m.id),
+                    present: !_leaving.containsKey(m.id),
+                    onRemoved: () => setState(() => _leaving.remove(m.id)),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: Space.row),
+                      child: MixRow(
+                        mix: m,
+                        onDeleting: () => setState(() => _leaving[m.id!] = (i - 1, m)),
+                      ),
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
@@ -91,10 +120,14 @@ class SavedMixesScreen extends ConsumerWidget {
 /// One saved mix: name, `{n} topics · {familiarity} · {n} words`, a small
 /// pool warning, and a long-press menu.
 class MixRow extends ConsumerWidget {
-  const MixRow({required this.mix, this.filled = false, super.key});
+  const MixRow({required this.mix, this.filled = false, this.onDeleting, super.key});
 
   final MixSpec mix;
   final bool filled;
+
+  /// Called once the delete is confirmed, just before the mix is removed, so
+  /// a list can keep the row long enough to animate it out.
+  final VoidCallback? onDeleting;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -146,14 +179,19 @@ class MixRow extends ConsumerWidget {
             message: 'The words stay where they are. Only the mix is removed.',
             confirmLabel: 'Delete',
           );
-          if (ok) await repo.delete(mix.id!);
+          if (ok) {
+            onDeleting?.call();
+            await repo.delete(mix.id!);
+          }
       }
     }
 
     return Semantics(
       button: true,
       label: '${mix.name}, $subtitle',
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.card,
+        child: InkWell(
         onTap: () => context.go(Routes.playMix(mix.id!)),
         onLongPress: () => unawaited(menu(Offset.zero)),
         onTapDown: (_) {},
@@ -184,19 +222,21 @@ class MixRow extends ConsumerWidget {
                 ),
               ),
               Builder(
-                builder: (BuildContext anchor) => IconButton(
+                builder: (BuildContext anchor) => AppIconButton(
                   onPressed: () {
                     final RenderBox box = anchor.findRenderObject()! as RenderBox;
                     unawaited(menu(box.localToGlobal(Offset(0, box.size.height))));
                   },
-                  icon: Icon(Icons.more_vert_rounded, color: c.iconMuted),
-                  tooltip: 'Mix options',
+                  icon: Icons.more_vert_rounded,
+                  filled: false,
+                  tint: c.iconMuted,
+                  semanticLabel: 'Mix options',
                 ),
               ),
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }

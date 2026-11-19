@@ -7,6 +7,7 @@ import '../../core/database/mix_repository.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -302,7 +303,10 @@ class _SourceRow extends StatelessWidget {
       checked: checked,
       enabled: enabled,
       label: title,
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.row,
+        enabled: enabled,
+        child: InkWell(
         onTap: onTap,
         borderRadius: Radii.thumbR,
         child: ConstrainedBox(
@@ -345,7 +349,7 @@ class _SourceRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }
