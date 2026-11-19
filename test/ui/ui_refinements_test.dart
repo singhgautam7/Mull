@@ -287,7 +287,9 @@ void main() {
           overrides: <Override>[prefsProvider.overrideWithValue(prefs)],
           child: MaterialApp(
             theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-            home: const SettingsScreen(),
+            // Pronunciation speed now lives on the Words page (settings
+            // hub, Part E of the polish pass).
+            home: const WordsSettingsScreen(),
           ),
         ),
       );
@@ -317,7 +319,7 @@ void main() {
   );
 
   testWidgets(
-    'MoreScreen shows Data row under Your data below Permissions without Export',
+    'MoreScreen shows Data and Permissions under Yours, without Export',
     (WidgetTester tester) async {
       await tester.runAsync(() async {
         SharedPreferences.setMockInitialValues(<String, Object>{
@@ -340,8 +342,9 @@ void main() {
         );
         await tester.pump();
 
-        // Under Your data: Stats, Permissions, Data should be present; Export should not be under Your data
-        expect(find.text('YOUR DATA'), findsOneWidget);
+        // Settings, Data and Permissions sit under Yours, Stats under Browse;
+        // Export is not a More row.
+        expect(find.text('YOURS'), findsOneWidget);
         expect(find.text('Stats'), findsOneWidget);
         expect(find.text('Permissions'), findsOneWidget);
         expect(find.text('Data'), findsOneWidget);
@@ -378,7 +381,7 @@ void main() {
 
       expect(find.text('IMPORT AND EXPORT'), findsOneWidget);
       expect(find.text('Export app data'), findsOneWidget);
-      expect(find.text('JSON · everything but the dictionary'), findsOneWidget);
+      expect(find.text('A JSON file, no dictionary'), findsOneWidget);
       expect(find.text('Import app data'), findsOneWidget);
       expect(find.text('CLEAR AND RESET'), findsOneWidget);
       expect(find.text('Clear notes'), findsOneWidget);
@@ -734,7 +737,7 @@ void main() {
     },
   );
 
-  testWidgets('MoreScreen General section order is Shelves, Mixes, Settings', (
+  testWidgets('MoreScreen Browse section order is Shelves, Mixes, Stats', (
     WidgetTester tester,
   ) async {
     await tester.runAsync(() async {
@@ -758,8 +761,8 @@ void main() {
       );
       await tester.pump();
 
-      // Check General section rows
-      expect(find.text('GENERAL'), findsOneWidget);
+      // Browse comes first: Shelves, Mixes, Stats (Settings moved to Yours).
+      expect(find.text('BROWSE'), findsOneWidget);
       final List<SettingsRow> rows = tester
           .widgetList<SettingsRow>(find.byType(SettingsRow))
           .take(3)
@@ -767,7 +770,7 @@ void main() {
       expect(rows.length, 3);
       expect(rows[0].label, 'Shelves');
       expect(rows[1].label, 'Mixes');
-      expect(rows[2].label, 'Settings');
+      expect(rows[2].label, 'Stats');
 
       await tester.pumpWidget(const SizedBox());
       await Future<void>.delayed(Duration.zero);
