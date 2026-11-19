@@ -36,6 +36,7 @@ class Pressable extends StatefulWidget {
     this.pressedRadius,
     this.morphCorners,
     this.enabled = true,
+    this.haptic = true,
   }) : assert((child == null) != (builder == null));
 
   final Widget? child;
@@ -62,6 +63,11 @@ class Pressable extends StatefulWidget {
   final bool? morphCorners;
   final bool enabled;
 
+  /// A light tick ([MullHaptics.tick]) when a press ends as a tap (released
+  /// within the touch slop), whatever handles the tap. Off for a press whose
+  /// handler fires its own haptic. Independent of the Motion level.
+  final bool haptic;
+
   @override
   State<Pressable> createState() => _PressableState();
 }
@@ -71,6 +77,10 @@ class _PressableState extends State<Pressable>
   final ValueNotifier<double> _v = ValueNotifier(0);
   AnimationController? _c;
   Offset? _down;
+
+  /// Where the current press began, for the tap haptic; null once the
+  /// pointer has moved past the slop (a scroll, not a tap).
+  Offset? _tapAt;
 
   AnimationController get _ctrl => _c ??= AnimationController.unbounded(vsync: this)
     ..addListener(() => _v.value = _c!.value);
@@ -125,6 +135,7 @@ class _PressableState extends State<Pressable>
 
   void _press(PointerDownEvent e) {
     if (!widget.enabled) return;
+    _tapAt = e.position;
     final l = Motion.levelOf(context);
     if (l == MotionLevel.off) return;
     _down = e.position;
@@ -139,7 +150,20 @@ class _PressableState extends State<Pressable>
     _ctrl.springTo(0, Motion.spatial(l, up));
   }
 
+  void _up(PointerUpEvent e) {
+    if (_tapAt != null && widget.haptic && widget.enabled) MullHaptics.tick();
+    _tapAt = null;
+    _release(e);
+  }
+
+  void _cancel(PointerCancelEvent e) {
+    _tapAt = null;
+    _release(e);
+  }
+
   void _move(PointerMoveEvent e) {
+    final t = _tapAt;
+    if (t != null && (e.position - t).distance > kTouchSlop) _tapAt = null;
     final d = _down;
     // A drag (scroll) is not a press: let go once it passes the touch slop.
     if (d != null && (e.position - d).distance > kTouchSlop) _release();
@@ -183,8 +207,8 @@ class _PressableState extends State<Pressable>
       behavior: HitTestBehavior.translucent,
       onPointerDown: _press,
       onPointerMove: _move,
-      onPointerUp: _release,
-      onPointerCancel: _release,
+      onPointerUp: _up,
+      onPointerCancel: _cancel,
       child: body,
     );
   }

@@ -72,6 +72,9 @@ class PlatformChannels(private val activity: Activity) {
                     am.getMemoryInfo(info)
                     result.success(mapOf("totalMb" to (info.totalMem / (1024 * 1024)).toInt(), "lowRam" to am.isLowRamDevice))
                 }
+                // Android 13 and later show their own clipboard confirmation,
+                // so the app shows none there.
+                "sdkInt" -> result.success(Build.VERSION.SDK_INT)
                 "appVersion" -> result.success(
                     activity.packageManager.getPackageInfo(activity.packageName, 0).versionName,
                 )

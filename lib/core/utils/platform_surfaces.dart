@@ -71,6 +71,15 @@ class PlatformSurfaces {
     }
   }
 
+  /// Android's API level (33 is Android 13), or null off Android.
+  static Future<int?> sdkInt() async {
+    try {
+      return await _channel.invokeMethod<int>('sdkInt');
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   /// The installed version name (`1.0.0`), or null off Android.
   static Future<String?> appVersion() async {
     try {
