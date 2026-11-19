@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -125,43 +126,62 @@ class _TimedSnackBarWidget extends StatefulWidget {
 
 class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
     with TickerProviderStateMixin {
-  late final AnimationController _slideCtrl;
-  late final Animation<double> _slideAnim;
+  // Enter / exit position: 0 hidden, 1 shown (unbounded: the spring may pass 1).
+  late final AnimationController _pos = AnimationController.unbounded(vsync: this);
+  late final AnimationController _fade = AnimationController(vsync: this);
   late final AnimationController _progressCtrl;
+  late MotionLevel _level;
+  bool _started = false;
   bool _actionFired = false;
 
   Offset _dragOffset = Offset.zero;
 
   static const double _kSwipeDistanceThreshold = 80.0;
   static const double _kSwipeVelocityThreshold = 600.0;
-  static const Duration _kAnimDuration = Duration(milliseconds: 220);
 
   @override
   void initState() {
     super.initState();
-    _slideCtrl = AnimationController(vsync: this, duration: _kAnimDuration);
-    _slideAnim = CurvedAnimation(
-      parent: _slideCtrl,
-      curve: Curves.easeOutCubic,
-    );
     _progressCtrl = AnimationController(
       vsync: this,
       duration: widget.message.effectiveDuration,
     );
     widget.controller._attach(this);
-    _slideCtrl.forward();
     _progressCtrl.forward();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _level = Motion.levelOf(context);
+    if (_started) return;
+    _started = true;
+    // Enter: slide on springDefault (Subtle: springSubtle over 4 dp; Off: no
+    // slide) and fade on curveEffects.
+    _fade.animateTo(
+      1,
+      duration: _level == MotionLevel.off ? Motion.fxInstant : Motion.snackEnter,
+      curve: Motion.curveEffects,
+    );
+    if (_level == MotionLevel.off) {
+      _pos.value = 1;
+    } else {
+      _pos.springTo(1, Motion.spatial(_level, Motion.springDefault));
+    }
   }
 
   Future<void> _animateOut() async {
     if (!mounted) return;
     _progressCtrl.stop();
-    await _slideCtrl.reverse();
+    final Duration d = _level == MotionLevel.off ? Motion.fxInstant : Motion.snackExit;
+    if (_level != MotionLevel.off) _pos.animateTo(0, duration: d, curve: Motion.curveEffects);
+    await _fade.animateTo(0, duration: d, curve: Motion.curveEffects);
   }
 
   @override
   void dispose() {
-    _slideCtrl.dispose();
+    _pos.dispose();
+    _fade.dispose();
     _progressCtrl.dispose();
     super.dispose();
   }
@@ -215,20 +235,21 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
       left: Space.screen,
       right: Space.screen,
       child: AnimatedBuilder(
-        animation: _slideAnim,
+        animation: Listenable.merge(<Listenable>[_pos, _fade]),
         builder: (BuildContext context, Widget? child) {
-          final double t = _slideAnim.value;
-          final Offset entryOffset = Offset(0, (1 - t) * -80);
-          final Offset totalOffset = entryOffset + _dragOffset;
+          final double p = _pos.value;
           final double dragDistance = _dragOffset.distance;
           final double dragFade = (dragDistance / 200).clamp(0.0, 0.5);
-          return Transform.translate(
-            offset: totalOffset,
-            child: Opacity(
-              opacity: (t * (1 - dragFade)).clamp(0.0, 1.0),
-              child: child,
-            ),
+          Widget w = Opacity(
+            opacity: (_fade.value * (1 - dragFade)).clamp(0.0, 1.0),
+            child: child,
           );
+          w = switch (_level) {
+            MotionLevel.expressive => FractionalTranslation(translation: Offset(0, p - 1), child: w),
+            MotionLevel.subtle => Transform.translate(offset: Offset(0, -4 * (1 - p)), child: w),
+            MotionLevel.off => w,
+          };
+          return Transform.translate(offset: _dragOffset, child: w);
         },
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,

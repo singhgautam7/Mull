@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -73,22 +74,32 @@ class AppIconButton extends StatelessWidget {
           width: target,
           height: target,
           child: Center(
-            child: Material(
-              color: bg,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onPressed,
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: Center(
-                    child: child != null
-                        ? child!(fg)
-                        : Icon(icon, size: glyphSize, color: fg),
+            // Circle at rest, squircle (radius 12) while pressed at Expressive.
+            child: Pressable(
+              kind: PressKind.iconButton,
+              restRadius: size / 2,
+              enabled: onPressed != null,
+              builder: (BuildContext context, double radius, double _) {
+                final BorderRadius shape = BorderRadius.circular(radius);
+                return Material(
+                  color: bg,
+                  shape: RoundedRectangleBorder(borderRadius: shape),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onPressed,
+                    customBorder: RoundedRectangleBorder(borderRadius: shape),
+                    child: SizedBox(
+                      width: size,
+                      height: size,
+                      child: Center(
+                        child: child != null
+                            ? child!(fg)
+                            : Icon(icon, size: glyphSize, color: fg),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
         ),

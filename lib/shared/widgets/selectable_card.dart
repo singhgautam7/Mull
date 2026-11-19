@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -31,45 +32,50 @@ class SelectableCard extends StatelessWidget {
     return Semantics(
       selected: selected,
       button: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: Radii.cardR,
-        child: AnimatedContainer(
-          duration: Motion.of(context, Motion.instant),
-          padding: const EdgeInsets.all(Space.md),
-          decoration: BoxDecoration(
-            color: selected
-                ? (danger ? c.dangerContainer : c.primaryContainer)
-                : c.surfaceContainer,
-            borderRadius: Radii.cardR,
-            border: Border.all(
-              color: selected ? accent : c.outline,
-              width: selected ? 1.5 : 1,
+      child: Pressable(
+        kind: PressKind.card,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: Radii.cardR,
+          child: AnimatedContainer(
+            duration: Motion.of(context, Motion.instant),
+            padding: const EdgeInsets.all(Space.md),
+            decoration: BoxDecoration(
+              color: selected
+                  ? (danger ? c.dangerContainer : c.primaryContainer)
+                  : c.surfaceContainer,
+              borderRadius: Radii.cardR,
+              border: Border.all(
+                color: selected ? accent : c.outline,
+                width: selected ? 1.5 : 1,
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                title,
-                style: MullType.titleMedium
-                    .copyWith(
-                      color: selected
-                          ? (danger ? c.onDangerContainer : c.onPrimaryContainer)
-                          : c.onSurface,
-                    )
-                    .weight(600),
-              ),
-              const SizedBox(height: Space.xs),
-              Text(
-                description,
-                style: MullType.note.copyWith(
-                  color: selected
-                      ? (danger ? c.onDangerContainer : c.onPrimaryContainer)
-                      : c.onSurfaceVariant,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: MullType.titleMedium
+                      .copyWith(
+                        color: selected
+                            ? (danger
+                                  ? c.onDangerContainer
+                                  : c.onPrimaryContainer)
+                            : c.onSurface,
+                      )
+                      .weight(600),
                 ),
-              ),
-            ],
+                const SizedBox(height: Space.xs),
+                Text(
+                  description,
+                  style: MullType.note.copyWith(
+                    color: selected
+                        ? (danger ? c.onDangerContainer : c.onPrimaryContainer)
+                        : c.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

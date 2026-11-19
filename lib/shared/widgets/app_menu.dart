@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -78,8 +79,15 @@ Future<T?> showAppMenu<T>({
     );
   }
 
+  // Flutter's popup grows from the anchor corner; set its spring (Kuber's
+  // menu: springFast in, 90 ms fade out; Subtle springSubtle; Off 90 ms).
+  final MotionLevel level = Motion.levelOf(context);
+  final SpringCurve inC = Motion.spatialCurve(level, Motion.fastCurve);
   return showMenu<T>(
     context: context,
+    popUpAnimationStyle: level == MotionLevel.off
+        ? const AnimationStyle(duration: Motion.fxInstant, reverseDuration: Motion.fxInstant)
+        : AnimationStyle(curve: inC.clamped, duration: inC.settle, reverseDuration: Motion.fxInstant),
     position: position,
     useRootNavigator: true,
     color: c.surface,
@@ -109,7 +117,11 @@ Future<T?> showAppMenu<T>({
             enabled: e.enabled,
             height: 0,
             padding: EdgeInsets.zero,
-            child: _MenuRow<T>(entry: e),
+            child: Pressable(
+              kind: PressKind.row,
+              enabled: e.enabled,
+              child: _MenuRow<T>(entry: e),
+            ),
           ),
     ],
   );

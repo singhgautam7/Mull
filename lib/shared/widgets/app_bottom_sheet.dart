@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -151,10 +152,7 @@ Future<T?> showAppBottomSheet<T>({
     backgroundColor: Colors.transparent,
     // Scrim to 40%, HANDOFF `sheet.present`.
     barrierColor: context.colors.onSurface.withValues(alpha: 0.4),
-    sheetAnimationStyle: AnimationStyle(
-      duration: Motion.of(context, Motion.sheet),
-      curve: Motion.curveOf(context, Motion.decelerate),
-    ),
+    sheetAnimationStyle: sheetStyle(context),
     builder: (BuildContext context) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: AppBottomSheet(
@@ -182,6 +180,7 @@ Future<bool> confirmDialog(
   final bool? ok = await showDialog<bool>(
     context: context,
     useRootNavigator: true,
+    animationStyle: dialogStyle(context),
     barrierColor: c.onSurface.withValues(alpha: 0.4),
     builder: (BuildContext ctx) => Dialog(
       backgroundColor: c.surface,

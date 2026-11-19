@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
+import '../../core/theme/tokens.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 
@@ -22,11 +24,14 @@ class ProgressTrack extends StatelessWidget {
     return SizedBox(
       height: 3,
       width: double.infinity,
-      child: CustomPaint(
-        painter: _TrackPainter(
-          fraction.clamp(0, 1),
-          onContainer ? c.onPrimaryContainer.withValues(alpha: 0.18) : c.divider,
-          onContainer ? c.onPrimaryContainer : c.primary,
+      child: _Eased(
+        value: fraction.clamp(0, 1),
+        builder: (double v) => CustomPaint(
+          painter: _TrackPainter(
+            v,
+            onContainer ? c.onPrimaryContainer.withValues(alpha: 0.18) : c.divider,
+            onContainer ? c.onPrimaryContainer : c.primary,
+          ),
         ),
       ),
     );
@@ -69,7 +74,10 @@ class ProgressRing extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: _RingPainter(fraction.clamp(0, 1), c.divider, c.primary)),
+      child: _Eased(
+        value: fraction.clamp(0, 1),
+        builder: (double v) => CustomPaint(painter: _RingPainter(v, c.divider, c.primary)),
+      ),
     );
   }
 }
@@ -98,4 +106,26 @@ class _RingPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RingPainter old) =>
       old.fraction != fraction || old.track != track || old.arc != arc;
+}
+
+/// Eases a progress fraction to its new value on `standardCurve` at
+/// Expressive (Subtle: springSubtle; Off: instant). The first build and a
+/// settled bar run no ticker. Painted only, so it never changes layout.
+class _Eased extends StatelessWidget {
+  const _Eased({required this.value, required this.builder});
+
+  final double value;
+  final Widget Function(double value) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final MotionLevel level = Motion.levelOf(context);
+    final SpringCurve curve = Motion.spatialCurve(level, Motion.standardCurve);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: value),
+      duration: level == MotionLevel.off ? Duration.zero : curve.settle,
+      curve: curve.clamped,
+      builder: (BuildContext context, double v, Widget? _) => builder(v),
+    );
+  }
 }
