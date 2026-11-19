@@ -78,6 +78,8 @@ flutter:
     - assets/db/dictionary.version
     # Shown in the app under More, straight from the file in the repo root.
     - PRIVACY_POLICY.md
+    # Instrument Sans's licence, registered when the licences page opens.
+    - assets/fonts/OFL.txt
 
   fonts:
     # Bundled, not fetched: Mull makes no network request, ever. Instrument

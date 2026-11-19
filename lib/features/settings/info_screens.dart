@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show LicenseEntryWithLineBreaks, LicenseRegistry;
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,7 +12,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
-import '../../core/router/router.dart';
 import '../../core/utils/format.dart';
 import '../../core/utils/platform_surfaces.dart';
 import '../../shared/widgets/chips.dart';
@@ -73,25 +72,61 @@ final FutureProvider<String?> appVersionProvider = FutureProvider<String?>(
   (Ref ref) => PlatformSurfaces.appVersion(),
 );
 
-/// About Mull: a note from the developer, what it stands for as four tiles,
-/// what it is in a paragraph, the version, the privacy policy, and the ways
-/// out to the developer. Every block sits on the settings card.
-class AboutScreen extends ConsumerWidget {
+/// Instrument Sans ships under the SIL Open Font Licence. The text is read
+/// only when the licence page opens, so nothing runs before the first frame.
+bool _licencesRegistered = false;
+
+void _showLicences(BuildContext context, String? version) {
+  if (!_licencesRegistered) {
+    _licencesRegistered = true;
+    LicenseRegistry.addLicense(() async* {
+      String? text;
+      try {
+        text = await rootBundle.loadString('assets/fonts/OFL.txt');
+      } catch (_) {
+        // The asset is not bundled: list nothing rather than guess.
+      }
+      if (text != null) yield LicenseEntryWithLineBreaks(const <String>['Instrument Sans'], text);
+    });
+  }
+  showLicensePage(context: context, applicationName: 'Mull', applicationVersion: version);
+}
+
+/// About Mull, laid out like Kuber's: the developer's letter, why Mull,
+/// what it is, the version, where the data comes from, and the ways out.
+class AboutScreen extends ConsumerStatefulWidget {
   const AboutScreen({super.key});
 
-  static const String portfolio = 'https://singhgautam.com';
   static const String moreApps = 'https://play.google.com/store/apps/developer?id=Gautam+Rajeev+Singh';
   static const String listing = 'https://play.google.com/store/apps/details?id=com.grs.dictionary';
 
+  @override
+  ConsumerState<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends ConsumerState<AboutScreen> {
   static const List<(IconData, String, String)> _pillars = <(IconData, String, String)>[
-    (Icons.text_fields_rounded, 'Anywhere', 'Select a word in any app and choose Define in Mull. The entry opens right there.'),
-    (Icons.swipe_vertical_rounded, 'Swipe', 'Open the Mull tab and swipe through words one card at a time, the way you would a feed.'),
-    (Icons.shelves, 'Shelves', 'Words for work, for reading, for saying more than very. Make your own for anything.'),
-    (Icons.lock_outline_rounded, 'Offline', 'No ads, no account, no network. The dictionary lives on the phone.'),
+    (Icons.text_fields_rounded, 'Anywhere', 'Select a word in any app, then Define in Mull'),
+    (Icons.swipe_vertical_rounded, 'Swipe', 'Words one card at a time'),
+    (Icons.shelves, 'Shelves', 'Words for work, reading and more'),
+    (Icons.lock_outline_rounded, 'Offline', 'No ads, no account, no network'),
   ];
 
+  /// Read once, as the dictionary stores it. Null when it holds none.
+  late final String? _attribution;
+  late final int _entries;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    final DictionaryDb dict = ref.read(dictProvider);
+    final String? raw = dict.meta('source_attribution')?.trim();
+    _attribution = raw == null || raw.isEmpty ? null : raw;
+    _entries = dict.headwordCount;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final String? version = ref.watch(appVersionProvider).value;
     return SettingsScaffold(
@@ -101,7 +136,7 @@ class AboutScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const _Eyebrow('A note from the developer'),
+              const _Eyebrow('A letter from the developer'),
               const SizedBox(height: Space.md),
               Text('A dictionary you can read sideways.', style: MullType.sheetTitle.copyWith(color: c.onSurface)),
               const SizedBox(height: Space.lg),
@@ -120,18 +155,11 @@ class AboutScreen extends ConsumerWidget {
               ),
               const SizedBox(height: Space.xl),
               Text('Gautam Rajeev Singh', style: MullType.titleMedium.copyWith(color: c.onSurface)),
-              const SizedBox(height: 4),
-              InkWell(
-                onTap: () => unawaited(PlatformSurfaces.openUrl(portfolio)),
-                child: Text('singhgautam.com', style: MullType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-              ),
             ],
           ),
         ),
         const SizedBox(height: Space.xl),
-        const MadeInIndia(),
-        const SizedBox(height: Space.xl),
-        const Padding(padding: EdgeInsets.only(left: 4, bottom: Space.sm), child: _Eyebrow('What it stands for')),
+        const Padding(padding: EdgeInsets.only(left: 4, bottom: Space.sm), child: _Eyebrow('Why Mull')),
         for (int row = 0; row < _pillars.length; row += 2) ...<Widget>[
           if (row > 0) const SizedBox(height: Space.row),
           IntrinsicHeight(
@@ -149,52 +177,71 @@ class AboutScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const _Eyebrow('What it is'),
+              const _Eyebrow('What Mull is'),
+              const SizedBox(height: Space.md),
+              Text('A quiet way to know more words.', style: MullType.sheetTitle.copyWith(color: c.onSurface)),
               const SizedBox(height: Space.md),
               Text(
-                'An offline English dictionary of about 136,000 headwords, built from Wiktionary, with a '
-                'curated set of a few thousand words worth learning. Look a word up in Search, or open the '
-                'Mull tab and swipe through a mix of shelves one card at a time. Bookmark what you like, '
-                'add a note, put it on a shelf, quiz yourself later.',
+                'An offline English dictionary with ${grouped(_entries)} entries and a hand-picked set worth learning. '
+                'Look a word up, or swipe through the Mull tab one card at a time. '
+                'Bookmark, add a note, shelve it, quiz yourself later.',
                 style: MullType.body.copyWith(height: 1.6, color: c.onSurfaceVariant),
               ),
               const SizedBox(height: Space.md),
-              Text(
-                'There is no like count, streak, level or red dot anywhere in it.',
-                style: MullType.body.copyWith(height: 1.6, color: c.onSurfaceVariant),
+              const Wrap(
+                spacing: Space.sm,
+                runSpacing: Space.sm,
+                children: <Widget>[PillChip(label: 'Offline'), PillChip(label: 'Private'), PillChip(label: 'No ads')],
               ),
             ],
           ),
         ),
         const SizedBox(height: Space.xl),
         _AboutCard(
-          padding: const EdgeInsets.fromLTRB(Space.xl, Space.md, Space.xl, Space.md),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(child: Text('Version', style: MullType.titleMedium.copyWith(color: c.onSurface))),
-              PillChip(label: version ?? '…'),
+              Row(
+                children: <Widget>[
+                  Expanded(child: Text('Version', style: MullType.titleMedium.copyWith(color: c.onSurface))),
+                  PillChip(label: version ?? '…'),
+                ],
+              ),
+              const SizedBox(height: Space.lg),
+              Row(
+                spacing: Space.sm,
+                children: <Widget>[
+                  Icon(Icons.lock_outline_rounded, size: 16, color: c.onSurfaceVariant),
+                  Expanded(child: Text('Your data stays on this phone', style: MullType.bodySmall.copyWith(color: c.onSurfaceVariant))),
+                ],
+              ),
             ],
           ),
         ),
+        if (_attribution != null) ...<Widget>[
+          const SizedBox(height: Space.xl),
+          _AboutCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const _Eyebrow('Sources and credits'),
+                const SizedBox(height: Space.md),
+                Text(_attribution, style: MullType.note.copyWith(color: c.onSurfaceVariant)),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: Space.xl),
         SettingsGroup(
-          label: 'Legal',
+          label: 'Support',
           children: <Widget>[
-            SettingsRow(icon: Icons.shield_outlined, label: 'Privacy policy', value: 'Offline only', onTap: () => context.push(Routes.privacy)),
-            SettingsRow(icon: Icons.menu_book_outlined, label: 'Dictionary licences', onTap: () => context.push(Routes.dictionary)),
+            SettingsRow(icon: Icons.star_outline_rounded, label: 'Rate Mull', subtitle: 'Help others find it', onTap: () => unawaited(PlatformSurfaces.openUrl(AboutScreen.listing))),
+            SettingsRow(icon: Icons.apps_rounded, label: 'More apps', subtitle: 'Everything else on Google Play', onTap: () => unawaited(PlatformSurfaces.openUrl(AboutScreen.moreApps))),
+            SettingsRow(icon: Icons.description_outlined, label: 'Open-source licences', subtitle: 'Fonts and libraries', onTap: () => _showLicences(context, version)),
           ],
         ),
-        const SizedBox(height: Space.xl),
-        SettingsGroup(
-          label: 'The developer',
-          children: <Widget>[
-            SettingsRow(icon: Icons.person_outline_rounded, label: 'Gautam Rajeev Singh', subtitle: 'singhgautam.com', onTap: () => unawaited(PlatformSurfaces.openUrl(portfolio))),
-            SettingsRow(icon: Icons.apps_rounded, label: 'More apps', subtitle: 'Everything else on Google Play', onTap: () => unawaited(PlatformSurfaces.openUrl(moreApps))),
-            SettingsRow(icon: Icons.star_outline_rounded, label: 'Rate Mull', subtitle: 'Helps others find it', onTap: () => unawaited(PlatformSurfaces.openUrl(listing))),
-          ],
-        ),
-        const SizedBox(height: Space.lg),
-        Text('No account. No server. Nothing leaves the phone.', textAlign: TextAlign.center, style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
+        const SizedBox(height: Space.sm),
+        const MadeInIndia(),
       ],
     );
   }
@@ -218,8 +265,20 @@ class _Eyebrow extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) =>
-      Text(text.toUpperCase(), style: MullType.sectionHeader.copyWith(color: context.colors.onSurfaceVariant));
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Semantics(
+      header: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: Space.sm,
+        children: <Widget>[
+          ExcludeSemantics(child: Container(width: 6, height: 6, decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle))),
+          Flexible(child: Text(text.toUpperCase(), style: MullType.sectionHeader.copyWith(color: c.primary))),
+        ],
+      ),
+    );
+  }
 }
 
 class _AboutCard extends StatelessWidget {

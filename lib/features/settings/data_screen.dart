@@ -113,18 +113,18 @@ class _DataScreenState extends ConsumerState<DataScreen> {
           const SizedBox(height: Space.lg),
         ],
         SettingsGroup(
-          label: 'IMPORT AND EXPORT',
+          label: 'Import and export',
           children: <Widget>[
             SettingsRow(
               icon: Icons.ios_share_rounded,
               label: 'Export app data',
-              value: 'JSON · everything but the dictionary',
+              subtitle: 'A JSON file, no dictionary',
               onTap: () => context.push(Routes.export),
             ),
             SettingsRow(
               icon: Icons.file_open_outlined,
               label: 'Import app data',
-              value: 'From a Mull export · merge or replace',
+              subtitle: 'Merge or replace from a file',
               onTap: () => context.push(Routes.importData),
             ),
           ],
@@ -132,17 +132,17 @@ class _DataScreenState extends ConsumerState<DataScreen> {
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: Space.lg),
           child: Text(
-            'a single shelf is exported from its own overflow, not from here',
+            'A single shelf exports from its own menu',
             style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
           ),
         ),
         SettingsGroup(
-          label: 'CLEAR AND RESET',
+          label: 'Clear and reset',
           danger: true,
           children: <Widget>[
             SettingsRow(
               label: 'Clear seen history',
-              value: 'every word counts as unseen again',
+              subtitle: 'Every word counts as unseen again',
               danger: true,
               onTap: () async {
                 final bool ok = await confirmDialog(
@@ -156,7 +156,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
             ),
             SettingsRow(
               label: 'Clear notes',
-              value: _noteCount > 0 ? '$_noteCount notes' : 'no notes yet',
+              subtitle: _noteCount > 0 ? '$_noteCount notes' : 'No notes yet',
               danger: true,
               onTap: () async {
                 final bool ok = await confirmDialog(
@@ -173,7 +173,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
             ),
             SettingsRow(
               label: 'Reset everything',
-              value: 'shelves, notes, bookmarks, mixes, quiz history',
+              subtitle: 'Shelves, notes, mixes and history',
               danger: true,
               onTap: () async {
                 final bool ok = await confirmDialog(
@@ -198,7 +198,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
         ),
         const SizedBox(height: Space.sm),
         Text(
-          'Mull keeps everything on this phone. Nothing here leaves it unless you export it.',
+          'Everything stays on this phone unless you export it',
           style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
         ),
       ],
