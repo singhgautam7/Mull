@@ -26,12 +26,13 @@ Future<void> showIdiomSheet(BuildContext context, {required Idiom idiom}) {
 /// sheet closed leaves nothing behind.
 final FutureProvider<List<Idiom>> Function((String, String)) _relatedIdiomsProvider =
     FutureProvider.autoDispose.family<List<Idiom>, (String, String)>(
-      (Ref ref, (String, String) key) => _related(ref.watch(dictProvider), key.$1, key.$2),
+      (Ref ref, (String, String) key) => relatedIdioms(ref.watch(dictProvider), key.$1, key.$2),
     );
 
 /// A plain function so the closure sent to the worker carries two strings
 /// and nothing else.
-Future<List<Idiom>> _related(DictionaryDb dict, String idiomKey, String phrase) {
+@visibleForTesting
+Future<List<Idiom>> relatedIdioms(DictionaryDb dict, String idiomKey, String phrase) {
   final String longest = phrase.split(' ').reduce((String a, String b) => a.length >= b.length ? a : b);
   return dict.compute(
     (DictionaryDb db) =>

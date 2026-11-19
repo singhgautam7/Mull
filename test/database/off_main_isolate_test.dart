@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mull/features/dictionary/idiom_sheet.dart';
 import 'package:mull/core/database/dictionary_db.dart';
 import 'package:mull/core/database/dictionary_installer.dart';
 import 'package:mull/features/quiz/quiz_engine.dart';
@@ -112,6 +113,9 @@ void main() {
       QuizEngine.generator(shelf, seenKeys: const <String>{}, minimumWords: 10),
     );
     expect(quiz, isNotEmpty);
+    // The idiom sheet's "See also" (an FTS query) goes through the worker.
+    final Idiom anyIdiom = dict.searchIdioms('ice').first;
+    expect(await relatedIdioms(dict, anyIdiom.idiomKey, anyIdiom.phrase), isA<List<Idiom>>());
     await expectLater(
       dict.compute((DictionaryDb db) => throw StateError('boom')),
       throwsA(contains('boom')),
