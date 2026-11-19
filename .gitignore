@@ -61,3 +61,8 @@ tools/build_dictionary/__pycache__/
 # Environment and API keys
 .env
 tools/build_dictionary/.env
+
+# Gradle reports
+/android/build/
+# Agent worktrees
+.claude/worktrees/
