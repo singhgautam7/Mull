@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,6 +8,7 @@ import '../../core/database/dictionary_db.dart';
 import '../../core/database/mix_repository.dart';
 import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -65,6 +65,13 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
   bool _softStopShown = false;
   bool _extending = false;
 
+  /// True once the first card has taken longer than [Delayed.threshold]: the
+  /// skeleton is on screen from then until the next load starts. Set by a
+  /// timer rather than a `Delayed` in the placeholder, because that one would
+  /// keep running (and flash a skeleton over the card) while the card fades in.
+  bool _showSkeleton = false;
+  Timer? _skeletonTimer;
+
   static const Duration _kSoftStop = Duration(minutes: 30);
 
   // Read once: dispose() writes seen state and clears the scope, and ref is
@@ -100,12 +107,18 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_exitCard(_index));
     if (_scope != null) unawaited(_mixes.clearScoped());
+    _skeletonTimer?.cancel();
     _pager.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    _skeletonTimer?.cancel();
+    _skeletonTimer = Timer(Delayed.threshold, () {
+      if (mounted && _loading) setState(() => _showSkeleton = true);
+    });
     setState(() {
+      _showSkeleton = false;
       _loading = true;
       _exhausted = false;
       _queue = <String>[];
@@ -129,7 +142,9 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
       await _mixes.clearScoped();
       _mix = active;
     }
-    _noted = (await _user.allNotes()).keys.toSet();
+    // Not before card one: which words have a note only decorates a card
+    // that is already drawn.
+    unawaited(_loadNoted());
     await _extend();
     if (mounted) {
       setState(() {
@@ -138,6 +153,11 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
       });
       if (_pager.hasClients) _pager.jumpToPage(0);
     }
+  }
+
+  Future<void> _loadNoted() async {
+    final Set<String> keys = (await _user.allNotes()).keys.toSet();
+    if (mounted) setState(() => _noted = keys);
   }
 
   /// Plays an unsaved selection from the mix sheet.
@@ -231,7 +251,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
 
   void _onPage(int i) {
     unawaited(_exitCard(_index));
-    if (ref.read(settingsProvider).haptics) unawaited(HapticFeedback.selectionClick());
+    MullHaptics.tick();
     setState(() {
       _index = i;
       _enteredAt = DateTime.now();
@@ -312,7 +332,19 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
           children: <Widget>[
             Positioned.fill(
               top: pad.top + 96 - 34,
-              child: _loading
+              // The skeleton only arrives if the first card is slow (the
+              // `Delayed` threshold) and the card fades in over it. While a
+              // reload is under way the old content is gone at once, so the
+              // empty queue never shows an end card on its way out.
+              child: SkeletonCrossFade(
+                loading: _loading,
+                placeholder: _showSkeleton
+                    ? const Padding(
+                        padding: EdgeInsets.fromLTRB(14, 34, 14, 104),
+                        child: SkeletonWordCard(),
+                      )
+                    : const SizedBox.shrink(),
+                child: _loading
                   ? const SizedBox.shrink()
                   : _exhausted
                       ? _endCard(scopeTitle)
@@ -355,7 +387,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                                   },
                                   onBookmark: () async {
                                     // `bookmark.confirm`: icon fills, one haptic tick.
-                                    if (s.haptics) unawaited(HapticFeedback.lightImpact());
+                                    MullHaptics.confirm();
                                     await _user.toggleBookmark(data.word.wordKey);
                                   },
                                   onOverflow: (BuildContext anchor) => unawaited(_overflow(anchor, data.word)),
@@ -364,12 +396,15 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                             );
                           },
                         ),
+              ),
             ),
             // The mix chip, or the tinted, closable scope chip. They must
             // never look alike.
             Positioned(
               left: Space.screen,
-              top: pad.top + 22,
+              // The chips are 32 tall and pad themselves to a 48 dp touch
+              // target, so they sit Space.sm higher to look where they did.
+              top: pad.top + 22 - Space.sm,
               child: _scope != null
                   ? _ScopeChip(
                       title: scopeTitle ?? _scope!,
@@ -476,10 +511,20 @@ class _MixChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return Semantics(
+    // The 8 dp above and below make the touch target 48 tall; the chip itself
+    // stays 32 (HANDOFF). Taps in the margin go to the same handler.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      excludeFromSemantics: true,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.sm),
+        child: Semantics(
       button: true,
       label: 'Mix: $name',
-      child: Material(
+      child: Pressable(
+        kind: PressKind.chip,
+        child: Material(
         color: Colors.transparent,
         shape: StadiumBorder(side: BorderSide(color: c.outline)),
         clipBehavior: Clip.antiAlias,
@@ -501,6 +546,8 @@ class _MixChip extends StatelessWidget {
             ),
           ),
         ),
+      )),
+        ),
       ),
     );
   }
@@ -517,6 +564,26 @@ class _ScopeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
+    // Padded to 48 tall (and 8 at the end) so the close button's touch target
+    // is 48 x 48 around its 22 dp circle; the chip itself is unchanged.
+    return Stack(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: Space.sm, bottom: Space.sm, right: Space.sm),
+          child: _body(c),
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: IconSpec.tapTarget,
+          child: GestureDetector(behavior: HitTestBehavior.translucent, excludeFromSemantics: true, onTap: onClose),
+        ),
+      ],
+    );
+  }
+
+  Widget _body(MullColors c) {
     return Material(
       color: c.primaryContainer,
       shape: const StadiumBorder(),
@@ -533,13 +600,16 @@ class _ScopeChip extends StatelessWidget {
               Semantics(
                 button: true,
                 label: 'Back to the mix',
-                child: InkWell(
-                  onTap: onClose,
-                  customBorder: const CircleBorder(),
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: Icon(Icons.close_rounded, size: 15, color: c.onPrimaryContainer),
+                child: Pressable(
+                  kind: PressKind.iconButton,
+                  child: InkWell(
+                    onTap: onClose,
+                    customBorder: const CircleBorder(),
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: Icon(Icons.close_rounded, size: 15, color: c.onPrimaryContainer),
+                    ),
                   ),
                 ),
               ),

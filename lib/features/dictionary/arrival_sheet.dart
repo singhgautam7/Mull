@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -43,29 +44,41 @@ class ArrivalTopRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
-        InkWell(
-          onTap: () {
-            Navigator.of(context).pop();
-            unawaited(SystemNavigator.pop());
-          },
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: Space.md),
-            decoration: BoxDecoration(
-              color: c.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.chevron_left_rounded, size: 20, color: c.onSurface),
-                const SizedBox(width: Space.xs),
-                Text(
-                  'Back to ${formatAppName(sourceHint)}',
-                  style: MullType.label.copyWith(color: c.onSurface),
+        Semantics(
+          button: true,
+          label: 'Back to ${formatAppName(sourceHint)}',
+          excludeSemantics: true,
+          child: Pressable(
+            kind: PressKind.chip,
+            restRadius: 18,
+            onTap: () {
+              Navigator.of(context).pop();
+              unawaited(SystemNavigator.pop());
+            },
+            // The chip is 36 tall; the target around it is 48.
+            child: SizedBox(
+              height: 48,
+              child: Center(
+                child: Container(
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: Space.md),
+                  decoration: BoxDecoration(
+                    color: c.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(Icons.chevron_left_rounded, size: 20, color: c.onSurface),
+                      const SizedBox(width: Space.xs),
+                      Text(
+                        'Back to ${formatAppName(sourceHint)}',
+                        style: MullType.label.copyWith(color: c.onSurface),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
         ),

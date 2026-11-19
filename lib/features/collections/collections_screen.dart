@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -41,8 +44,39 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   _Filter _filter = _Filter.all;
   _Sort _sort = _Sort.kind;
 
+  /// True for the first moments after the tab opens: the first six topic
+  /// cards stagger in then, and only then (`StaggeredEntrance` reads it once,
+  /// when a card first builds). A card built later (scrolling, a new filter)
+  /// never animates. Read at build, so it needs no setState.
+  bool _intro = true;
+  Timer? _introTimer;
+
+  /// True once the open has taken longer than [Delayed.threshold] with the
+  /// shelf data still settling: from then on the skeletons are showing.
+  bool _slow = false;
+  Timer? _slowTimer;
+
+  bool _settling({required bool watch}) => watch
+      ? ref.watch(userCollectionsProvider).isLoading ||
+          ref.watch(collectionKeysSettlingProvider) ||
+          ref.watch(seenMapProvider).isLoading
+      : ref.read(userCollectionsProvider).isLoading ||
+          ref.read(collectionKeysSettlingProvider) ||
+          ref.read(seenMapProvider).isLoading;
+
+  @override
+  void initState() {
+    super.initState();
+    _introTimer = Timer(Motion.staggerDelay(6) + Motion.fxDefault, () => _intro = false);
+    _slowTimer = Timer(Delayed.threshold, () {
+      if (mounted && _settling(watch: false)) setState(() => _slow = true);
+    });
+  }
+
   @override
   void dispose() {
+    _introTimer?.cancel();
+    _slowTimer?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -56,9 +90,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     // the worker isolate, and the user's own and the seen progress a frame
     // later from the user database. Until then the sections hold their shape
     // with placeholders rather than jumping.
-    final bool settling = ref.watch(userCollectionsProvider).isLoading ||
-        ref.watch(collectionKeysSettlingProvider) ||
-        ref.watch(seenMapProvider).isLoading;
+    final bool settling = _settling(watch: true);
     final ({Set<String> withWords, Set<String> withPhrases}) kinds = ref.watch(shelfKindsProvider);
     final String q = _search.text.trim().toLowerCase();
 
@@ -67,8 +99,15 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     // the real card is shown (its count is the dictionary's own, its bar
     // simply empty), and the skeleton only takes over if the read is still
     // out after the threshold. A fast open never renders one.
-    Widget settle(Widget skeleton, Widget real) =>
-        settling ? Delayed(placeholder: real, child: skeleton) : real;
+    // Once the threshold has passed with the data still out, the skeletons
+    // are on screen and the swap to the real cards is a cross-fade, never a
+    // cut. Before that (and always on a fast open) the real card stands in
+    // and nothing fades, so a quick open draws no loader at all.
+    Widget settle(Widget skeleton, Widget real) => _slow
+        ? SkeletonCrossFade(loading: settling, placeholder: skeleton, child: real)
+        : settling
+            ? Delayed(placeholder: real, child: skeleton)
+            : real;
     bool visibleFor(Collection x, _Filter f) {
       if (q.isNotEmpty && !x.title.toLowerCase().contains(q) && !x.description.toLowerCase().contains(q)) return false;
       return switch (f) {
@@ -95,15 +134,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     final List<Collection> yours = all.where((Collection x) => x.isUsers && visible(x)).toList()..sort(compare);
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: CollapseOnScroll(
-          builder: (BuildContext context, bool collapsed) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppHeader(
+      body: HeaderPage(
+        header: AppHeader(
                 title: 'Shelves',
-                collapsed: collapsed,
                 onBack: Navigator.of(context).canPop() ? () => Navigator.of(context).pop() : null,
                 actions: <Widget>[
                   Builder(
@@ -185,12 +218,12 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                   ),
                 ],
               ),
-              Expanded(
-                // Lazy: 22 topic cards built up front was 39 ms of the
-                // Shelves tab's first frame once the queries came off it,
-                // and only four of them are ever on screen.
-                child: CustomScrollView(
+        // Lazy: 22 topic cards built up front was 39 ms of the Shelves tab's
+        // first frame once the queries came off it, and only four of them
+        // are ever on screen.
+        body: CustomScrollView(
                   slivers: <Widget>[
+                    HeaderPage.sliverGap(),
                     SliverList.list(children: <Widget>[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
@@ -279,14 +312,18 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           itemCount: TwoColumnGrid.rowsFor(topics.length),
                           separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
                           itemBuilder: (BuildContext context, int r) {
-                            Widget card(Collection t) => settle(
-                              const SkeletonCard(),
-                              TopicCard(collection: t, progress: of(t), onTap: () => context.push(Routes.collection(t.slug))),
-                            );
                             final int i = r * 2;
+                            Widget card(int n) => StaggeredEntrance(
+                              index: n,
+                              animate: _intro && n < 6,
+                              child: settle(
+                                const SkeletonCard(),
+                                TopicCard(collection: topics[n], progress: of(topics[n]), onTap: () => context.push(Routes.collection(topics[n].slug))),
+                              ),
+                            );
                             return TwoColumnGrid.row(
-                              card(topics[i]),
-                              i + 1 < topics.length ? card(topics[i + 1]) : null,
+                              card(i),
+                              i + 1 < topics.length ? card(i + 1) : null,
                             );
                           },
                         ),
@@ -335,10 +372,6 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                     ]),
                   ],
                 ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

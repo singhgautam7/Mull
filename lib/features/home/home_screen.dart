@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -26,6 +27,29 @@ import '../collections/collection_cards.dart';
 import '../collections/create_list_sheet.dart';
 import '../dictionary/add_to_list_sheet.dart';
 import '../dictionary/word_sheet.dart';
+
+/// The word of the day's first example, read once per word and off the
+/// build that shows it (a provider computes on first watch, so the read sits
+/// behind an await).
+final _wotdExampleProvider = FutureProvider.autoDispose.family<String?, String>((Ref ref, String wordKey) async {
+  final DictionaryDb dict = ref.watch(dictProvider);
+  await Future<void>.value();
+  return dict.examples(wordKey).firstOrNull;
+});
+
+/// The words behind "Recently searched", resolved once per change of the
+/// recent keys; the chips hold their last list while a new one resolves.
+final FutureProvider<List<DictionaryWord>> _recentWordsProvider = FutureProvider.autoDispose<List<DictionaryWord>>((
+  Ref ref,
+) async {
+  final List<String> keys = ref.watch(recentLookupsProvider).value ?? const <String>[];
+  final DictionaryDb dict = ref.watch(dictProvider);
+  await Future<void>.value();
+  return <DictionaryWord>[
+    for (final String k in keys.take(10))
+      if (dict.byKey(k) case final DictionaryWord w) w,
+  ];
+});
 
 /// HANDOFF 3.1. Greeting, word of the day, Continue, Recently looked up,
 /// Collections (a shortlist: last opened, in progress, then built-ins), Your
@@ -50,7 +74,7 @@ class HomeScreen extends ConsumerWidget {
     final List<String> recent = ref.watch(recentLookupsProvider).value ?? const <String>[];
     final List<Collection> grid = ref.watch(homeCollectionsProvider);
     final List<Collection> yours = collections.where((Collection x) => x.isUsers).toList();
-    final DictionaryDb dict = ref.watch(dictProvider);
+    final List<DictionaryWord> recentWords = ref.watch(_recentWordsProvider).value ?? const <DictionaryWord>[];
 
     // Continue: the most recently started, unfinished collection.
     final Map<String, SeenWord> seen = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
@@ -70,123 +94,121 @@ class HomeScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: CollapseOnScroll(
-          builder: (BuildContext context, bool collapsed) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppHeader(
-                title: collapsed ? 'Home' : greeting(),
-                collapsed: collapsed,
-                actions: <Widget>[
-                  Builder(
-                    builder: (BuildContext anchor) => AppIconButton(
-                      icon: Icons.more_horiz_rounded,
-                      semanticLabel: 'More',
-                      onPressed: () async {
-                        final String? a = await showAppMenu<String>(
-                          context: context,
-                          anchorContext: anchor,
-                          entries: const <AppMenuEntry<String>>[
-                            AppMenuEntry<String>(value: 'collections', label: 'All shelves', icon: Icons.grid_view_rounded),
-                            AppMenuEntry<String>(value: 'stats', label: 'Stats', icon: Icons.bar_chart_rounded),
-                          ],
-                        );
-                        if (!context.mounted || a == null) return;
-                        unawaited(context.push<void>(a == 'collections' ? Routes.collections : Routes.stats));
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.only(bottom: Space.bottomSafe),
-                  children: <Widget>[
-                    if (wotd != null) _WordOfTheDay(word: wotd, example: dict.examples(wotd.wordKey).firstOrNull),
-                    if (cont != null) ...<Widget>[
-                      const SizedBox(height: Space.section),
-                      const SectionHeader(label: 'Continue'),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                        child: _Continue(collection: cont, progress: progress[cont.slug]!),
-                      ),
+      body: HeaderPage(
+        header: AppHeader(
+          title: greeting(),
+          pillTitle: 'Home',
+          actions: <Widget>[
+            Builder(
+              builder: (BuildContext anchor) => AppIconButton(
+                icon: Icons.more_horiz_rounded,
+                semanticLabel: 'More',
+                onPressed: () async {
+                  final String? a = await showAppMenu<String>(
+                    context: context,
+                    anchorContext: anchor,
+                    entries: const <AppMenuEntry<String>>[
+                      AppMenuEntry<String>(value: 'collections', label: 'All shelves', icon: Icons.grid_view_rounded),
+                      AppMenuEntry<String>(value: 'stats', label: 'Stats', icon: Icons.bar_chart_rounded),
                     ],
-                    const SizedBox(height: Space.section),
-                    const SectionHeader(label: 'Recently searched'),
-                    if (recent.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                        child: CustomPaint(
-                          foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.card),
-                          child: Padding(
-                            padding: const EdgeInsets.all(Space.lg),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text('Nothing looked up yet', style: MullType.titleMedium.copyWith(color: c.onSurface)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Words you search land here, so the ones you met in the wild stay in reach. Tap + on any of them to keep it.',
-                                  style: MullType.note.copyWith(color: c.onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      // A row, not a fixed-height list: the chips are as
-                      // tall as their text.
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                        child: Row(
-                          spacing: Space.sm,
-                          children: <Widget>[
-                            for (final String key in recent.take(10))
-                              if (dict.byKey(key) case final DictionaryWord w) _RecentChip(word: w),
-                          ],
-                        ),
-                      ),
-                    const SizedBox(height: Space.section),
-                    SectionHeader(
-                      label: 'Shelves',
-                      trailing: InkWell(
-                        onTap: () => context.push(Routes.collections),
-                        child: Text('See all ${collections.length}', style: MullType.monoLabel.copyWith(color: c.accent)),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                      child: TwoColumnGrid(
-                        children: <Widget>[
-                          for (final Collection x in grid)
-                            TopicCard(
-                              collection: x,
-                              progress: progress[x.slug] ?? const Progress(0, 0),
-                              compact: true,
-                              onTap: () => context.push(Routes.collection(x.slug)),
-                            ),
-                          _NewListCard(onTap: () => showCreateListSheet(context)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: Space.section),
-                    SectionHeader(
-                      label: 'Your shelves',
-                      trailing: InkWell(
-                        onTap: () => context.push(Routes.collections),
-                        child: Text('See all', style: MullType.monoLabel.copyWith(color: c.accent)),
-                      ),
-                    ),
-                    YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
-                  ],
-                ),
+                  );
+                  if (!context.mounted || a == null) return;
+                  unawaited(context.push<void>(a == 'collections' ? Routes.collections : Routes.stats));
+                },
+              ),
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.only(bottom: Space.bottomSafe),
+          children: <Widget>[
+            HeaderPage.gap(),
+            if (wotd != null) _WordOfTheDay(word: wotd, example: ref.watch(_wotdExampleProvider(wotd.wordKey)).value),
+            if (cont != null) ...<Widget>[
+              const SizedBox(height: Space.section),
+              const SectionHeader(label: 'Continue'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                child: _Continue(collection: cont, progress: progress[cont.slug]!),
               ),
             ],
-          ),
+            const SizedBox(height: Space.section),
+            const SectionHeader(label: 'Recently searched'),
+            if (recent.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                child: CustomPaint(
+                  foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.card),
+                  child: Padding(
+                    padding: const EdgeInsets.all(Space.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text('Nothing looked up yet', style: MullType.titleMedium.copyWith(color: c.onSurface)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Words you search land here, so the ones you met in the wild stay in reach. Tap + on any of them to keep it.',
+                          style: MullType.note.copyWith(color: c.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              // A row, not a fixed-height list: the chips are as
+              // tall as their text.
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                child: Row(
+                  spacing: Space.sm,
+                  children: <Widget>[for (final DictionaryWord w in recentWords) _RecentChip(word: w)],
+                ),
+              ),
+            const SizedBox(height: Space.section),
+            SectionHeader(
+              label: 'Shelves',
+              trailing: Pressable(
+                onTap: () => context.push(Routes.collections),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+                  child: Center(
+                    child: Text('See all ${collections.length}', style: MullType.monoLabel.copyWith(color: c.accent)),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+              child: TwoColumnGrid(
+                children: <Widget>[
+                  for (final Collection x in grid)
+                    TopicCard(
+                      collection: x,
+                      progress: progress[x.slug] ?? const Progress(0, 0),
+                      compact: true,
+                      onTap: () => context.push(Routes.collection(x.slug)),
+                    ),
+                  _NewListCard(onTap: () => showCreateListSheet(context)),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.section),
+            SectionHeader(
+              label: 'Your shelves',
+              trailing: Pressable(
+                onTap: () => context.push(Routes.collections),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+                  child: Center(
+                    child: Text('See all', style: MullType.monoLabel.copyWith(color: c.accent)),
+                  ),
+                ),
+              ),
+            ),
+            YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
+          ],
         ),
       ),
     );
@@ -207,12 +229,15 @@ class _WordOfTheDay extends StatelessWidget {
     final MullColors c = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-      child: InkWell(
+      child: Pressable(
         onTap: () => showWordSheet(context, wordKey: word.wordKey),
-        borderRadius: Radii.cardR,
         child: Container(
           padding: const EdgeInsets.all(Space.lg),
-          decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
+          decoration: BoxDecoration(
+            color: c.surfaceContainer,
+            borderRadius: Radii.cardR,
+            border: Border.all(color: c.outline),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -225,7 +250,8 @@ class _WordOfTheDay extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   word.headword,
-                  style: MullType.headwordAt(math.max(1, MullType.headwordStep(word.headword))).copyWith(fontSize: MullType.headwordStep(word.headword) <= 1 ? 42 : null, color: c.onSurface),
+                  style: MullType.headwordAt(math.max(1, MullType.headwordStep(word.headword)))
+                      .copyWith(fontSize: MullType.headwordStep(word.headword) <= 1 ? 42 : null, color: c.onSurface),
                   textScaler: TextScaler.noScaling,
                   softWrap: false,
                 ),
@@ -235,15 +261,22 @@ class _WordOfTheDay extends StatelessWidget {
                 spacing: Space.sm,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
-                  if (word.ipa != null) Text(word.ipa!, style: MullType.monoTabular.copyWith(color: c.onSurfaceVariant)),
-                  Text(posLabel(word.pos), style: MullType.label.copyWith(fontStyle: FontStyle.italic, color: c.onSurfaceMuted)),
+                  if (word.ipa != null)
+                    Text(word.ipa!, style: MullType.monoTabular.copyWith(color: c.onSurfaceVariant)),
+                  Text(
+                    posLabel(word.pos),
+                    style: MullType.label.copyWith(fontStyle: FontStyle.italic, color: c.onSurfaceMuted),
+                  ),
                 ],
               ),
               const SizedBox(height: Space.md),
               Text(word.definitionShort, style: MullType.body.copyWith(fontSize: 16, color: c.onSurface)),
               if (example != null) ...<Widget>[
                 const SizedBox(height: Space.sm),
-                Text(example!, style: MullType.note.copyWith(color: c.onSurfaceVariant, fontStyle: FontStyle.italic)),
+                Text(
+                  example!,
+                  style: MullType.note.copyWith(color: c.onSurfaceVariant, fontStyle: FontStyle.italic),
+                ),
               ],
             ],
           ),
@@ -263,12 +296,15 @@ class _Continue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return InkWell(
+    return Pressable(
       onTap: () => context.go(Routes.scoped(collection.slug)),
-      borderRadius: Radii.cardR,
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
+        decoration: BoxDecoration(
+          color: c.surfaceContainer,
+          borderRadius: Radii.cardR,
+          border: Border.all(color: c.outline),
+        ),
         child: Row(
           spacing: 14,
           children: <Widget>[
@@ -279,7 +315,10 @@ class _Continue extends StatelessWidget {
                 children: <Widget>[
                   Text(collection.title, style: MullType.titleMedium.copyWith(color: c.onSurface)),
                   const SizedBox(height: 2),
-                  Text('${grouped(progress.seen)} / ${grouped(progress.total)} seen', style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+                  Text(
+                    '${grouped(progress.seen)} / ${grouped(progress.total)} seen',
+                    style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                  ),
                 ],
               ),
             ),
@@ -309,7 +348,9 @@ class _RecentChip extends ConsumerWidget {
       color: c.surfaceContainer,
       shape: StadiumBorder(side: BorderSide(color: c.outline)),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.chip,
+        morphCorners: false,
         onTap: () => showWordSheet(context, wordKey: word.wordKey, fromSearch: true),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
@@ -326,7 +367,12 @@ class _RecentChip extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(word.headword, style: MullType.titleSmall.copyWith(color: c.onSurface)),
-                    Text('${posLabel(word.pos)} · ${word.definitionShort}', style: MullType.monoLabel.copyWith(fontSize: 10, color: c.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      '${posLabel(word.pos)} · ${word.definitionShort}',
+                      style: MullType.monoLabel.copyWith(fontSize: 10, color: c.onSurfaceVariant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
@@ -335,18 +381,21 @@ class _RecentChip extends ConsumerWidget {
                 child: Semantics(
                   button: true,
                   label: 'Add ${word.headword} to shelf',
-                  child: InkWell(
-                    onTap: () => showAddToListSheet(
-                      context,
-                      wordKey: word.wordKey,
-                      headword: word.headword,
-                    ),
-                    customBorder: const CircleBorder(),
-                    child: Container(
-                      width: 26,
-                      height: 26,
-                      decoration: BoxDecoration(color: c.surfaceContainerHigh, shape: BoxShape.circle),
-                      child: Icon(Icons.add_rounded, size: 16, color: c.accent),
+                  child: Pressable(
+                    kind: PressKind.iconButton,
+                    onTap: () => showAddToListSheet(context, wordKey: word.wordKey, headword: word.headword),
+                    // The glyph stays 26dp; the target is 48.
+                    child: SizedBox(
+                      width: IconSpec.tapTarget,
+                      height: IconSpec.tapTarget,
+                      child: Center(
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(color: c.surfaceContainerHigh, shape: BoxShape.circle),
+                          child: Icon(Icons.add_rounded, size: 16, color: c.accent),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -369,9 +418,8 @@ class _NewListCard extends StatelessWidget {
     final MullColors c = context.colors;
     return CustomPaint(
       foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.card),
-      child: InkWell(
+      child: Pressable(
         onTap: onTap,
-        borderRadius: Radii.cardR,
         child: Container(
           padding: const EdgeInsets.all(14),
           alignment: Alignment.center,

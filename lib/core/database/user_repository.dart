@@ -649,6 +649,10 @@ class UserRepository {
         RecentSearchesCompanion.insert(query: query, at: now ?? DateTime.now()),
       );
 
+  /// Forgets one history entry; the other entries are untouched.
+  Future<void> deleteRecentSearch(String query) =>
+      (_db.delete(_db.recentSearches)..where((RecentSearches r) => r.query.equals(query))).go();
+
   Future<List<String>> recentSearches({int limit = 12}) async =>
       (await (_db.select(_db.recentSearches)
                 ..orderBy(<OrderingTerm Function(RecentSearches)>[

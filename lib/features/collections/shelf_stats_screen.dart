@@ -76,22 +76,18 @@ class _ShelfStatsScreenState extends ConsumerState<ShelfStatsScreen> {
         : 'no accuracy yet';
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: HeaderPage(
+        header: AppHeader(
+          title: 'Shelf stats',
+          onBack: () => Navigator.of(context).pop(),
+        ),
+        body: Stack(
           children: <Widget>[
-            AppHeader(
-              title: 'Shelf stats',
-              onBack: () => Navigator.of(context).pop(),
-            ),
-            LoadingHairline(visible: _loading),
-            Expanded(
-              child: _loading
-                  ? const SizedBox.shrink()
-                  : ListView(
+            if (!_loading)
+              ListView(
               padding: const EdgeInsets.all(Space.screen),
               children: <Widget>[
+                HeaderPage.gap(),
                 // Three figures in a row
                 Container(
                   padding: const EdgeInsets.all(Space.lg),
@@ -188,6 +184,13 @@ class _ShelfStatsScreenState extends ConsumerState<ShelfStatsScreen> {
                 ],
               ],
             ),
+            Builder(
+              builder: (BuildContext inner) => Positioned(
+                left: 0,
+                right: 0,
+                top: HeaderPage.insetOf(inner),
+                child: LoadingHairline(visible: _loading),
+              ),
             ),
           ],
         ),

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.2.0+2
+version: 0.3.0+3
 
 environment:
   sdk: ^3.13.2
@@ -40,13 +40,18 @@ dependencies:
   path: ^1.9.1
   shared_preferences: ^2.5.5
   dynamic_color: ^2.1.0
-  flutter_animate: ^4.5.2
   share_plus: ^13.3.0
   file_picker: ^13.1.0
   csv: ^6.0.0
   pdf: ^3.11.3
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  # The on-device perf harness (integration_test/perf_test.dart). Both ship
+  # with the Flutter SDK; dev only, nothing reaches the app.
+  integration_test:
+    sdk: flutter
+  flutter_driver:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -73,6 +78,8 @@ flutter:
     - assets/db/dictionary.version
     # Shown in the app under More, straight from the file in the repo root.
     - PRIVACY_POLICY.md
+    # Instrument Sans's licence, registered when the licences page opens.
+    - assets/fonts/OFL.txt
 
   fonts:
     # Bundled, not fetched: Mull makes no network request, ever. Instrument

@@ -124,32 +124,39 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppHeader(
-                title: widget.phrases ? 'Add phrases' : 'Add words',
-                subtitle: '${shelf?.title ?? widget.slug} · ${plural(total, widget.phrases ? 'phrase' : 'word')}',
-                onBack: () => context.pop(),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
-                child: SearchField(
-                  controller: _field,
-                  focusNode: _focus,
-                  autofocus: true,
-                  hint: widget.phrases ? 'Search phrases to add' : 'Search words to add',
-                  onChanged: _run,
+        // Fixed header: the search field right under it is the screen's
+        // primary control, so nothing here floats or scrolls away.
+        body: HeaderPage(
+          floating: false,
+          header: AppHeader(
+            title: widget.phrases ? 'Add phrases' : 'Add words',
+            subtitle: '${shelf?.title ?? widget.slug} · ${plural(total, widget.phrases ? 'phrase' : 'word')}',
+            onBack: () => context.pop(),
+          ),
+          body: SafeArea(
+            top: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                HeaderPage.gap(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
+                  child: SearchField(
+                    controller: _field,
+                    focusNode: _focus,
+                    autofocus: true,
+                    hint: widget.phrases ? 'Search phrases to add' : 'Search words to add',
+                    onChanged: _run,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: typing
-                    ? _results(c, tick, onShelf, builtIn)
-                    : _shelf(c, userKeys, builtIn, tick, onShelf),
-              ),
-              _Footer(addedNow: _addedNow, total: total, onDone: () => context.pop()),
-            ],
+                Expanded(
+                  child: typing
+                      ? _results(c, tick, onShelf, builtIn)
+                      : _shelf(c, userKeys, builtIn, tick, onShelf),
+                ),
+                _Footer(addedNow: _addedNow, total: total, onDone: () => context.pop()),
+              ],
+            ),
           ),
         ),
       ),

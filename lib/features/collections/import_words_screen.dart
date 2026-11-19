@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -145,49 +146,54 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Floating: every step is a plain scrolling list, the buttons are in it.
+    body: HeaderPage(
+      header: AppHeader(
+        title: switch (_step) {
+          _Step.input => 'Import words',
+          _Step.columns => 'Columns',
+          _Step.review => 'Review the import',
+        },
+        onBack: _back,
+      ),
+      body: Stack(
         children: <Widget>[
-          AppHeader(
-            title: switch (_step) {
-              _Step.input => 'Import words',
-              _Step.columns => 'Columns',
-              _Step.review => 'Review the import',
-            },
-            onBack: _back,
-          ),
-          LoadingHairline(visible: _matching),
-          Expanded(
-            child: switch (_step) {
-              _Step.input => _InputStep(
-                pastedText: _pastedText,
-                table: _table,
-                onPaste: _pasteFromClipboard,
-                onPickFile: _pickFile,
-                onClear: () => _load(''),
-                onContinue: _table.columnCount > 1
-                    ? () => setState(() => _step = _Step.columns)
-                    : _runMatching,
-              ),
-              _Step.columns => _ColumnsStep(
-                table: _table,
-                roles: _roles,
-                onRole: (int column, ColumnRole role) => setState(() {
-                  if (role == ColumnRole.word) {
-                    // Only one column holds the words.
-                    _roles.updateAll(
-                      (_, ColumnRole r) =>
-                          r == ColumnRole.word ? ColumnRole.ignore : r,
-                    );
-                  }
-                  _roles[column] = role;
-                }),
-                onContinue: _runMatching,
-              ),
-              _Step.review => _buildReview(context),
-            },
+          switch (_step) {
+            _Step.input => _InputStep(
+              pastedText: _pastedText,
+              table: _table,
+              onPaste: _pasteFromClipboard,
+              onPickFile: _pickFile,
+              onClear: () => _load(''),
+              onContinue: _table.columnCount > 1
+                  ? () => setState(() => _step = _Step.columns)
+                  : _runMatching,
+            ),
+            _Step.columns => _ColumnsStep(
+              table: _table,
+              roles: _roles,
+              onRole: (int column, ColumnRole role) => setState(() {
+                if (role == ColumnRole.word) {
+                  // Only one column holds the words.
+                  _roles.updateAll(
+                    (_, ColumnRole r) =>
+                        r == ColumnRole.word ? ColumnRole.ignore : r,
+                  );
+                }
+                _roles[column] = role;
+              }),
+              onContinue: _runMatching,
+            ),
+            _Step.review => _buildReview(context),
+          },
+          // Where the header ends, over the list.
+          Builder(
+            builder: (BuildContext inner) => Positioned(
+              left: 0,
+              right: 0,
+              top: HeaderPage.insetOf(inner),
+              child: LoadingHairline(visible: _matching),
+            ),
           ),
         ],
       ),
@@ -213,6 +219,7 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
     return ListView(
       padding: const EdgeInsets.all(Space.screen),
       children: <Widget>[
+        HeaderPage.gap(),
         Text(
           '${plural(_matches.length, 'row')} · ${matched.length} matched · ${near.length} near matches · ${notFound.length} not found',
           style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant),
@@ -260,7 +267,9 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
           const SizedBox(height: Space.md),
         ],
         if (matched.isNotEmpty) ...<Widget>[
-          InkWell(
+          Pressable(
+            kind: PressKind.card,
+            child: InkWell(
             onTap: () => setState(() => _matchedExpanded = !_matchedExpanded),
             borderRadius: Radii.cardR,
             child: _Card(
@@ -306,7 +315,7 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
                 ],
               ),
             ),
-          ),
+          )),
           const SizedBox(height: Space.md),
         ],
         if (near.isNotEmpty) ...<Widget>[
@@ -440,6 +449,7 @@ class _InputStep extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(Space.screen),
       children: <Widget>[
+        HeaderPage.gap(),
         Text(
           'Paste a table. Mull reads one word per row and works out the columns afterwards.',
           style: MullType.body.copyWith(color: c.onSurface),
@@ -585,6 +595,7 @@ class _ColumnsStep extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(Space.screen),
       children: <Widget>[
+        HeaderPage.gap(),
         Text(
           'This is how Mull read your table.',
           style: MullType.body.copyWith(color: c.onSurface),

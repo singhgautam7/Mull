@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/database/dictionary_db.dart';
+import 'core/motion/motion.dart';
 import 'core/providers.dart';
 import 'core/router/router.dart';
 import 'core/theme/app_theme.dart';
@@ -22,11 +23,39 @@ import 'shared/widgets/states.dart';
 /// never differ.
 ThemeData themeFor(AppSettings s, Color? seed, Brightness b) {
   final Tone tone = s.toneFor(b);
-  return seed == null ? AppTheme.of(s.family, tone) : AppTheme.fromSeed(seed, tone);
+  final bool x = s.expressiveColors;
+  return seed == null
+      ? AppTheme.of(s.family, tone, expressive: x)
+      : AppTheme.fromSeed(seed, tone, expressive: x);
+}
+
+/// The Motion level for everything below: the setting resolved with the
+/// device class, and the phone's Remove animations (or an accessibility
+/// navigation service) forcing Off. Rebuilds only when one of those changes.
+/// Also tells [MullHaptics] when a scroll is under way, so no haptic fires
+/// mid-scroll. Shared by the app and the define sheet.
+class MullMotionScope extends ConsumerWidget {
+  const MullMotionScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final MotionLevel level = ref.watch(settingsProvider.select((AppSettings s) => s.motionLevel));
+    final bool off = systemMotionOff(context);
+    return NotificationListener<ScrollNotification>(
+      onNotification: (ScrollNotification n) {
+        if (n is ScrollStartNotification) MullHaptics.scrolling = true;
+        if (n is ScrollEndNotification) MullHaptics.scrolling = false;
+        return false;
+      },
+      child: MotionScope(level: off ? MotionLevel.off : level, systemOff: off, child: child),
+    );
+  }
 }
 
 /// What the widgets' colours depend on, so the push fires on exactly those.
-typedef _WidgetThemeKey = ({String family, ThemeMode mode, bool amoled, Color? seed});
+typedef _WidgetThemeKey = ({String family, ThemeMode mode, bool amoled, bool expressive, Color? seed});
 
 final Provider<_WidgetThemeKey> _widgetThemeKeyProvider = Provider<_WidgetThemeKey>((Ref ref) {
   final AppSettings s = ref.watch(settingsProvider);
@@ -34,6 +63,7 @@ final Provider<_WidgetThemeKey> _widgetThemeKeyProvider = Provider<_WidgetThemeK
     family: s.familyId,
     mode: s.themeMode,
     amoled: s.amoled,
+    expressive: s.expressiveColors,
     seed: s.dynamicColor ? ref.watch(wallpaperSeedProvider).value : null,
   );
 });
@@ -126,6 +156,9 @@ class _MullAppState extends ConsumerState<MullApp> {
           key: const ValueKey<String>('install'),
           title: 'Mull',
           debugShowCheckedModeBanner: false,
+      // The theme ripple reveals a change; an implicit theme tween under it
+      // would fight it.
+      themeAnimationDuration: Duration.zero,
           themeMode: s.themeMode,
           theme: themeFor(s, seed, Brightness.light),
           darkTheme: themeFor(s, seed, Brightness.dark),
@@ -166,6 +199,10 @@ class _MullAppState extends ConsumerState<MullApp> {
         // so an install that predates the alarm gets one.
         if (!mounted) return;
         await PlatformSurfaces.scheduleReminder();
+        // Motion level Auto: the one-off RAM check, after the first frame
+        // and only until it has an answer (cached in prefs).
+        if (!mounted) return;
+        await ref.read(settingsProvider.notifier).checkDevice(PlatformSurfaces.deviceMemory);
         if (mounted) await _checkInitialIntent();
       });
     }
@@ -174,18 +211,23 @@ class _MullAppState extends ConsumerState<MullApp> {
       key: const ValueKey<String>('app'),
       title: 'Mull',
       debugShowCheckedModeBanner: false,
+      // The theme ripple reveals a change; an implicit theme tween under it
+      // would fight it.
+      themeAnimationDuration: Duration.zero,
       routerConfig: _router,
       themeMode: s.themeMode,
       theme: themeFor(s, seed, Brightness.light),
       darkTheme: themeFor(s, seed, Brightness.dark),
-      // The text size setting sits on top of the OS scale.
+      // The text size setting sits on top of the OS scale. The motion scope
+      // and the theme ripple wrap the navigator, so sheets and dialogs are
+      // covered too.
       builder: (BuildContext context, Widget? child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(
             MediaQuery.textScalerOf(context).scale(1) * s.textScale,
           ),
         ),
-        child: child!,
+        child: MullMotionScope(child: ThemeRipple(child: child!)),
       ),
       ),
     );

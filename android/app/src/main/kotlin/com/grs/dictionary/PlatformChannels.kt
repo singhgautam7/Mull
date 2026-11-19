@@ -64,6 +64,17 @@ class PlatformChannels(private val activity: Activity) {
                 }
                 // About: the installed version, and links that leave the app
                 // for the browser or Play. Mull itself still has no network.
+                // Motion level Auto: total RAM (MB) and the low-RAM flag, read
+                // once per install after the first frame and cached in prefs.
+                "deviceMemory" -> {
+                    val am = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                    val info = android.app.ActivityManager.MemoryInfo()
+                    am.getMemoryInfo(info)
+                    result.success(mapOf("totalMb" to (info.totalMem / (1024 * 1024)).toInt(), "lowRam" to am.isLowRamDevice))
+                }
+                // Android 13 and later show their own clipboard confirmation,
+                // so the app shows none there.
+                "sdkInt" -> result.success(Build.VERSION.SDK_INT)
                 "appVersion" -> result.success(
                     activity.packageManager.getPackageInfo(activity.packageName, 0).versionName,
                 )

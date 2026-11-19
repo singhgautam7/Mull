@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -87,31 +88,42 @@ class AppButton extends StatelessWidget {
 
     final bool dashed = type == AppButtonType.dotted && !disabled;
     // A minimum height, not a fixed one: the pill grows with its text.
-    Widget button = ConstrainedBox(
-      constraints: BoxConstraints(minHeight: height, minWidth: fullWidth ? double.infinity : 0),
-      child: Material(
-        color: skin.bg,
-        shape: StadiumBorder(
-          side: skin.border == null || dashed
-              ? BorderSide.none
-              : BorderSide(color: skin.border!),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: disabled ? null : onPressed,
-          child: Padding(
-            padding: padding ?? EdgeInsets.symmetric(horizontal: compact ? 13 : 22, vertical: 4),
-            child: content,
+    // Pill at rest, radius 8 while pressed (Expressive).
+    final Widget button = Pressable(
+      kind: PressKind.button,
+      restRadius: height / 2,
+      enabled: !disabled,
+      builder: (BuildContext context, double radius, double _) {
+        final BorderRadius br = BorderRadius.circular(radius);
+        final BorderSide side =
+            skin.border == null || dashed ? BorderSide.none : BorderSide(color: skin.border!);
+        Widget b = ConstrainedBox(
+          constraints: BoxConstraints(minHeight: height, minWidth: fullWidth ? double.infinity : 0),
+          child: Material(
+            color: skin.bg,
+            // A stadium at rest; a rounded rectangle only while it morphs.
+            shape: radius >= height / 2
+                ? StadiumBorder(side: side)
+                : RoundedRectangleBorder(borderRadius: br, side: side),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: disabled ? null : onPressed,
+              child: Padding(
+                padding: padding ?? EdgeInsets.symmetric(horizontal: compact ? 13 : 22, vertical: 4),
+                child: content,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+        if (dashed) {
+          b = CustomPaint(
+            foregroundPainter: DashedBorderPainter(skin.border!, radius: radius),
+            child: b,
+          );
+        }
+        return b;
+      },
     );
-    if (dashed) {
-      button = CustomPaint(
-        foregroundPainter: DashedBorderPainter(skin.border!),
-        child: button,
-      );
-    }
     return Semantics(button: true, enabled: !disabled, label: label, child: button);
   }
 

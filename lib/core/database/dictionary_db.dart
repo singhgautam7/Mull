@@ -825,6 +825,56 @@ class DictionaryDb {
     List<({String word, String? definition})> rows,
   ) => compute((DictionaryDb db) => db.batchMatchWords(rows));
 
+  /// What a selected string is, for "Define": the first sense of a headword
+  /// by exact then alias (US spellings, plurals, inflections), then, with
+  /// [phrases], a phrase entry, then, with [lemma], a single word whose
+  /// stem is a real headword ("angered" is "anger"). Never the trigram
+  /// fuzzy step, so a typo cannot define a different word. At most four
+  /// indexed point queries, so it may run on the calling isolate. Shares its
+  /// steps with [batchMatchWords].
+  ({DictionaryWord? word, Idiom? idiom}) resolveSelection(
+    String text, {
+    bool phrases = false,
+    bool lemma = false,
+  }) {
+    const ({DictionaryWord? word, Idiom? idiom}) none = (word: null, idiom: null);
+    final String n = normalise(text);
+    if (n.isEmpty) return none;
+    DictionaryWord? w = _byHeadwordNorm(<String>[n])[n] ?? _byAliasNorm(<String>[n])[n];
+    if (w != null) return (word: w, idiom: null);
+    if (phrases) {
+      final ResultSet rs = _db.select(
+        'SELECT $_phraseCols FROM phrases WHERE phrase_norm = ? LIMIT 1',
+        <Object>[n],
+      );
+      if (rs.isNotEmpty) {
+        final Phrase p = Phrase._from(rs.first);
+        return (
+          word: null,
+          idiom: Idiom(
+            idiomKey: p.phraseKey,
+            phrase: p.phrase,
+            meaning: p.meaning,
+            example: p.example,
+            register: p.register,
+          ),
+        );
+      }
+    }
+    if (lemma && !n.contains(' ')) {
+      final List<String> forms = _candidateLemmas(n);
+      final Map<String, DictionaryWord> byForm = _byHeadwordNorm(forms);
+      for (final MapEntry<String, DictionaryWord> e in _byAliasNorm(forms).entries) {
+        byForm.putIfAbsent(e.key, () => e.value);
+      }
+      for (final String f in forms) {
+        w = byForm[f];
+        if (w != null) return (word: w, idiom: null);
+      }
+    }
+    return none;
+  }
+
   /// The matching pipeline for a word import, in order, stopping at the
   /// first hit: exact on `headword_norm`, alias (US spellings, plurals,
   /// inflections), lemma (a rough stem retried through both), trigram fuzzy

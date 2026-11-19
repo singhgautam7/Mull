@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/database/dictionary_db.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -65,7 +66,9 @@ class TopicCard extends StatelessWidget {
     return Semantics(
       button: true,
       label: '${collection.title}, ${grouped(collection.wordCount)} words, ${progressLabel(progress)}',
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.card,
+        child: InkWell(
         onTap: onTap,
         borderRadius: Radii.cardR,
         child: Container(
@@ -128,7 +131,7 @@ class TopicCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -149,7 +152,9 @@ class BandRow extends StatelessWidget {
     return Semantics(
       button: true,
       label: '${collection.title}, ${progressLabel(progress)}',
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.row,
+        child: InkWell(
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
@@ -186,7 +191,7 @@ class BandRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -211,7 +216,9 @@ class ListRow extends StatelessWidget {
     return Semantics(
       button: true,
       label: '${collection.title}, $subtitle',
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.row,
+        child: InkWell(
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
@@ -233,7 +240,7 @@ class ListRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }

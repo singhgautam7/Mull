@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -228,27 +229,73 @@ class _LoadingHairlineState extends State<LoadingHairline> {
   );
 }
 
-/// A muted bar standing in for a line of text while a section settles.
+/// A muted bar standing in for a line of text while a section settles. It
+/// shimmers at Expressive on the kit's one shared clock; static at Subtle and
+/// Off. [radius] defaults to the chip radius.
 class SkeletonLine extends StatelessWidget {
-  const SkeletonLine({this.width = 120, this.height = 10, super.key});
+  const SkeletonLine({this.width = 120, this.height = 10, this.radius = Radii.chip, super.key});
 
   final double width;
   final double height;
+  final double radius;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: width,
-    height: height,
-    decoration: BoxDecoration(
-      color: context.colors.surfaceContainerHigh,
-      borderRadius: Radii.chipR,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return ShimmerBox(
+      width: width,
+      height: height,
+      radius: radius,
+      base: c.surfaceContainerHigh,
+      highlight: c.outline,
+    );
+  }
+}
+
+/// A placeholder shaped like the Mull tab's word card: headword, part of
+/// speech, two definition lines and the action row. Fills its parent.
+/// Swap it for the card with `SkeletonCrossFade`.
+class SkeletonWordCard extends StatelessWidget {
+  const SkeletonWordCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surfaceContainer,
+        borderRadius: Radii.wordCardR,
+        border: Border.all(color: c.outline),
+      ),
+      padding: const EdgeInsets.fromLTRB(Space.xl, Space.xl, Space.xl, Space.lg),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SkeletonLine(width: 180, height: 38, radius: Radii.thumb),
+          SizedBox(height: Space.sm),
+          SkeletonLine(width: 90, height: 12),
+          SizedBox(height: Space.lg),
+          SkeletonLine(width: double.infinity, height: 20),
+          SizedBox(height: Space.sm),
+          SkeletonLine(width: 220, height: 20),
+          Spacer(),
+          Row(
+            spacing: Space.md,
+            children: <Widget>[
+              SkeletonLine(width: 52, height: 52, radius: 26),
+              SkeletonLine(width: 52, height: 52, radius: 26),
+              SkeletonLine(width: 52, height: 52, radius: 26),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// A card the size and shape of a [TopicCard], holding its place until the
 /// progress and shelf streams have emitted, so nothing jumps when they land.
-/// Still, not shimmering: loading is never the dominant impression.
+/// Its lines shimmer at Expressive only.
 class SkeletonCard extends StatelessWidget {
   const SkeletonCard({this.minHeight = 96, super.key});
 

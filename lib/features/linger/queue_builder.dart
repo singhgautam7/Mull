@@ -58,7 +58,13 @@ class QueueBuilder {
         .toList();
     if (candidates.isEmpty) return const <String>[];
 
-    final Map<String, SeenWord> seen = await _user.seenStates(candidates);
+    // A wide pool (the default mix is 5,495 keys) is one `IN (...)` with that
+    // many bound parameters, which was most of the 35 to 56 ms this took.
+    // The seen table is bounded by the learning set and is read whole in
+    // about a tenth of that, so past one chunk read it once and look keys up.
+    final Map<String, SeenWord> seen = candidates.length > 250
+        ? await _user.allSeen()
+        : await _user.seenStates(candidates);
     final List<String> unseen = <String>[];
     final List<SeenWord> due = <SeenWord>[];
     final List<SeenWord> rest = <SeenWord>[];

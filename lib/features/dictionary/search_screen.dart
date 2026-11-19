@@ -1,23 +1,29 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/dictionary_db.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
+import '../../shared/widgets/app_bottom_sheet.dart';
+import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_header.dart';
+import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/did_you_mean.dart';
 import '../../shared/widgets/fields.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/states.dart';
 import '../settings/settings_controller.dart';
+import 'add_to_list_sheet.dart';
 import 'idiom_sheet.dart';
 import 'word_sheet.dart';
 
@@ -28,12 +34,7 @@ enum SearchSegment { words, idioms }
 /// dense rows (Settings > Appearance > Search results) with the matched run
 /// tinted.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({
-    this.initialSegment = SearchSegment.words,
-    this.initialQuery,
-    this.focusToken,
-    super.key,
-  });
+  const SearchScreen({this.initialSegment = SearchSegment.words, this.initialQuery, this.focusToken, super.key});
 
   final SearchSegment initialSegment;
 
@@ -63,6 +64,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   late SearchSegment _segment = widget.initialSegment;
   bool _slow = false;
   List<String> _recent = const <String>[];
+
+  /// History rows leaving: still drawn, animating out.
+  final Set<String> _leaving = <String>{};
   Timer? _recordTimer;
   Timer? _debounce;
 
@@ -175,17 +179,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        body: SafeArea(
-          bottom: false,
-          child: Column(
+        // Fixed header: the field and the toggle are this page's primary
+        // control, and nothing docks under a floating one.
+        body: HeaderPage(
+          floating: false,
+          header: AppHeader(
+            title: 'Search',
+            onBack: Navigator.of(context).canPop() ? () => Navigator.of(context).pop() : null,
+          ),
+          body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              AppHeader(
-                title: 'Search',
-                onBack: Navigator.of(context).canPop()
-                    ? () => Navigator.of(context).pop()
-                    : null,
-              ),
+              HeaderPage.gap(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
                 child: SearchField(
@@ -203,7 +208,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     (SearchSegment.idioms, 'Phrases'),
                   ],
                   selected: _segment,
-                  counts: typing ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length} : const <Object?, int>{},
+                  counts: typing
+                      ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length}
+                      : const <Object?, int>{},
                   onChanged: (SearchSegment s) => setState(() => _segment = s),
                   accent: true,
                 ),
@@ -217,19 +224,70 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  /// "Remove from history?" with the term itself; Remove deletes that entry
+  /// only and the row animates out. Cancel or a swipe down changes nothing.
+  Future<void> _confirmRemove(String q) async {
+    final bool? ok = await showAppBottomSheet<bool>(
+      context: context,
+      title: 'Remove from history?',
+      builder: (BuildContext ctx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(q, style: MullType.titleMedium.copyWith(color: ctx.colors.onSurface)),
+          const SizedBox(height: Space.lg),
+          AppButton(
+            label: 'Remove',
+            type: AppButtonType.danger,
+            fullWidth: true,
+            onPressed: () => Navigator.of(ctx).pop(true),
+          ),
+          const SizedBox(height: Space.sm),
+          AppButton(
+            label: 'Cancel',
+            type: AppButtonType.outlined,
+            fullWidth: true,
+            onPressed: () => Navigator.of(ctx).pop(false),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(userRepositoryProvider).deleteRecentSearch(q);
+    if (mounted) setState(() => _leaving.add(q));
+  }
+
   Widget _recentList(MullColors c) {
     return ListView(
       padding: const EdgeInsets.only(top: Space.lg, bottom: Space.bottomSafe),
       children: <Widget>[
         const SectionHeader(label: 'Recent'),
         for (final String q in _recent)
-          InkWell(
-            onTap: () => _set(q),
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-              alignment: Alignment.centerLeft,
-              child: Text(q, style: MullType.titleMedium.copyWith(color: c.onSurface)),
+          MotionListItem(
+            key: ValueKey<String>(q),
+            present: !_leaving.contains(q),
+            onRemoved: () => setState(() {
+              _recent = <String>[
+                for (final String r in _recent)
+                  if (r != q) r,
+              ];
+              _leaving.remove(q);
+            }),
+            child: Semantics(
+              customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
+                const CustomSemanticsAction(label: 'Remove from history'): () => unawaited(_confirmRemove(q)),
+              },
+              child: Pressable(
+                kind: PressKind.row,
+                onTap: () => _set(q),
+                onLongPress: () => unawaited(_confirmRemove(q)),
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                  alignment: Alignment.centerLeft,
+                  child: Text(q, style: MullType.titleMedium.copyWith(color: c.onSurface)),
+                ),
+              ),
             ),
           ),
         Padding(
@@ -248,20 +306,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (words ? _words.isEmpty : _idioms.isEmpty) return _noResults(c);
     final int n = words ? _words.length : _idioms.length;
     SearchResult at(int i) => words ? SearchResult.word(_words[i]) : SearchResult.idiom(_idioms[i]);
+    Widget? add(int i) => words ? _AddToListButton(word: _words[i]) : null;
     void open(int i) => words ? unawaited(_openWord(_words[i])) : unawaited(showIdiomSheet(context, idiom: _idioms[i]));
 
     if (ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle)) == SearchStyle.table) {
       return ListView.builder(
         padding: const EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe),
         itemCount: n,
-        itemBuilder: (BuildContext context, int i) => SearchResultRow(result: at(i), query: _query, onTap: () => open(i)),
+        itemBuilder: (BuildContext context, int i) =>
+            SearchResultRow(result: at(i), query: _query, onTap: () => open(i), trailing: add(i)),
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.bottomSafe),
       itemCount: n,
       separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
-      itemBuilder: (BuildContext context, int i) => SearchResultCard(result: at(i), query: _query, onTap: () => open(i)),
+      itemBuilder: (BuildContext context, int i) =>
+          SearchResultCard(result: at(i), query: _query, onTap: () => open(i), trailing: add(i)),
     );
   }
 
@@ -272,14 +333,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       children: <Widget>[
         Text('No entry for ${_query.trim()}', style: MullType.display.copyWith(fontSize: 28, color: c.onSurface)),
         const SizedBox(height: Space.row),
-        Text('The spelling may differ, or this edition may not carry it.', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
+        Text(
+          'The spelling may differ, or this edition may not carry it.',
+          style: MullType.body.copyWith(color: c.onSurfaceVariant),
+        ),
         if (_suggestions.isNotEmpty) ...<Widget>[
           const SizedBox(height: Space.lg),
           DidYouMean(words: _suggestions, onPick: (DictionaryWord w) => _set(w.headword)),
         ],
         const SizedBox(height: Space.lg),
-        InkWell(
-          onTap: () => setState(() => _segment = _segment == SearchSegment.words ? SearchSegment.idioms : SearchSegment.words),
+        Pressable(
+          onTap: () =>
+              setState(() => _segment = _segment == SearchSegment.words ? SearchSegment.idioms : SearchSegment.words),
           child: Text(
             otherHas
                 ? (_segment == SearchSegment.words ? 'Or search the idioms instead.' : 'Or search the words instead.')
@@ -298,12 +363,11 @@ class SearchResult {
   const SearchResult({required this.title, required this.definition, required this.chip, this.pos});
 
   SearchResult.word(DictionaryWord w)
-      : this(title: w.headword, pos: posLabel(w.pos), definition: w.definitionShort, chip: bandLabel(w.band));
+    : this(title: w.headword, pos: posLabel(w.pos), definition: w.definitionShort, chip: bandLabel(w.band));
 
   SearchResult.idiom(Idiom i) : this(title: i.phrase, definition: i.meaning, chip: i.register);
 
-  SearchResult.phrase(Phrase p)
-      : this(title: p.phrase, definition: p.meaning, chip: p.register);
+  SearchResult.phrase(Phrase p) : this(title: p.phrase, definition: p.meaning, chip: p.register);
 
   final String title;
 
@@ -340,7 +404,8 @@ class SearchResultRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return InkWell(
+    return Pressable(
+      kind: PressKind.row,
       onTap: onTap,
       child: Container(
         constraints: const BoxConstraints(minHeight: 44),
@@ -352,14 +417,23 @@ class SearchResultRow extends StatelessWidget {
           children: <Widget>[
             SizedBox(
               width: 104,
-              child: highlighted(result.title, query, MullType.titleMedium.copyWith(color: c.onSurface), c.accent, maxLines: 1),
+              child: highlighted(
+                result.title,
+                query,
+                MullType.titleMedium.copyWith(color: c.onSurface),
+                c.accent,
+                maxLines: 1,
+              ),
             ),
             Expanded(
               child: Text.rich(
                 TextSpan(
                   children: <InlineSpan>[
                     if (result.pos != null)
-                      TextSpan(text: '${result.pos} · ', style: const TextStyle(fontStyle: FontStyle.italic)),
+                      TextSpan(
+                        text: '${result.pos} · ',
+                        style: const TextStyle(fontStyle: FontStyle.italic),
+                      ),
                     TextSpan(text: result.definition),
                   ],
                 ),
@@ -404,19 +478,15 @@ class SearchResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return InkWell(
+    return Pressable(
       onTap: onTap,
       onLongPress: onLongPress,
-      borderRadius: Radii.cardR,
       child: Container(
         padding: const EdgeInsets.all(Space.lg),
         decoration: BoxDecoration(
           color: selected ? c.surfaceContainer : c.surfaceContainer,
           borderRadius: Radii.cardR,
-          border: Border.all(
-            color: selected ? c.primary : c.outline,
-            width: selected ? 1.5 : 1,
-          ),
+          border: Border.all(color: selected ? c.primary : c.outline, width: selected ? 1.5 : 1),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,9 +508,20 @@ class SearchResultCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  highlighted(result.title, query, MullType.sheetTitle.copyWith(color: c.onSurface), c.onPrimaryContainer, background: c.primaryContainer),
+                  highlighted(
+                    result.title,
+                    query,
+                    MullType.sheetTitle.copyWith(color: c.onSurface),
+                    c.onPrimaryContainer,
+                    background: c.primaryContainer,
+                  ),
                   const SizedBox(height: 6),
-                  Text(result.definition, style: MullType.body.copyWith(color: c.onSurfaceVariant), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  Text(
+                    result.definition,
+                    style: MullType.body.copyWith(color: c.onSurfaceVariant),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: Space.sm),
                   BandChip(result.chip),
                 ],
@@ -458,6 +539,22 @@ class SearchResultCard extends StatelessWidget {
   }
 }
 
+/// The add-to-list control at the end of a word result. Mull shows no saved
+/// state on this glyph anywhere (only bookmark has one), so neither does it.
+class _AddToListButton extends StatelessWidget {
+  const _AddToListButton({required this.word});
+
+  final DictionaryWord word;
+
+  @override
+  Widget build(BuildContext context) => AppIconButton(
+    icon: Icons.playlist_add_rounded,
+    semanticLabel: 'Add ${word.headword} to a list',
+    filled: false,
+    onPressed: () => unawaited(showAddToListSheet(context, wordKey: word.wordKey, headword: word.headword)),
+  );
+}
+
 /// [text] with the first case-insensitive occurrence of [query] tinted.
 /// Wraps freely unless [maxLines] bounds it.
 Widget highlighted(String text, String query, TextStyle style, Color tint, {Color? background, int? maxLines}) {
@@ -468,7 +565,10 @@ Widget highlighted(String text, String query, TextStyle style, Color tint, {Colo
     TextSpan(
       children: <InlineSpan>[
         TextSpan(text: text.substring(0, i)),
-        TextSpan(text: text.substring(i, i + q.length), style: TextStyle(color: tint, backgroundColor: background)),
+        TextSpan(
+          text: text.substring(i, i + q.length),
+          style: TextStyle(color: tint, backgroundColor: background),
+        ),
         TextSpan(text: text.substring(i + q.length)),
       ],
     ),

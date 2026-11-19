@@ -10,12 +10,12 @@ import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
 import 'info_screens.dart';
 import 'settings_controller.dart';
+import 'settings_screen.dart';
 import 'settings_widgets.dart';
 
-/// Perch's structure, Mull's entries. Settings, Collections, Mixes; YOUR
-/// DATA (Stats, Export, Permissions); ABOUT MULL (Privacy, Dictionary info,
-/// About). Version line centred below. Lists are collections now, so the
-/// saved mixes take that row.
+/// Kuber's structure, Mull's entries. Browse (Shelves, Mixes, Stats), Yours
+/// (Settings, Data, Permissions), About (Privacy, Dictionary, About Mull).
+/// Each destination appears once. The line under it opens debug on seven taps.
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
@@ -26,12 +26,6 @@ class MoreScreen extends ConsumerStatefulWidget {
 class _MoreScreenState extends ConsumerState<MoreScreen> {
   int _versionTaps = 0;
 
-  static String _modeLabel(ThemeMode mode) => switch (mode) {
-    ThemeMode.light => 'Light',
-    ThemeMode.dark => 'Dark',
-    ThemeMode.system => 'System',
-  };
-
   @override
   Widget build(BuildContext context) {
     final AppSettings s = ref.watch(settingsProvider);
@@ -41,56 +35,52 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     final String? version = ref.watch(appVersionProvider).value;
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: HeaderPage(
+        header: const AppHeader(title: 'More'),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, Space.bottomSafe),
           children: <Widget>[
-            const AppHeader(title: 'More'),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                children: <Widget>[
-                  SettingsGroup(
-                    label: 'General',
-                    children: <Widget>[
-                      SettingsRow(icon: Icons.grid_view_rounded, label: 'Shelves', value: '$collections', onTap: () => context.push(Routes.collections)),
-                      SettingsRow(icon: Icons.shuffle_rounded, label: 'Mixes', value: '$mixes', onTap: () => context.push(Routes.mixes)),
-                      SettingsRow(icon: Icons.tune_rounded, label: 'Settings', value: '${s.dynamicColor ? 'Wallpaper' : s.family.name} · ${_modeLabel(s.themeMode)}', onTap: () => context.push(Routes.settings)),
-                    ],
-                  ),
-                  SettingsGroup(
-                    label: 'Your data',
-                    children: <Widget>[
-                      SettingsRow(icon: Icons.bar_chart_rounded, label: 'Stats', onTap: () => context.push(Routes.stats)),
-                      SettingsRow(icon: Icons.key_outlined, label: 'Permissions', value: 'Notifications', onTap: () => context.push(Routes.permissions)),
-                      SettingsRow(icon: Icons.storage_rounded, label: 'Data', onTap: () => context.push(Routes.data)),
-                    ],
-                  ),
-                  SettingsGroup(
-                    label: 'About Mull',
-                    children: <Widget>[
-                      SettingsRow(icon: Icons.shield_outlined, label: 'Privacy', value: 'Offline only', onTap: () => context.push(Routes.privacy)),
-                      SettingsRow(icon: Icons.menu_book_outlined, label: 'Dictionary info', value: '${grouped(entries)} entries', onTap: () => context.push(Routes.dictionary)),
-                      SettingsRow(icon: Icons.info_outline_rounded, label: 'About', value: version, onTap: () => context.push(Routes.about)),
-                    ],
-                  ),
-                  // Seven taps on the footer line opens the debug route.
-                  GestureDetector(
-                    onTap: () {
-                      setState(() => _versionTaps++);
-                      if (_versionTaps >= 7) {
-                        _versionTaps = 0;
-                        context.push(Routes.debug);
-                      }
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: MadeInIndia(),
-                    ),
-                  ),
-                ],
+            HeaderPage.gap(),
+            SettingsGroup(
+              label: 'Browse',
+              children: <Widget>[
+                SettingsRow(icon: Icons.grid_view_rounded, label: 'Shelves', value: '$collections', onTap: () => context.push(Routes.collections)),
+                SettingsRow(icon: Icons.shuffle_rounded, label: 'Mixes', value: '$mixes', onTap: () => context.push(Routes.mixes)),
+                SettingsRow(icon: Icons.bar_chart_rounded, label: 'Stats', subtitle: 'Words seen and revisited', onTap: () => context.push(Routes.stats)),
+              ],
+            ),
+            SettingsGroup(
+              label: 'Yours',
+              children: <Widget>[
+                SettingsRow(icon: Icons.tune_rounded, label: 'Settings', value: SettingsScreen.themeSummary(s), onTap: () => context.push(Routes.settings)),
+                SettingsRow(icon: Icons.storage_rounded, label: 'Data', subtitle: 'Export, import and reset', onTap: () => context.push(Routes.data)),
+                SettingsRow(icon: Icons.key_outlined, label: 'Permissions', value: 'Notifications', onTap: () => context.push(Routes.permissions)),
+              ],
+            ),
+            SettingsGroup(
+              label: 'About',
+              children: <Widget>[
+                SettingsRow(icon: Icons.shield_outlined, label: 'Privacy', value: 'Offline only', onTap: () => context.push(Routes.privacy)),
+                SettingsRow(icon: Icons.menu_book_outlined, label: 'Dictionary', value: '${grouped(entries)} entries', onTap: () => context.push(Routes.dictionary)),
+                SettingsRow(icon: Icons.info_outline_rounded, label: 'About Mull', value: version, onTap: () => context.push(Routes.about)),
+              ],
+            ),
+            // Seven taps on the footer line opens the debug route.
+            Semantics(
+              label: 'Made with love in India',
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => _versionTaps++);
+                  if (_versionTaps >= 7) {
+                    _versionTaps = 0;
+                    context.push(Routes.debug);
+                  }
+                },
+                behavior: HitTestBehavior.opaque,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: Space.sm),
+                  child: ExcludeSemantics(child: MadeInIndia()),
+                ),
               ),
             ),
           ],
