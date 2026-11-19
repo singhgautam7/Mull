@@ -59,6 +59,14 @@ android {
             }
         }
     }
+
+    packaging {
+        jniLibs {
+            // Compressed native libraries: the smallest Play download, at the
+            // cost of a larger installed size (see specs/app-polish/size.md).
+            useLegacyPackaging = true
+        }
+    }
 }
 
 kotlin {
