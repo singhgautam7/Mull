@@ -9,6 +9,7 @@ import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/definable_text.dart';
 
 /// HANDOFF section 2, the headword card. Radius 28, `surfaceContainer`, 1px
 /// outline. Headword, IPA + speaker, part of speech, definition, example with
@@ -263,7 +264,7 @@ class _WordCardState extends State<WordCard> {
           style: MullType.label.copyWith(fontStyle: FontStyle.italic, color: c.onSurfaceMuted),
         ),
         const SizedBox(height: Space.lg),
-        Text(word.definitionShort, style: definition),
+        DefinableText(word.definitionShort, style: definition),
         if (showExample) ...<Widget>[
           const SizedBox(height: Space.md),
           _Example(text: widget.examples.first, headword: word.headwordNorm, headwordShown: headword),

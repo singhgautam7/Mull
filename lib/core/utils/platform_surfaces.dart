@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/dictionary/arrival_sheet.dart';
+import '../../features/dictionary/idiom_sheet.dart';
 import '../../features/dictionary/word_sheet.dart';
 import '../../features/settings/settings_controller.dart';
 import '../database/dictionary_db.dart';
@@ -204,6 +205,41 @@ class PlatformSurfaces {
     }
   }
 
+  /// The one define entry point: opens the entry [text] names and says
+  /// whether there was one. Exact and alias hits only, so an arrival never
+  /// opens a near miss. [fromDefinition] (the menu on a definition's text)
+  /// also takes a phrase entry and a lemma ("angered" opens "anger"); never
+  /// the trigram fuzzy step. Records the lookup for a word.
+  static Future<bool> defineText(
+    BuildContext context,
+    WidgetRef ref,
+    String text, {
+    bool fromOutside = false,
+    String? sourceHint,
+    bool fromDefinition = false,
+  }) async {
+    final ({DictionaryWord? word, Idiom? idiom}) hit = ref
+        .read(dictProvider)
+        .resolveSelection(text, phrases: fromDefinition, lemma: fromDefinition);
+    if (hit.word case final DictionaryWord w) {
+      await ref.read(userRepositoryProvider).recordLookup(w.wordKey);
+      if (context.mounted) {
+        await showWordSheet(
+          context,
+          wordKey: w.wordKey,
+          fromOutside: fromOutside,
+          sourceHint: sourceHint,
+        );
+      }
+      return true;
+    }
+    if (hit.idiom case final Idiom i) {
+      if (context.mounted) await showIdiomSheet(context, idiom: i);
+      return true;
+    }
+    return false;
+  }
+
   /// HANDOFF 21.2 and 21.3. One word opens its sheet. Longer text keeps the
   /// sentence as context: when exactly one uncommon word is in it that word
   /// opens directly, otherwise the user picks from what Mull knows.
@@ -230,19 +266,13 @@ class PlatformSurfaces {
     // The whole selection first: one word, or a phrase Mull has as a
     // headword ("Command Line" is `command-line`). An exact or alias hit
     // opens the entry; a near miss is offered, never opened.
-    final WordMatch whole = (await dict.matchWords(
-      <({String word, String? definition})>[(word: text, definition: null)],
-    )).single;
-    if (whole.isMatched) {
-      await user.recordLookup(whole.word!.wordKey);
-      if (context.mounted) {
-        await showWordSheet(
-          context,
-          wordKey: whole.word!.wordKey,
-          fromOutside: true,
-          sourceHint: sourceHint,
-        );
-      }
+    if (await defineText(
+      context,
+      ref,
+      text,
+      fromOutside: true,
+      sourceHint: sourceHint,
+    )) {
       return;
     }
     if (tokens.length <= 1) {

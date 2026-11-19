@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/utils/platform_surfaces.dart';
@@ -19,6 +20,7 @@ import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/definable_text.dart';
 import '../linger/share_word_sheet.dart';
 import '../settings/settings_controller.dart';
 import 'add_to_list_sheet.dart';
@@ -50,7 +52,53 @@ Future<void> showWordSheet(
   );
 }
 
-class _WordSheet extends ConsumerWidget {
+/// Everything the sheet reads from the dictionary, read once when it opens
+/// (never in `build()`, which reruns for every note, context and setting
+/// change). All indexed point queries.
+class _WordEntry {
+  _WordEntry._(
+    this.word,
+    this.senses,
+    this.us,
+    this.inflections,
+    this.synonyms,
+    this.examples,
+  );
+
+  factory _WordEntry.read(DictionaryDb dict, String wordKey) {
+    final DictionaryWord? word = dict.byKey(wordKey);
+    if (word == null) {
+      return _WordEntry._(
+        null,
+        const <DictionaryWord>[],
+        null,
+        const <String>[],
+        const <String>{},
+        const <String, List<String>>{},
+      );
+    }
+    final List<DictionaryWord> senses = dict.senses(word.headwordNorm);
+    return _WordEntry._(
+      word,
+      senses,
+      dict.usSpelling(senses.first.wordKey),
+      dict.inflections(senses.first.wordKey),
+      <String>{for (final DictionaryWord w in senses) ...dict.synonyms(w.wordKey)},
+      <String, List<String>>{
+        for (final DictionaryWord w in senses) w.wordKey: dict.examples(w.wordKey),
+      },
+    );
+  }
+
+  final DictionaryWord? word;
+  final List<DictionaryWord> senses;
+  final String? us;
+  final List<String> inflections;
+  final Set<String> synonyms;
+  final Map<String, List<String>> examples;
+}
+
+class _WordSheet extends ConsumerStatefulWidget {
   const _WordSheet({
     required this.wordKey,
     required this.fromSearch,
@@ -64,19 +112,31 @@ class _WordSheet extends ConsumerWidget {
   final String? sourceHint;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_WordSheet> createState() => _WordSheetState();
+}
+
+class _WordSheetState extends ConsumerState<_WordSheet> {
+  late final _WordEntry _entry = _WordEntry.read(
+    ref.read(dictProvider),
+    widget.wordKey,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final String wordKey = widget.wordKey;
+    final bool fromOutside = widget.fromOutside;
+    final String? sourceHint = widget.sourceHint;
     final MullColors c = context.colors;
-    final DictionaryDb dict = ref.watch(dictProvider);
-    final DictionaryWord? word = dict.byKey(wordKey);
+    final DictionaryWord? word = _entry.word;
     if (word == null) {
       return Text(
         'No entry for $wordKey',
         style: MullType.body.copyWith(color: c.onSurfaceVariant),
       );
     }
-    final List<DictionaryWord> senses = dict.senses(word.headwordNorm);
-    final String? us = dict.usSpelling(senses.first.wordKey);
-    final List<String> inflections = dict.inflections(senses.first.wordKey);
+    final List<DictionaryWord> senses = _entry.senses;
+    final String? us = _entry.us;
+    final List<String> inflections = _entry.inflections;
     final AppSettings s = ref.watch(settingsProvider);
     final String headword = s.spelling == Spelling.american && us != null
         ? us
@@ -92,9 +152,7 @@ class _WordSheet extends ConsumerWidget {
     for (final DictionaryWord w in senses) {
       byPos.putIfAbsent(w.pos, () => <DictionaryWord>[]).add(w);
     }
-    final Set<String> synonyms = <String>{
-      for (final DictionaryWord w in senses) ...dict.synonyms(w.wordKey),
-    };
+    final Set<String> synonyms = _entry.synonyms;
     final List<String> plural = inflections
         .where(
           (String f) =>
@@ -191,7 +249,7 @@ class _WordSheet extends ConsumerWidget {
           ),
           const SizedBox(height: Space.md),
           for (final DictionaryWord sense in group.value) ...<Widget>[
-            _Sense(sense: sense, examples: dict.examples(sense.wordKey)),
+            _Sense(sense: sense, examples: _entry.examples[sense.wordKey] ?? const <String>[]),
             const SizedBox(height: Space.lg),
           ],
           const SizedBox(height: Space.sm),
@@ -222,16 +280,28 @@ class _WordSheet extends ConsumerWidget {
 /// The action row pinned under the entry, the same whether the sheet was
 /// opened in the app or over another app: the entry above it is already the
 /// whole entry, so there is nothing fuller to open.
-class _WordSheetActions extends ConsumerWidget {
+class _WordSheetActions extends ConsumerStatefulWidget {
   const _WordSheetActions({required this.wordKey, required this.fromSearch});
 
   final String wordKey;
   final bool fromSearch;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final DictionaryDb dict = ref.watch(dictProvider);
-    final DictionaryWord? word = dict.byKey(wordKey);
+  ConsumerState<_WordSheetActions> createState() => _WordSheetActionsState();
+}
+
+class _WordSheetActionsState extends ConsumerState<_WordSheetActions> {
+  // Read once, not per rebuild: the bookmark stream rebuilds this row.
+  late final DictionaryWord? _word = ref
+      .read(dictProvider)
+      .byKey(widget.wordKey);
+
+  @override
+  Widget build(BuildContext context) {
+    final DictionaryDb dict = ref.read(dictProvider);
+    final String wordKey = widget.wordKey;
+    final bool fromSearch = widget.fromSearch;
+    final DictionaryWord? word = _word;
     if (word == null) return const SizedBox.shrink();
     final bool bookmarked =
         ref.watch(bookmarksProvider).value?.contains(wordKey) ?? false;
@@ -346,13 +416,27 @@ class _ContextCardState extends State<_ContextCard> {
               style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
             ),
             if (multi)
-              InkWell(
-                onTap: () => setState(() => _editing = !_editing),
-                child: Text(
-                  _editing ? 'Done' : 'Edit',
-                  style: MullType.monoLabel.copyWith(
-                    color: c.primary,
-                    fontWeight: FontWeight.w600,
+              Semantics(
+                button: true,
+                label: _editing ? 'Done' : 'Edit',
+                excludeSemantics: true,
+                child: Pressable(
+                  kind: PressKind.chip,
+                  onTap: () => setState(() => _editing = !_editing),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: 48,
+                      minWidth: 48,
+                    ),
+                    child: Center(
+                      child: Text(
+                        _editing ? 'Done' : 'Edit',
+                        style: MullType.monoLabel.copyWith(
+                          color: c.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               )
@@ -419,13 +503,14 @@ class _ContextCardState extends State<_ContextCard> {
                           ),
                         ),
                         if (_editing)
-                          InkWell(
-                            onTap: () => widget.onDelete(ctx.id),
-                            child: Icon(
-                              Icons.delete_outline_rounded,
-                              size: 16,
-                              color: c.danger,
-                            ),
+                          AppIconButton(
+                            icon: Icons.delete_outline_rounded,
+                            size: 32,
+                            glyphSize: 16,
+                            filled: false,
+                            tint: c.danger,
+                            semanticLabel: 'Delete this place',
+                            onPressed: () => widget.onDelete(ctx.id),
                           ),
                       ],
                     ),
@@ -495,9 +580,9 @@ class _NoteCard extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'Your note',
-      child: InkWell(
+      child: Pressable(
+        kind: PressKind.card,
         onTap: onTap,
-        borderRadius: Radii.cardR,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(Space.lg),
@@ -548,7 +633,7 @@ class _Sense extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
+              DefinableText(
                 sense.definitionFull,
                 style: MullType.body.copyWith(color: c.onSurface),
               ),
