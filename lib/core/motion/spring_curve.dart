@@ -44,7 +44,15 @@ extension SpringTo on AnimationController {
   TickerFuture springTo(double target, SpringDescription spring) {
     final f = animateWith(SpringSimulation(spring, value, target, velocity));
     f.then((_) {
-      if (!isAnimating) value = target;
+      // The callback runs a microtask after the spring settles; the owner may
+      // have been disposed in between (a row removed by the tap that pressed
+      // it), and a disposed controller cannot take a value.
+      if (isAnimating) return;
+      try {
+        value = target;
+      } on Object catch (_) {
+        // Disposed: nothing left to snap.
+      }
     });
     return f;
   }
