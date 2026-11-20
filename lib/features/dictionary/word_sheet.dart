@@ -309,14 +309,13 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
           ),
           const SizedBox(height: Space.lg),
         ],
-        Text(
-          us == null
-              ? 'British spelling shown · US form identical'
-              : (s.spelling == Spelling.american
-                    ? 'British spelling: ${word.headword}'
-                    : 'American spelling: $us'),
-          style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
-        ),
+        if (us != null)
+          Text(
+            s.spelling == Spelling.american
+                ? 'British spelling: ${word.headword}'
+                : 'American spelling: $us',
+            style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
+          ),
       ],
     );
   }
@@ -732,9 +731,10 @@ class _WordChips extends StatelessWidget {
               child: Text(
                 words[i],
                 style: MullType.body.copyWith(
-                  color: c.primary,
+                  color: c.onSurface,
+                  fontStyle: FontStyle.italic,
                   decoration: TextDecoration.underline,
-                  decorationColor: c.primary.withValues(alpha: 0.35),
+                  decorationColor: c.onSurface.withValues(alpha: 0.35),
                 ),
               ),
             ),
@@ -776,9 +776,10 @@ class _WordFamilyList extends StatelessWidget {
                     TextSpan(
                       text: family[i].headword,
                       style: MullType.body.copyWith(
-                        color: c.primary,
+                        color: c.onSurface,
+                        fontStyle: FontStyle.italic,
                         decoration: TextDecoration.underline,
-                        decorationColor: c.primary.withValues(alpha: 0.35),
+                        decorationColor: c.onSurface.withValues(alpha: 0.35),
                       ),
                     ),
                     TextSpan(

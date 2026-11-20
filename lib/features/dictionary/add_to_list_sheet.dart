@@ -113,8 +113,10 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
           ),
         const SizedBox(height: Space.sm),
         CustomPaint(
-          foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.thumb),
+          foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.full),
           child: Pressable(
+            kind: PressKind.button,
+            restRadius: Radii.full,
             onTap: () async {
               final String? slug = await showCreateListSheet(context);
               if (slug != null) await _toggle(slug, true);
