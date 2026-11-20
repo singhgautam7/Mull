@@ -53,6 +53,21 @@ CREATE TABLE synonyms(
 );
 CREATE INDEX synonyms_word_key ON synonyms(word_key);
 
+CREATE TABLE antonyms(
+  id       INTEGER PRIMARY KEY,
+  word_key TEXT NOT NULL REFERENCES words(word_key),
+  antonym  TEXT NOT NULL
+);
+CREATE INDEX antonyms_word_key ON antonyms(word_key);
+
+CREATE TABLE word_family(
+  id              INTEGER PRIMARY KEY,
+  word_key        TEXT NOT NULL REFERENCES words(word_key),
+  member_headword TEXT NOT NULL,
+  member_pos      TEXT NOT NULL
+);
+CREATE INDEX word_family_word_key ON word_family(word_key);
+
 -- US spellings, plurals, inflections and variants, all resolving to a word.
 -- WITHOUT ROWID: the primary key is the table, so the 220k rows are stored
 -- once rather than as a heap plus a covering index (7 MB). There is no rowid to

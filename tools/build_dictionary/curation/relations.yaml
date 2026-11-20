@@ -1,0 +1,102 @@
+# Curated word relations: synonyms, antonyms, and word family overrides.
+# These enrich and complement WordNet and Kaikki extractions for learning set words.
+
+cognitive:
+  synonyms:
+    - mental
+    - intellectual
+    - cerebral
+    - rational
+  antonyms:
+    - emotional
+    - physical
+    - intuitive
+  family:
+    - word: cognition
+      pos: noun
+    - word: cognitively
+      pos: adverb
+    - word: cognizant
+      pos: adjective
+    - word: cognise
+      pos: verb
+
+petulant:
+  synonyms:
+    - peevish
+    - sulky
+    - irritable
+    - bad-tempered
+  antonyms:
+    - easygoing
+    - cheerful
+    - patient
+  family:
+    - word: petulance
+      pos: noun
+    - word: petulantly
+      pos: adverb
+
+whimsical:
+  synonyms:
+    - playful
+    - fanciful
+    - quirky
+    - curious
+  antonyms:
+    - serious
+    - solemn
+    - pragmatic
+  family:
+    - word: whimsy
+      pos: noun
+    - word: whimsically
+      pos: adverb
+
+lucid:
+  synonyms:
+    - clear
+    - coherent
+    - intelligible
+    - rational
+  antonyms:
+    - confused
+    - ambiguous
+    - murky
+  family:
+    - word: lucidity
+      pos: noun
+    - word: lucidly
+      pos: adverb
+
+meticulous:
+  synonyms:
+    - diligent
+    - thorough
+    - precise
+    - painstaking
+  antonyms:
+    - careless
+    - sloppy
+    - negligent
+  family:
+    - word: meticulousness
+      pos: noun
+    - word: meticulously
+      pos: adverb
+
+candid:
+  synonyms:
+    - frank
+    - outspoken
+    - honest
+    - sincere
+  antonyms:
+    - guarded
+    - evasive
+    - disingenuous
+  family:
+    - word: candour
+      pos: noun
+    - word: candidly
+      pos: adverb

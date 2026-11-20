@@ -62,6 +62,8 @@ class _WordEntry {
     this.us,
     this.inflections,
     this.synonyms,
+    this.antonyms,
+    this.wordFamily,
     this.examples,
   );
 
@@ -74,16 +76,29 @@ class _WordEntry {
         null,
         const <String>[],
         const <String>{},
+        const <String>{},
+        const <WordFamilyMember>[],
         const <String, List<String>>{},
       );
     }
     final List<DictionaryWord> senses = dict.senses(word.headwordNorm);
+    final List<WordFamilyMember> wordFamily = <WordFamilyMember>[];
+    final Set<String> seenFamilyWords = <String>{};
+    for (final DictionaryWord w in senses) {
+      for (final WordFamilyMember m in dict.wordFamily(w.wordKey)) {
+        if (seenFamilyWords.add(m.headword.toLowerCase())) {
+          wordFamily.add(m);
+        }
+      }
+    }
     return _WordEntry._(
       word,
       senses,
       dict.usSpelling(senses.first.wordKey),
       dict.inflections(senses.first.wordKey),
       <String>{for (final DictionaryWord w in senses) ...dict.synonyms(w.wordKey)},
+      <String>{for (final DictionaryWord w in senses) ...dict.antonyms(w.wordKey)},
+      wordFamily,
       <String, List<String>>{
         for (final DictionaryWord w in senses) w.wordKey: dict.examples(w.wordKey),
       },
@@ -95,6 +110,8 @@ class _WordEntry {
   final String? us;
   final List<String> inflections;
   final Set<String> synonyms;
+  final Set<String> antonyms;
+  final List<WordFamilyMember> wordFamily;
   final Map<String, List<String>> examples;
 }
 
@@ -153,6 +170,8 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
       byPos.putIfAbsent(w.pos, () => <DictionaryWord>[]).add(w);
     }
     final Set<String> synonyms = _entry.synonyms;
+    final Set<String> antonyms = _entry.antonyms;
+    final List<WordFamilyMember> wordFamily = _entry.wordFamily;
     final List<String> plural = inflections
         .where(
           (String f) =>
@@ -255,12 +274,38 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
           const SizedBox(height: Space.sm),
         ],
         if (synonyms.isNotEmpty) ...<Widget>[
-          Wrap(
-            spacing: Space.sm,
-            runSpacing: Space.sm,
-            children: <Widget>[
-              for (final String sy in synonyms.take(8)) PillChip(label: sy),
-            ],
+          Text(
+            'SYNONYMS',
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+          const SizedBox(height: Space.md),
+          _WordChips(
+            words: synonyms.take(12).toList(),
+            onTap: (String term) => _openTerm(context, ref, term),
+          ),
+          const SizedBox(height: Space.lg),
+        ],
+        if (antonyms.isNotEmpty) ...<Widget>[
+          Text(
+            'ANTONYMS',
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+          const SizedBox(height: Space.md),
+          _WordChips(
+            words: antonyms.take(12).toList(),
+            onTap: (String term) => _openTerm(context, ref, term),
+          ),
+          const SizedBox(height: Space.lg),
+        ],
+        if (wordFamily.isNotEmpty) ...<Widget>[
+          Text(
+            'WORD FAMILY',
+            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          ),
+          const SizedBox(height: Space.md),
+          _WordFamilyList(
+            family: wordFamily,
+            onTap: (String term) => _openTerm(context, ref, term),
           ),
           const SizedBox(height: Space.lg),
         ],
@@ -650,6 +695,109 @@ class _Sense extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+void _openTerm(BuildContext context, WidgetRef ref, String term) {
+  final DictionaryDb dict = ref.read(dictProvider);
+  final DictionaryWord? hit =
+      dict.senses(DictionaryDb.normalise(term)).firstOrNull;
+  if (hit != null) {
+    showWordSheet(context, wordKey: hit.wordKey);
+  }
+}
+
+class _WordChips extends StatelessWidget {
+  const _WordChips({required this.words, required this.onTap});
+
+  final List<String> words;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Wrap(
+      spacing: Space.sm,
+      runSpacing: Space.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        for (int i = 0; i < words.length; i++) ...<Widget>[
+          Pressable(
+            kind: PressKind.chip,
+            onTap: () => onTap(words[i]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                words[i],
+                style: MullType.body.copyWith(
+                  color: c.primary,
+                  decoration: TextDecoration.underline,
+                  decorationColor: c.primary.withValues(alpha: 0.35),
+                ),
+              ),
+            ),
+          ),
+          if (i < words.length - 1)
+            Text(
+              '·',
+              style: MullType.body.copyWith(color: c.onSurfaceMuted),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _WordFamilyList extends StatelessWidget {
+  const _WordFamilyList({required this.family, required this.onTap});
+
+  final List<WordFamilyMember> family;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Wrap(
+      spacing: Space.sm,
+      runSpacing: Space.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        for (int i = 0; i < family.length; i++) ...<Widget>[
+          Pressable(
+            kind: PressKind.chip,
+            onTap: () => onTap(family[i].headword),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: family[i].headword,
+                      style: MullType.body.copyWith(
+                        color: c.primary,
+                        decoration: TextDecoration.underline,
+                        decorationColor: c.primary.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' (${posLabel(family[i].pos)})',
+                      style: MullType.monoLabel.copyWith(
+                        color: c.onSurfaceMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (i < family.length - 1)
+            Text(
+              '·',
+              style: MullType.body.copyWith(color: c.onSurfaceMuted),
+            ),
+        ],
       ],
     );
   }
