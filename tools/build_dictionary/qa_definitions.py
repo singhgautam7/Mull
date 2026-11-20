@@ -33,6 +33,10 @@ DEFAULT_ALLOWLIST: set[str] = {
     "plural", "singular", "verb", "noun", "adjective", "adverb", "preposition",
     # Specific common concepts often irreducible in simple definitions
     "especially", "particularly", "typically", "specifically", "relating",
+    # Core defining concepts with no simpler plain alternative (from user direction & defining vocabulary)
+    "childish", "sulky", "temper", "tempered", "playful", "charming", "rude", "humble",
+    "awkward", "shy", "bold", "chemical", "hatred", "miserable", "racial", "formal", "differ", "differs",
+    "cannot", "liquid", "powder", "strict", "anger", "harsh", "sickness", "illness", "yarn", "hollow", "supreme",
 }
 
 # Function words: Closed-class words, auxiliary verbs, pronouns, prepositions, conjunctions, numbers
@@ -246,6 +250,8 @@ class QAChecker:
     def get_token_rank(self, token: str) -> int:
         """Get best frequency rank for a token from headword ranks or alias ranks."""
         t = token.lower()
+        if t.endswith("'s") and len(t) > 2:
+            t = t[:-2]
         if t in self.hw_ranks:
             return self.hw_ranks[t]
         if t in self.alias_ranks:
@@ -258,6 +264,19 @@ class QAChecker:
                     return self.hw_ranks[base]
                 if base in self.alias_ranks:
                     return self.alias_ranks[base]
+                # Suffix stripping with silent e (e.g. hop -> hope, car -> care)
+                base_e = base + "e"
+                if base_e in self.hw_ranks:
+                    return self.hw_ranks[base_e]
+                if base_e in self.alias_ranks:
+                    return self.alias_ranks[base_e]
+                # Suffix stripping with consonant dedoubling (e.g. stopp -> stop, runn -> run)
+                if len(base) >= 3 and base[-1] == base[-2] and base[-1] in "bdfglmnprt":
+                    dedup = base[:-1]
+                    if dedup in self.hw_ranks:
+                        return self.hw_ranks[dedup]
+                    if dedup in self.alias_ranks:
+                        return self.alias_ranks[dedup]
         return 999999
 
     def get_family_words(self, headword: str, word_key: str) -> set[str]:
@@ -302,7 +321,7 @@ class QAChecker:
             if rank > self.top_n_frequency:
                 failures.append(f"content word '{tok}' (rank {rank}) outside top {self.top_n_frequency}")
             # Check more common than headword
-            elif rank > hw_rank:
+            elif hw_rank > self.top_n_frequency and rank > hw_rank:
                 failures.append(f"content word '{tok}' (rank {rank}) is harder than headword (rank {hw_rank})")
         return failures
 
@@ -468,6 +487,7 @@ class QAChecker:
         self,
         flags_out_path: Path | str | None = None,
         report_out_path: Path | str | None = None,
+        scope: str = "all",
     ) -> dict:
         """Run checks across all rows in dictionary.db and write flags and report."""
         con = sqlite3.connect(self.db_path)
@@ -476,6 +496,8 @@ class QAChecker:
             "SELECT id, word_key, headword, headword_norm, pos, sense_index, "
             "definition_short, definition_full, freq_rank, in_learning_set FROM words"
         )
+        if scope == "learning":
+            query += " WHERE in_learning_set = 1"
         rows = cur.execute(query).fetchall()
         con.close()
 
@@ -528,6 +550,13 @@ class QAChecker:
             "flags_by_rule_learning": {k: len(v) for k, v in flags_by_rule_learning.items()},
             "flags_by_rule_lookup": {k: len(v) for k, v in flags_by_rule_lookup.items()},
             "elapsed_seconds": elapsed,
+            "flags": all_flags,
+            "summary": {
+                "total_checked": total_rows,
+                "learning_words_checked": learning_rows,
+                "lookup_words_checked": lookup_rows,
+                "total_flags": len(all_flags),
+            },
         }
 
     def _write_report(
@@ -631,11 +660,15 @@ class QAChecker:
 
 
 def main() -> int:
+    base_dir = Path(__file__).resolve().parent
+    default_work = base_dir / "work"
+    default_raw = base_dir / "raw"
+
     parser = argparse.ArgumentParser(description="Deterministic quality checks for Mull dictionary definitions.")
-    parser.add_argument("--db", type=Path, default=Path("work/dictionary.db"), help="Path to dictionary.db")
-    parser.add_argument("--wordnet", type=Path, default=Path("raw/english-wordnet-2024.xml.gz"), help="Path to english-wordnet XML")
-    parser.add_argument("--flags-out", type=Path, default=Path("work/qa_flags.jsonl"), help="Output path for qa_flags.jsonl")
-    parser.add_argument("--report-out", type=Path, default=Path("work/qa_report.md"), help="Output path for qa_report.md")
+    parser.add_argument("--db", type=Path, default=default_work / "dictionary.db", help="Path to dictionary.db")
+    parser.add_argument("--wordnet", type=Path, default=default_raw / "english-wordnet-2024.xml.gz", help="Path to english-wordnet XML")
+    parser.add_argument("--flags-out", type=Path, default=default_work / "qa_flags.jsonl", help="Output path for qa_flags.jsonl")
+    parser.add_argument("--report-out", type=Path, default=default_work / "qa_report.md", help="Output path for qa_report.md")
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N_FREQUENCY, help="Max frequency rank for content words (R2)")
     parser.add_argument("--short-max", type=int, default=DEFAULT_SHORT_DEF_MAX_WORDS, help="Max words in definition_short (R4)")
     parser.add_argument("--full-max", type=int, default=DEFAULT_FULL_DEF_MAX_WORDS, help="Max words in definition_full (R4)")
