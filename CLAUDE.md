@@ -438,3 +438,10 @@ after each is what keeps it fixed.
   control does not change appearance because the view scrolled, and nothing floating over
   the Mull tab's pager carries a fill it does not need. The clip edge itself is inherent to
   a vertical pager and stays.
+- **Rules v2 for Dictionary Definitions and Permanent Build QA Gate.**
+  Dictionary definitions must adhere to Rules v2:
+  - R2: Words in `definition_short` must be plain, everyday vocabulary (top 3,000 frequency lemma rank), never harder than the headword itself.
+  - R3: No circular definitions (e.g. defining *whimsical* as "given to whimsy", or *insolently* as "in an insolent manner").
+  - R4: No long em-dashes, hyphens, brackets, or formatting artifacts.
+  - R6: Strict length constraints (`definition_short` <= 14 words; `example` between 8 and 18 words containing the headword).
+  `build_dictionary.py` integrates a permanent QA gating check (`tools/build_dictionary/qa_definitions.py`) running over all learning set rows immediately after database emission: any rule violation aborts the build with a non-zero exit code before `assets/db/dictionary.db.gz` is compressed. All rewrites are cached deterministically in `tools/build_dictionary/work/llm_cache.jsonl`.

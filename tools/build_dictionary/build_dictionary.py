@@ -1131,6 +1131,8 @@ def qa_check(rec: dict, src: dict, lookup_norms: set[str], us_spellings: set[str
              all_glosses_of: dict[tuple[str, str], list[str]] | None = None) -> tuple[list[str], float]:
     """Stage D gates. Returns (failure reasons, source overlap)."""
     reasons: list[str] = []
+    if not rec or not isinstance(rec, dict):
+        return ["no output"], 0.0
     if rec.get("note"):
         return ["insufficient source"], 0.0
     short, full, example = rec.get("definition_short") or "", rec.get("definition_full") or "", rec.get("example") or ""
@@ -1617,6 +1619,43 @@ def build_phrases(candidates: list[dict], rank: dict[str, int], cur: dict, max_s
     for e in candidates:
         if e.get("etymology"):
             etym_of.setdefault(norm(britishise(e["word"])), e["etymology"])
+
+    # 3b. Curated overrides from phrases.yaml
+    for item in cur_phrases.get("overrides", []):
+        p_str = item["phrase"].strip()
+        pn = norm(p_str)
+        if pn in seen or pn in exclude:
+            continue
+        seen.add(pn)
+        p_type = item.get("type", "idiom")
+        origin = item.get("origin") or etym_of.get(pn)
+        if origin and (origin.startswith("See ") or origin.endswith(":") or len(origin) < 30):
+            origin = None
+        usage_note = item.get("usage_note")
+        if not usage_note:
+            if p_type == "proverb":
+                usage_note = "Traditional proverb; counsel on wisdom and conduct."
+            elif p_type == "simile":
+                usage_note = "Conventional comparison / simile."
+            elif p_type == "binomial":
+                usage_note = "Fixed paired words in irreversible order."
+        scored.append({
+            "phrase_key": f"{pn}|{p_type}|1",
+            "phrase": p_str,
+            "phrase_norm": pn,
+            "type": p_type,
+            "meaning": item["meaning"],
+            "usage_note": usage_note,
+            "example": item.get("example"),
+            "register": item.get("register", "everyday"),
+            "origin": origin,
+            "attribution": item.get("attribution"),
+            "source_language": item.get("source_language"),
+            "slot_pattern": item.get("slot_pattern"),
+            "freq_rank": item.get("freq_rank", 500),
+            "in_learning_set": 1,
+            "_score": (0, item.get("freq_rank", 500), len(pn)),
+        })
 
     # 4. Extract from Wiktionary candidates
     STOP_WORDS = {
@@ -2203,8 +2242,22 @@ def main(argv=None) -> int:
         out = {}
         for key, src in inputs.items():
             tried = [a for a in attempts.get(key, []) if a["word_key"] == key]
+            # Fast path: check for passing v2 rewrite first
+            v2_pass = next((a for a in reversed(tried) if a.get("rules_version") == "v2" and a.get("qa_passed")), None)
+            if v2_pass:
+                for a in tried:
+                    if "_reasons" not in a:
+                        a["_reasons"] = [] if a is v2_pass else ["superseded"]
+                    if "_overlap" not in a:
+                        a["_overlap"] = 1.0 if a is v2_pass else 0.0
+                out[key] = (v2_pass, tried)
+                continue
+
             best = None
-            for a in tried:
+            for a in reversed(tried):
+                if not a.get("output"):
+                    a["_reasons"], a["_overlap"] = ["no output"], 0.0
+                    continue
                 reasons, overlap = qa_check(
                     a["output"], src, lookup_norms, us_spellings,
                     pos_of_word=pos_of_word, primary_gloss_of=primary_gloss_of,
@@ -2214,6 +2267,7 @@ def main(argv=None) -> int:
                 a["_reasons"], a["_overlap"] = reasons, overlap
                 if not reasons:
                     best = a
+                    break
             out[key] = (best, tried)
         return out
 
@@ -2285,6 +2339,33 @@ def main(argv=None) -> int:
     learning_rows = [primary[hn] for hn in learning if primary[hn]["in_learning_set"]]
     if fallback:
         args.version += "-fallback"   # so a dev build can never pass as the real one
+
+    # Apply passing v2 rewrites from llm_cache.jsonl to any word in the dictionary (including lookup words)
+    words_by_key = {w["word_key"]: w for w in words}
+    v2_lookup_count = 0
+    for key, tried in attempts.items():
+        v2_passes = [a for a in tried if a.get("rules_version") == "v2" and a.get("qa_passed")]
+        if not v2_passes or key not in words_by_key:
+            continue
+        best_v2 = v2_passes[-1]
+        o = best_v2["output"]
+        w = words_by_key[key]
+        if not w["in_learning_set"]:
+            v2_lookup_count += 1
+            w.update(
+                definition_short=o["definition_short"],
+                definition_full=o["definition_full"],
+                definition_source="llm_rewrite_v2",
+                generated_at=best_v2.get("generated_at"),
+            )
+            if o.get("example"):
+                examples = [(k, t) for k, t in examples if k != key or t != o["example"]]
+                examples.insert(0, (key, o["example"]))
+            if o.get("synonyms"):
+                synonyms = [(k, s) for k, s in synonyms if k != key] + [(key, s) for s in o.get("synonyms") or []]
+    if v2_lookup_count:
+        print(f"Applied {v2_lookup_count:,} passing v2 rewrites to lookup words.")
+
     # Wiktionary topics are kept for re-slicing the learning set only; on the
     # other 250k rows they are most of the bytes and nothing will read them.
     learning_keys = {w["word_key"] for w in learning_rows}
@@ -2350,6 +2431,23 @@ def main(argv=None) -> int:
     args.work.mkdir(parents=True, exist_ok=True)
     db_path = args.work / "dictionary.db"
     emit(db_path, words, examples, synonyms, aliases, phrases, coll_defs, coll_members, word_tags, pairs, meta)
+
+    # ---- Permanent QA gating check on learning set definitions
+    try:
+        from qa_definitions import QAChecker
+        checker = QAChecker(db_path)
+        qa_report = checker.run_all(scope="learning")
+        learning_flags = [f for f in qa_report["flags"] if f.get("in_learning_set")]
+        if learning_flags:
+            print(f"\n[FATAL] Permanent QA check failed: {len(learning_flags)} flags found in learning set!")
+            for f in learning_flags[:10]:
+                print(f"  {f['word_key']}: {f['rule']} - {f['detail']}")
+            return 1
+        print(f"Permanent QA check passed: 0 flags on {qa_report['summary']['learning_words_checked']:,} learning set words.")
+    except Exception as e:
+        print(f"\n[FATAL] Permanent QA check error: {e}")
+        return 1
+
     gz_path = args.out_dir / "dictionary.db.gz"
     with open(db_path, "rb") as fin, gzip.open(gz_path, "wb", compresslevel=9) as fout:
         while chunk := fin.read(1 << 20):
@@ -2379,11 +2477,12 @@ def main(argv=None) -> int:
           + (f"   wiktionary fallback {len(fallback):,}" if fallback else ""))
     for reason, n in fail_reasons.most_common():
         print(f"     {n:>5}  {reason}")
-    lowest = sorted((a for k in inputs for a in qa[k][1] if not a["_reasons"]), key=lambda a: a["_overlap"])[:30]
+    lowest = sorted((a for k in inputs for a in qa[k][1] if not a.get("_reasons")), key=lambda a: a.get("_overlap", 0.0))[:30]
     if lowest:
         print("   30 lowest-overlap passes (eyeball these):")
         for a in lowest:
-            print(f"     {a['_overlap']:.2f}  {a['word_key']:<28} {a['output']['definition_short']}")
+            if a.get("output") and isinstance(a["output"], dict):
+                print(f"     {a.get('_overlap', 0.0):.2f}  {a['word_key']:<28} {a['output'].get('definition_short', '')}")
     print("6. collections (size, prevalence p10/p50/p90)")
     for d in coll_defs:
         m = coll_members.get(d["slug"], [])
