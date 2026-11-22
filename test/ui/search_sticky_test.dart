@@ -48,7 +48,7 @@ void main() {
   });
 
   for (final bool floating in <bool>[true, false]) {
-    testWidgets('search row sticky with floating header $floating', (WidgetTester tester) async {
+    testWidgets('Search: title, pill filters, only the search bar sticks (floating header $floating)', (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{'header.floating': floating});
       await tester.runAsync(() async {
         tester.view.physicalSize = const Size(360, 640);
@@ -68,28 +68,32 @@ void main() {
             ),
           ),
         );
-        expect(find.text('Search'), findsNothing);
+        await tester.pump();
+        // The Shelves tab's header, and All / Words / Phrases pills with Words on.
+        expect(find.text('Search'), findsOneWidget);
+        expect(find.byType(PillChip), findsNWidgets(3));
+        final PillChip words = tester.widget<PillChip>(find.widgetWithText(PillChip, 'Words'));
+        expect(words.selected, isTrue);
+        expect(tester.widget<PillChip>(find.widgetWithText(PillChip, 'All')).selected, isFalse);
+
         await tester.enterText(find.byType(TextField), 'rose');
         for (int i = 0; i < 5; i++) {
           await Future<void>.delayed(const Duration(milliseconds: 30));
           await tester.pump();
         }
         expect(find.byType(SearchResultCard), findsWidgets);
-        expect(find.byType(SegmentedToggle<SearchSegment>), findsOneWidget);
 
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -2000));
         await tester.pump(const Duration(milliseconds: 300));
         expect(tester.takeException(), isNull);
 
-        expect(find.byType(SegmentedToggle<SearchSegment>), findsNothing, reason: 'toggle scrolled away');
-        if (floating) {
-          expect(find.byType(SearchField), findsOneWidget);
-          final Rect r = tester.getRect(find.byType(SearchField));
-          expect(r.top, lessThan(80));
-          expect(find.byType(SearchField).hitTestable(), findsOneWidget);
-        } else {
-          expect(find.byType(SearchField).hitTestable(), findsNothing);
-        }
+        // Whatever the setting, the bar stays at the top; the title and the
+        // pills have scrolled away.
+        expect(find.byType(PillChip).hitTestable(), findsNothing, reason: 'filters scrolled away');
+        final Rect r = tester.getRect(find.byType(SearchField));
+        expect(r.top, lessThan(40));
+        expect(r.top, greaterThanOrEqualTo(0));
+        expect(find.byType(SearchField).hitTestable(), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
       });
     });

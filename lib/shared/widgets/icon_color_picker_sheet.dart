@@ -95,13 +95,41 @@ class _IconColorBodyState extends State<_IconColorBody> {
             ),
           )
         else
-          Wrap(
-            spacing: Space.md,
-            runSpacing: Space.md,
-            children: <Widget>[
-              for (final int? i in <int?>[null, for (int k = 0; k < MullColors.tagHues.length; k++) k])
-                _SwatchCell(index: i, selected: i == _color, onTap: () => setState(() => _color = i)),
-            ],
+          // Kuber's banks (Vibrant, Muted, Neutral), six to a row, after the
+          // theme's own accent.
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.36,
+            child: CustomScrollView(
+              slivers: <Widget>[
+                for (final (String label, List<int?> swatches) in <(String, List<int?>)>[
+                  ('Theme', const <int?>[null]),
+                  ('Vibrant', MullColors.tagBanks[TagBank.vibrant]!),
+                  ('Muted', MullColors.tagBanks[TagBank.muted]!),
+                  ('Neutral', MullColors.tagBanks[TagBank.neutral]!),
+                ]) ...<Widget>[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: Space.sm),
+                      child: Text(label.toUpperCase(), style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
+                    ),
+                  ),
+                  SliverGrid.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 6,
+                      mainAxisSpacing: Space.md,
+                      crossAxisSpacing: Space.md,
+                    ),
+                    itemCount: swatches.length,
+                    itemBuilder: (BuildContext _, int k) => _SwatchCell(
+                      index: swatches[k],
+                      selected: swatches[k] == _color,
+                      onTap: () => setState(() => _color = swatches[k]),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: Space.lg)),
+                ],
+              ],
+            ),
           ),
         const SizedBox(height: Space.xl),
         AppButton(
@@ -167,7 +195,12 @@ class _SwatchCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final String name = index == null ? 'Accent' : MullColors.tagNames[index!];
+    final String name = MullColors.tagName(index);
+    final Color swatch = c.tagSwatch(index);
+    // Kuber: a dark tick on a light swatch, a light one on a dark swatch.
+    final Color tick = ThemeData.estimateBrightnessForColor(swatch) == Brightness.light
+        ? (c.isDark ? c.surface : c.onSurface)
+        : (c.isDark ? c.onSurface : c.surface);
     return Semantics(
       button: true,
       selected: selected,
@@ -183,15 +216,13 @@ class _SwatchCell extends StatelessWidget {
               if (!selected) MullHaptics.tick();
               onTap();
             },
-            child: SizedBox(
-              width: 48,
-              height: 48,
-              child: Padding(
-                padding: const EdgeInsets.all(Space.xs),
-                child: Ink(
-                  decoration: BoxDecoration(color: c.tagColor(index), shape: BoxShape.circle),
-                  child: selected ? Center(child: Icon(Icons.check_rounded, size: 18, color: c.onPrimary)) : null,
-                ),
+            child: Padding(
+              padding: const EdgeInsets.all(Space.xs),
+              child: Ink(
+                decoration: BoxDecoration(color: swatch, shape: BoxShape.circle),
+                child: selected
+                    ? Center(child: Icon(Icons.check_rounded, size: 18, color: tick))
+                    : const SizedBox.expand(),
               ),
             ),
           ),

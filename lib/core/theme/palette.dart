@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'oklch.dart';
@@ -112,33 +114,94 @@ class MullColors extends ThemeExtension<MullColors> {
   /// Seven fixed list hues off the accent wheel. A list stores its index, not
   /// an ARGB value, so it re-derives per theme and stays legible in light,
   /// dark and AMOLED.
-  static const List<double> tagHues = <double>[265, 200, 150, 55, 25, 340, 300];
+  /// Shelf and list colours: Kuber's category palette (`color_palette.dart`,
+  /// Vibrant 18, Muted 8, Neutral 6) as oklch, so they are re-derived per
+  /// theme like every other role. A stored colour is an index into this
+  /// list; 0 to 6 are the seven hues Mull shipped first (Blue, Teal, Green,
+  /// Amber, Red, Pink, Purple), kept in place so saved shelves keep theirs.
+  static const List<TagSwatch> tags = <TagSwatch>[
+    TagSwatch('Blue', 0.623, 0.188, 259.8, TagBank.vibrant),
+    TagSwatch('Teal', 0.704, 0.123, 182.5, TagBank.vibrant),
+    TagSwatch('Green', 0.723, 0.192, 149.6, TagBank.vibrant),
+    TagSwatch('Amber', 0.769, 0.165, 70.1, TagBank.vibrant),
+    TagSwatch('Red', 0.637, 0.208, 25.3, TagBank.vibrant),
+    TagSwatch('Pink', 0.656, 0.212, 354.3, TagBank.vibrant),
+    TagSwatch('Purple', 0.627, 0.233, 303.9, TagBank.vibrant),
+    TagSwatch('Indigo', 0.585, 0.204, 277.1, TagBank.vibrant),
+    TagSwatch('Violet', 0.606, 0.219, 292.7, TagBank.vibrant),
+    TagSwatch('Rose', 0.645, 0.215, 16.4, TagBank.vibrant),
+    TagSwatch('Orange', 0.705, 0.187, 47.6, TagBank.vibrant),
+    TagSwatch('Yellow', 0.795, 0.162, 86.0, TagBank.vibrant),
+    TagSwatch('Lime', 0.768, 0.204, 130.8, TagBank.vibrant),
+    TagSwatch('Emerald', 0.696, 0.149, 162.5, TagBank.vibrant),
+    TagSwatch('Cyan', 0.715, 0.126, 215.2, TagBank.vibrant),
+    TagSwatch('Sky', 0.685, 0.148, 237.3, TagBank.vibrant),
+    TagSwatch('Fuchsia', 0.667, 0.259, 322.1, TagBank.vibrant),
+    TagSwatch('Coral', 0.719, 0.169, 13.4, TagBank.vibrant),
+    TagSwatch('Slate blue', 0.554, 0.041, 257.4, TagBank.muted),
+    TagSwatch('Sage', 0.692, 0.082, 179.1, TagBank.muted),
+    TagSwatch('Moss', 0.663, 0.067, 142.1, TagBank.muted),
+    TagSwatch('Tan', 0.705, 0.070, 78.2, TagBank.muted),
+    TagSwatch('Dusty rose', 0.638, 0.090, 358.1, TagBank.muted),
+    TagSwatch('Lavender', 0.620, 0.079, 298.2, TagBank.muted),
+    TagSwatch('Slate', 0.607, 0.029, 268.7, TagBank.muted),
+    TagSwatch('Sand', 0.705, 0.030, 86.7, TagBank.muted),
+    TagSwatch('Charcoal', 0.274, 0.005, 286.0, TagBank.neutral),
+    TagSwatch('Graphite', 0.442, 0.015, 285.8, TagBank.neutral),
+    TagSwatch('Grey', 0.552, 0.014, 285.9, TagBank.neutral),
+    TagSwatch('Silver', 0.712, 0.013, 286.1, TagBank.neutral),
+    TagSwatch('Mist', 0.871, 0.005, 286.3, TagBank.neutral),
+    TagSwatch('Stone', 0.553, 0.012, 58.1, TagBank.neutral),
+  ];
 
-  /// `lists.color` holds an index into [tagHues]; null takes the theme accent.
+  /// Indices into [tags] in Kuber's picker order, per bank.
+  static const Map<TagBank, List<int>> tagBanks = <TagBank, List<int>>{
+    TagBank.vibrant: <int>[0, 7, 8, 5, 9, 4, 10, 3, 11, 12, 2, 13, 1, 14, 15, 6, 16, 17],
+    TagBank.muted: <int>[18, 19, 20, 21, 22, 23, 24, 25],
+    TagBank.neutral: <int>[26, 27, 28, 29, 30, 31],
+  };
+
+  static TagSwatch _tag(int index) => tags[index.abs() % tags.length];
+
+  /// A tag as a strong colour (dots, chart marks): Mull's lightness, the
+  /// tag's hue and chroma (capped at Mull's).
   Color tagColor(int? index) {
     if (index == null) return primary;
-    final double hue = tagHues[index.abs() % tagHues.length];
+    final TagSwatch t = _tag(index);
     return isDark
-        ? Oklch(0.74, 0.13, hue).toColor()
-        : Oklch(0.55, 0.14, hue).toColor();
+        ? Oklch(0.74, math.min(t.chroma, 0.13), t.hue).toColor()
+        : Oklch(0.55, math.min(t.chroma, 0.14), t.hue).toColor();
   }
 
-  /// A tag hue as a tonal pair (Kuber's `categoryTones`): a soft container and
-  /// the strong glyph tone on it. Null is the accent family.
+  /// The tag as the picker shows it: its own lightness, hue and chroma
+  /// (Kuber's swatches are the raw colour).
+  Color tagSwatch(int? index) {
+    if (index == null) return primary;
+    final TagSwatch t = _tag(index);
+    return Oklch(t.lightness, t.chroma, t.hue).toColor();
+  }
+
+  /// A tag as a tonal pair (Kuber's `categoryTones`: hue and chroma kept, only
+  /// the tone moves, the container's chroma capped): a soft container and the
+  /// strong glyph tone on it. Null is the accent family.
   Color tagContainer(int? index) {
     if (index == null) return primaryContainer;
-    final double hue = tagHues[index.abs() % tagHues.length];
-    return isDark ? Oklch(0.30, 0.05, hue).toColor() : Oklch(0.93, 0.045, hue).toColor();
+    final TagSwatch t = _tag(index);
+    return isDark
+        ? Oklch(0.30, math.min(t.chroma, 0.05), t.hue).toColor()
+        : Oklch(0.93, math.min(t.chroma, 0.045), t.hue).toColor();
   }
 
   Color tagOnContainer(int? index) {
     if (index == null) return onPrimaryContainer;
-    final double hue = tagHues[index.abs() % tagHues.length];
-    return isDark ? Oklch(0.82, 0.11, hue).toColor() : Oklch(0.45, 0.13, hue).toColor();
+    final TagSwatch t = _tag(index);
+    return isDark
+        ? Oklch(0.82, math.min(t.chroma, 0.11), t.hue).toColor()
+        : Oklch(0.45, math.min(t.chroma, 0.13), t.hue).toColor();
   }
 
-  /// Names for the picker row, in [tagHues] order.
-  static const List<String> tagNames = <String>['Blue', 'Teal', 'Green', 'Amber', 'Red', 'Pink', 'Purple'];
+  /// The name of a stored tag index, or the accent.
+  static String tagName(int? index) => index == null ? 'Accent' : _tag(index).name;
 
   @override
   MullColors copyWith({
@@ -688,4 +751,18 @@ class ThemeFamily {
       accentHue: primaryHue,
     );
   }
+}
+
+/// Kuber's colour banks.
+enum TagBank { vibrant, muted, neutral }
+
+/// One shelf colour as oklch (from Kuber's palette) and its bank.
+class TagSwatch {
+  const TagSwatch(this.name, this.lightness, this.chroma, this.hue, this.bank);
+
+  final String name;
+  final double lightness;
+  final double chroma;
+  final double hue;
+  final TagBank bank;
 }

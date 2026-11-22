@@ -282,7 +282,14 @@ class _HeaderScope extends InheritedWidget {
 /// header is sticky: anything that must stay put under it (the Search field)
 /// uses `floating: false`.
 class HeaderPage extends ConsumerStatefulWidget {
-  const HeaderPage({required this.header, required this.body, this.floating = true, this.preview, super.key});
+  const HeaderPage({
+    required this.header,
+    required this.body,
+    this.floating = true,
+    this.scrollAway = false,
+    this.preview,
+    super.key,
+  });
 
   final AppHeader header;
   final Widget body;
@@ -291,6 +298,11 @@ class HeaderPage extends ConsumerStatefulWidget {
   /// scrolls away). For pages whose main control sits under the header, and
   /// contextual (selection) headers.
   final bool floating;
+
+  /// True: the header always scrolls away with the content, whatever the
+  /// Floating header setting, so a control below it can be the sticky one
+  /// (the Search tab pins its search bar).
+  final bool scrollAway;
 
   /// Settings sheet previews only.
   final HeaderPreview? preview;
@@ -501,7 +513,8 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     final HeaderPreview? preview = widget.preview;
-    final bool on = preview?.floating ?? ref.watch(settingsProvider.select((AppSettings s) => s.floatingHeader));
+    final bool setting = preview?.floating ?? ref.watch(settingsProvider.select((AppSettings s) => s.floatingHeader));
+    final bool on = !widget.scrollAway && setting;
     final PillMode mode = preview?.pill ?? ref.watch(settingsProvider.select((AppSettings s) => s.pillMode));
     final MotionLevel level = Motion.levelOf(context);
     final double sb = MediaQuery.paddingOf(context).top;

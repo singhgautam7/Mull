@@ -256,7 +256,7 @@ class _PickerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final String colour = color == null ? 'Accent' : MullColors.tagNames[color! % MullColors.tagNames.length];
+    final String colour = MullColors.tagName(color);
     return Pressable(
       kind: PressKind.card,
       child: Material(

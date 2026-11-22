@@ -15,6 +15,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
+import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/did_you_mean.dart';
@@ -27,7 +28,7 @@ import 'add_to_list_sheet.dart';
 import 'idiom_sheet.dart';
 import 'word_sheet.dart';
 
-enum SearchSegment { words, idioms }
+enum SearchSegment { all, words, idioms }
 
 /// HANDOFF 3.4. Field focused on entry, real-time results, Words/Phrases
 /// carrying counts. Before typing: RECENT searches. Results are cards or
@@ -149,7 +150,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _suggestions = r.suggestions;
       // A 2dp hairline, only if a query exceeds 120 ms.
       _slow = sw.elapsedMilliseconds > 120;
-      if (r.words.isEmpty && r.idioms.isNotEmpty) _segment = SearchSegment.idioms;
+      if (_segment == SearchSegment.words && r.words.isEmpty && r.idioms.isNotEmpty) _segment = SearchSegment.idioms;
     });
     if (q.trim().length >= 2) {
       _recordTimer = Timer(const Duration(seconds: 2), () {
@@ -179,57 +180,73 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        // No title header: the search row is the page's header. With the
-        // Floating header setting on it stays pinned while the toggle and the
-        // results scroll under it; off, it scrolls away like every other
-        // header. ponytail: plain pinned surface, not the pill (the pill
-        // machinery is AppHeader's title slot); add if Design wants it.
-        body: CustomScrollView(
-          slivers: <Widget>[
-            _SearchHeaderSliver(
-              pinned: ref.watch(settingsProvider.select((AppSettings s) => s.floatingHeader)),
-              child: Row(
-                children: <Widget>[
-                  if (Navigator.of(context).canPop())
-                    AppIconButton(
-                      icon: Icons.arrow_back_rounded,
-                      semanticLabel: 'Back',
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  Expanded(
-                    child: SearchField(
-                      controller: _field,
-                      focusNode: _focus,
-                      hint: 'Search words and phrases',
-                      onChanged: _run,
-                    ),
+        // The Shelves tab's header, title and position, but it always scrolls
+        // away: the search bar is the sticky one (pinned at the top once the
+        // title has gone), whatever the Floating header setting. The filters
+        // and section titles scroll with the results.
+        body: HeaderPage(
+          scrollAway: true,
+          header: AppHeader(
+            title: 'Search',
+            onBack: Navigator.of(context).canPop() ? () => Navigator.of(context).pop() : null,
+          ),
+          body: CustomScrollView(
+            slivers: <Widget>[
+              ..._searchBar(context),
+              SliverToBoxAdapter(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                  child: Row(
+                    spacing: Space.sm,
+                    children: <Widget>[
+                      for (final (SearchSegment s, String l) in const <(SearchSegment, String)>[
+                        (SearchSegment.all, 'All'),
+                        (SearchSegment.words, 'Words'),
+                        (SearchSegment.idioms, 'Phrases'),
+                      ])
+                        PillChip(label: l, selected: _segment == s, onTap: () => setState(() => _segment = s)),
+                    ],
                   ),
-                ],
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, 0),
-                child: SegmentedToggle<SearchSegment>(
-                  options: const <(SearchSegment, String)>[
-                    (SearchSegment.words, 'Words'),
-                    (SearchSegment.idioms, 'Phrases'),
-                  ],
-                  selected: _segment,
-                  counts: typing
-                      ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length}
-                      : const <Object?, int>{},
-                  onChanged: (SearchSegment s) => setState(() => _segment = s),
-                  accent: true,
                 ),
               ),
-            ),
-            SliverToBoxAdapter(child: LoadingHairline(visible: _slow)),
-            if (typing) _results(c) else _recentList(c),
-          ],
+              SliverToBoxAdapter(child: LoadingHairline(visible: _slow)),
+              if (typing) _results(c) else _recentList(c),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// The gap under the header, then the pinned search bar. The bar's field
+  /// sits exactly where the Shelves tab's does (top = status bar + rest
+  /// header, Space.screen sides, Space.md below); the sliver's own top
+  /// padding is the status bar, so once pinned the field clears it.
+  List<Widget> _searchBar(BuildContext context) {
+    final double sb = MediaQuery.paddingOf(context).top;
+    final double inset = HeaderPage.insetOf(context);
+    return <Widget>[
+      SliverToBoxAdapter(child: SizedBox(height: math.max(0, inset - sb - Space.sm))),
+      SliverPersistentHeader(
+        pinned: true,
+        delegate: _RowDelegate(
+          extent: sb + Space.sm + SearchField.height + Space.md,
+          child: ColoredBox(
+            color: context.colors.surface,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(Space.screen, sb + Space.sm, Space.screen, Space.md),
+              child: SearchField(
+                controller: _field,
+                focusNode: _focus,
+                hint: 'Search words and phrases',
+                onChanged: _run,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// "Remove from history?" with the term itself; Remove deletes that entry
@@ -312,12 +329,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _results(MullColors c) {
-    final bool words = _segment == SearchSegment.words;
-    if (words ? _words.isEmpty : _idioms.isEmpty) return _noResults(c);
-    final int n = words ? _words.length : _idioms.length;
-    SearchResult at(int i) => words ? SearchResult.word(_words[i]) : SearchResult.idiom(_idioms[i]);
-    Widget? add(int i) => words ? _AddToListButton(word: _words[i]) : null;
-    void open(int i) => words ? unawaited(_openWord(_words[i])) : unawaited(showIdiomSheet(context, idiom: _idioms[i]));
+    // All: the words, then the phrases.
+    final List<DictionaryWord> words = _segment == SearchSegment.idioms ? const <DictionaryWord>[] : _words;
+    final List<Idiom> idioms = _segment == SearchSegment.words ? const <Idiom>[] : _idioms;
+    final int n = words.length + idioms.length;
+    if (n == 0) return _noResults(c);
+    SearchResult at(int i) =>
+        i < words.length ? SearchResult.word(words[i]) : SearchResult.idiom(idioms[i - words.length]);
+    Widget? add(int i) => i < words.length ? _AddToListButton(word: words[i]) : null;
+    void open(int i) => i < words.length
+        ? unawaited(_openWord(words[i]))
+        : unawaited(showIdiomSheet(context, idiom: idioms[i - words.length]));
 
     if (ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle)) == SearchStyle.table) {
       return SliverPadding(
@@ -341,7 +363,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _noResults(MullColors c) {
-    final bool otherHas = _segment == SearchSegment.words ? _idioms.isNotEmpty : _words.isNotEmpty;
+    final bool otherHas = switch (_segment) {
+      SearchSegment.all => false,
+      SearchSegment.words => _idioms.isNotEmpty,
+      SearchSegment.idioms => _words.isNotEmpty,
+    };
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(Space.screen, 48, Space.screen, Space.bottomSafe),
       sliver: SliverList(
@@ -368,54 +394,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
         ]),
-      ),
-    );
-  }
-}
-
-/// The search row as a header sliver: status bar inset, an opaque surface so
-/// results slide under it, [pinned] or scrolling away. Fixed extent, so
-/// scrolling never rebuilds it.
-class _SearchHeaderSliver extends StatelessWidget {
-  const _SearchHeaderSliver({required this.child, required this.pinned});
-
-  final Widget child;
-  final bool pinned;
-
-  @override
-  Widget build(BuildContext context) {
-    final double sb = MediaQuery.paddingOf(context).top;
-    // SearchField's own geometry: a row at least as tall as the clear
-    // button's 48dp target, or one scaled body line plus the text field's
-    // 10 + 10, inside 4 + 4 of padding and a 1dp border each side. Measured,
-    // not estimated, so the header never squeezes the field.
-    final TextPainter line = TextPainter(
-      text: TextSpan(text: 'Mg', style: MullType.body.copyWith(fontSize: 14)),
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    final double field = math.max(IconSpec.tapTarget, line.height + 20) + 4 + 4 + 2;
-    line.dispose();
-    final double extent = sb + Space.sm + field + Space.sm;
-    return SliverPersistentHeader(
-      pinned: pinned,
-      delegate: _RowDelegate(
-        extent: extent,
-        child: ColoredBox(
-          color: context.colors.surface,
-          child: Padding(
-            // The field's left edge is the content edge (20), as on every
-            // other tab; a back button, when Search was pushed, sits in the
-            // margin instead.
-            padding: EdgeInsets.fromLTRB(
-              Navigator.of(context).canPop() ? Space.xs : Space.screen,
-              sb + Space.sm,
-              Space.screen,
-              Space.sm,
-            ),
-            child: Align(alignment: Alignment.center, child: child),
-          ),
-        ),
       ),
     );
   }

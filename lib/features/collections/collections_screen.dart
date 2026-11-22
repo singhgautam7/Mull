@@ -17,6 +17,7 @@ import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_menu.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/fields.dart';
 import '../../shared/widgets/how_to_use_sheet.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/states.dart';
@@ -235,29 +236,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                     SliverList.list(children: <Widget>[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.fullR, border: Border.all(color: c.outline)),
-                        child: Row(
-                          spacing: 11,
-                          children: <Widget>[
-                            Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
-                            Expanded(
-                              child: TextField(
-                                controller: _search,
-                                onChanged: (_) => setState(() {}),
-                                style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                                  hintText: 'Search shelves',
-                                  hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                      // The shared search bar (Kuber's pill), the same as the Search tab's.
+                      child: SearchField(
+                        controller: _search,
+                        hint: 'Search shelves',
+                        onChanged: (_) => setState(() {}),
                       ),
                     ),
                     SingleChildScrollView(

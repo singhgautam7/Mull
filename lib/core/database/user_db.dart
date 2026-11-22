@@ -33,7 +33,7 @@ class WordLists extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get name => text().withLength(min: 1, max: 80)();
 
-  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  /// An index into `MullColors.tags`, or null for the theme accent.
   IntColumn get color => integer().nullable()();
   BoolColumn get isReading => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime()();
@@ -67,7 +67,7 @@ class UserCollections extends Table {
   TextColumn get kind => text()();
   TextColumn get name => text().withLength(min: 1, max: 80)();
 
-  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  /// An index into `MullColors.tags`, or null for the theme accent.
   IntColumn get color => integer().nullable()();
   DateTimeColumn get createdAt => dateTime()();
 

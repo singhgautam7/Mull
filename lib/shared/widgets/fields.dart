@@ -5,7 +5,6 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import 'app_icon_button.dart';
-import '../../core/motion/motion.dart';
 
 /// `NAME` over a box with a plain text field in it.
 class LabelledField extends StatelessWidget {
@@ -62,56 +61,13 @@ class LabelledField extends StatelessWidget {
   }
 }
 
-/// `COLOUR` over six 30dp swatches. Stores an index into `MullColors.tagHues`.
-class ColorSwatchRow extends StatelessWidget {
-  const ColorSwatchRow({required this.selected, required this.onChanged, super.key});
-
-  final int? selected;
-  final ValueChanged<int?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text('COLOUR', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
-        const SizedBox(height: Space.sm),
-        Row(
-          spacing: Space.row,
-          children: <Widget>[
-            for (int i = 0; i < 6; i++)
-              Semantics(
-                button: true,
-                selected: selected == i,
-                label: 'Colour ${i + 1}',
-                child: Pressable(
-                  kind: PressKind.chip,
-                  morphCorners: false,
-                  onTap: () => onChanged(i),
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: c.tagColor(i),
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(
-                        color: selected == i ? c.onSurface : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 /// The pill search field: `surfaceContainer`, 1px outline, a leading glyph
 /// and a clear button once there is text. Search, and the shelf pickers.
+/// The search bar, ported from Kuber's `KuberSearchPill` (M3): a 48dp
+/// full-radius pill in `surfaceContainerHigh`, no border, a leading search
+/// glyph (or [leading], e.g. a back button) in a 48dp slot, the field in the
+/// 16sp body style, and a clear button that scales in once there is text.
+/// Shelves and Search use the same bar.
 class SearchField extends StatelessWidget {
   const SearchField({
     required this.controller,
@@ -119,6 +75,7 @@ class SearchField extends StatelessWidget {
     required this.onChanged,
     this.focusNode,
     this.autofocus = false,
+    this.leading,
     super.key,
   });
 
@@ -128,60 +85,68 @@ class SearchField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final bool autofocus;
 
+  /// Replaces the search glyph (Kuber puts its back button here).
+  final Widget? leading;
+
+  /// Kuber's pill height.
+  static const double height = 48;
+
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
+    final TextStyle text = MullType.body.copyWith(fontSize: 16);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      decoration: BoxDecoration(
-        color: c.surfaceContainer,
-        borderRadius: Radii.fullR,
-        border: Border.all(color: c.outline),
-      ),
+      height: height,
+      decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
       child: Row(
-        spacing: 11,
         children: <Widget>[
-          Icon(Icons.search_rounded, size: 18, color: c.iconMuted),
+          leading ??
+              SizedBox(
+                width: IconSpec.tapTarget,
+                height: IconSpec.tapTarget,
+                child: Icon(Icons.search_rounded, size: 20, color: c.onSurfaceVariant),
+              ),
           Expanded(
             child: TextField(
               controller: controller,
               focusNode: focusNode,
               autofocus: autofocus,
+              textAlignVertical: TextAlignVertical.center,
               textInputAction: TextInputAction.search,
               onChanged: onChanged,
-              style: MullType.body.copyWith(fontSize: 14, color: c.onSurface),
+              cursorColor: c.primary,
+              style: text.copyWith(color: c.onSurface),
               decoration: InputDecoration(
-                isDense: true,
+                isCollapsed: true,
+                // The theme's input padding would push the text off-centre.
+                contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
                 hintText: hint,
-                hintStyle: MullType.body.copyWith(fontSize: 14, color: c.onSurfaceMuted),
+                hintStyle: text.copyWith(color: c.onSurfaceVariant),
               ),
             ),
           ),
-          // The clear button's slot is always laid out, so the field is the
-          // same height empty and filled: its 48dp tap target would otherwise
-          // grow the row the moment the first letter lands.
           ValueListenableBuilder<TextEditingValue>(
             valueListenable: controller,
-            builder: (BuildContext context, TextEditingValue value, Widget? _) =>
-                Visibility(
-                  visible: value.text.isNotEmpty,
-                  maintainSize: true,
-                  maintainAnimation: true,
-                  maintainState: true,
-                  child: AppIconButton(
-                    icon: Icons.close_rounded,
-                    size: 30,
-                    glyphSize: 16,
-                    filled: false,
-                    semanticLabel: 'Clear',
-                    onPressed: () {
-                      controller.clear();
-                      onChanged('');
-                    },
-                  ),
-                ),
+            builder: (BuildContext context, TextEditingValue v, Widget? _) => AnimatedSwitcher(
+              duration: Motion.of(context, Motion.fxFast),
+              transitionBuilder: (Widget child, Animation<double> a) => ScaleTransition(scale: a, child: child),
+              child: v.text.isEmpty
+                  ? const SizedBox(width: Space.sm, key: ValueKey<String>('none'))
+                  : AppIconButton(
+                      key: const ValueKey<String>('clear'),
+                      icon: Icons.close_rounded,
+                      kind: AppIconButtonKind.plain,
+                      semanticLabel: 'Clear',
+                      onPressed: () {
+                        controller.clear();
+                        onChanged('');
+                      },
+                    ),
+            ),
           ),
         ],
       ),

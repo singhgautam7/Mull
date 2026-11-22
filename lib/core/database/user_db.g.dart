@@ -636,7 +636,7 @@ class WordList extends DataClass implements Insertable<WordList> {
   final int id;
   final String name;
 
-  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  /// An index into `MullColors.tags`, or null for the theme accent.
   final int? color;
   final bool isReading;
   final DateTime createdAt;
@@ -1372,7 +1372,7 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
   final String kind;
   final String name;
 
-  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  /// An index into `MullColors.tags`, or null for the theme accent.
   final int? color;
   final DateTime createdAt;
 

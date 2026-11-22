@@ -108,7 +108,7 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
           _Row(
             label: l.title,
             count: l.wordCount,
-            shelf: l.kind == 'user',
+            slug: l.slug,
             icon: l.icon,
             color: l.color,
             checked: _checked!.contains(l.slug),
@@ -146,13 +146,14 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.count, required this.checked, required this.onChanged, this.shelf = false, this.icon, this.color});
+  const _Row({required this.label, required this.count, required this.checked, required this.onChanged, this.slug, this.icon, this.color});
 
   final String label;
   final int? count;
   final bool checked;
   final ValueChanged<bool> onChanged;
-  final bool shelf;
+  /// The shelf's slug; null for a row that is not a shelf.
+  final String? slug;
   final String? icon;
   final int? color;
 
@@ -181,7 +182,7 @@ class _Row extends StatelessWidget {
                 ),
                 child: checked ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
               ),
-              if (shelf) ShelfIcon(icon: icon, color: color, size: 28),
+              if (slug != null) ShelfIcon.of(slug: slug!, icon: icon, color: color),
               Expanded(
                 child: Text(label, style: MullType.titleMedium.copyWith(color: c.onSurface)),
               ),

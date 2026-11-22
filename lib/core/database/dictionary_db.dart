@@ -119,7 +119,7 @@ class Collection {
   final int sortOrder;
   final int wordCount;
 
-  /// User collections only: an index into `MullColors.tagHues`.
+  /// User collections only: an index into `MullColors.tags`.
   final int? color;
 
   /// User collections only: the shelf's own note. (`icon` above is the topic

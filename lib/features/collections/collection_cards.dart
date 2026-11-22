@@ -20,9 +20,6 @@ String progressLabel(Progress p) => !p.started
         ? 'all seen'
         : '${grouped(p.seen)} seen';
 
-/// The swatch of one of the user's own collections: Bookmarks takes
-/// `primary`, everything else its stored hue or the accent.
-Color swatchColor(MullColors c, Collection x) => x.slug == 'bookmarks' ? c.primary : c.tagColor(x.color);
 
 /// A drawn glyph tile for a topic, from the icon name the pipeline wrote.
 /// Never a photograph, never an emoji.
@@ -85,27 +82,28 @@ class TopicCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (!compact) ...<Widget>[
-                if (collection.kind == 'user')
-                  ShelfIcon(icon: collection.icon, color: collection.color, size: 30)
+                // Every card leads with a 40dp tile, 12dp corners (Kuber's
+                // category tile): the shelf's own for yours, the topic glyph
+                // for the dictionary's.
+                if (collection.isUsers)
+                  ShelfIcon.of(slug: collection.slug, icon: collection.icon, color: collection.color)
                 else
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: collection.isUsers ? swatchColor(c, collection) : (done ? c.surface : c.primaryContainer),
-                    borderRadius: BorderRadius.circular(9),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: done ? c.surface : c.primaryContainer,
+                      borderRadius: Radii.mediumR,
+                    ),
+                    child: Icon(topicIcon(collection.icon), size: 22, color: done ? c.primary : c.onPrimaryContainer),
                   ),
-                  child: collection.isUsers ? null : Icon(topicIcon(collection.icon), size: 17, color: done ? c.primary : c.onPrimaryContainer),
-                ),
                 const SizedBox(height: Space.row),
               ],
               Row(
                 spacing: Space.sm,
                 children: <Widget>[
-                  if (compact && collection.kind == 'user')
-                    ShelfIcon(icon: collection.icon, color: collection.color, size: 24)
-                  else if (compact && collection.isUsers)
-                    Container(width: 10, height: 10, decoration: BoxDecoration(color: swatchColor(c, collection), shape: BoxShape.circle)),
+                  if (compact && collection.isUsers)
+                    ShelfIcon.of(slug: collection.slug, icon: collection.icon, color: collection.color, size: 24),
                   Expanded(child: Text(collection.title, style: MullType.titleMedium.copyWith(color: fg), maxLines: 2, overflow: TextOverflow.ellipsis)),
                 ],
               ),
@@ -227,14 +225,12 @@ class ListRow extends StatelessWidget {
         child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+          // Kuber's list row: a 40dp category tile, 16 to the text.
+          padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
           child: Row(
-            spacing: 13,
+            spacing: Space.lg,
             children: <Widget>[
-              if (collection.kind == 'user')
-                ShelfIcon(icon: collection.icon, color: collection.color, size: 30)
-              else
-                Container(width: 30, height: 30, decoration: BoxDecoration(color: swatchColor(c, collection), borderRadius: BorderRadius.circular(9))),
+              ShelfIcon.of(slug: collection.slug, icon: collection.icon, color: collection.color),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

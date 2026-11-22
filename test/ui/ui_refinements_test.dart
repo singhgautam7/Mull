@@ -225,7 +225,7 @@ void main() {
   );
 
   testWidgets(
-    'AppButton of type outlined has surface background and accent border',
+    "AppButton of type outlined is Kuber's: transparent with the outline border",
     (WidgetTester tester) async {
       final ThemeData theme = AppTheme.of(ThemeFamily.byId('mull'), Tone.light);
       final MullColors colors = ThemeFamily.byId('mull').colors(Tone.light);
@@ -252,9 +252,10 @@ void main() {
             )
             .first,
       );
-      expect(material.color, colors.surface);
-      final StadiumBorder shape = material.shape! as StadiumBorder;
-      expect(shape.side.color, colors.accent);
+      expect(material.color, Colors.transparent);
+      final RoundedRectangleBorder shape = material.shape! as RoundedRectangleBorder;
+      expect(shape.side.color, colors.outline);
+      expect(tester.getSize(find.byType(AppButton)).height, 56, reason: "Kuber's large button");
     },
   );
 
