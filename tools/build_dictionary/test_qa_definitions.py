@@ -32,6 +32,9 @@ MUST_BE_FLAGGED_CIRCULAR = [
     ("whimsical", "Given to whimsy.", "Given to whimsy."),
     ("whimsically", "In a whimsical manner", "In a whimsical manner"),
     ("insolently", "In an insolent manner.", "In an insolent manner."),
+    ("transcription", "The process of converting spoken words into written text.", "The act or process of transcribing, or converting spoken or signed language to a written form."),
+    ("candidacy", "The state of being a candidate running for an elected position.", "The period during which a person campaigns and competes against others for a political office."),
+    ("captaincy", "The position of a leader or captain.", "The status or role of being a captain, often in a team or on a ship."),
     # 20 real circular cases from data
     ("abasedly", "In an abased manner; abjectly.", "In an abased manner; abjectly."),
     ("abasement", "The act of abasing, humbling, or bringing low.", "The act of abasing, humbling, or bringing low."),

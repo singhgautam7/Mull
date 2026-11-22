@@ -77,15 +77,15 @@ DERIVATIONAL_SUFFIX_RULES = [
     ("ty", ("",)),
     ("ness", ("", "y")),
     ("ment", ("",)),
-    ("ation", ("ate", "e", "")),
+    ("ation", ("ate", "ator", "e", "")),
     ("ition", ("ite", "e", "")),
-    ("sion", ("de", "se", "")),
+    ("sion", ("de", "se", "t", "")),
     ("tion", ("t", "te", "e", "")),
     ("ance", ("ant", "e", "")),
     ("ence", ("ent", "e", "")),
-    ("ancy", ("ant", "")),
+    ("ancy", ("ant", "ate", "")),
     ("ency", ("ent", "")),
-    ("able", ("e", "")),
+    ("able", ("ate", "e", "")),
     ("ible", ("e", "")),
     ("ical", ("ic", "y", "s", "")),
     ("less", ("",)),
@@ -103,16 +103,45 @@ DERIVATIONAL_SUFFIX_RULES = [
     ("al", ("", "e")),
     ("ic", ("", "y", "e")),
     ("sy", ("",)),
+    # Latin root alternations
+    ("scription", ("scribe", "script", "scrib")),
+    ("scriptions", ("scribe", "script", "scrib")),
+    ("ption", ("be", "ve", "pt", "p", "")),
+    ("ptions", ("be", "ve", "pt", "p", "")),
+    ("ception", ("ceive", "cept", "ceiv")),
+    ("sumption", ("sume", "sumpt", "sum")),
+    ("mission", ("mit", "miss")),
+    ("missions", ("mit", "miss")),
+    ("cision", ("cide", "cis")),
+    ("vision", ("vide", "vis")),
+    ("clusion", ("clude", "clus")),
+    ("tension", ("tend", "tens")),
+    ("hension", ("hend", "hens")),
+    # Additional derivational suffixes
+    ("acy", ("ate", "at", "e", "")),
+    ("cy", ("", "t")),
+    ("ery", ("", "or", "er")),
+    ("ry", ("", "or", "er")),
+    ("ier", ("", "y")),
+    ("ate", ("", "e")),
+    ("age", ("", "e")),
+    ("hood", ("",)),
+    ("ism", ("", "ic", "ist", "e")),
+    ("ist", ("", "ic", "ism", "e")),
+    ("ler", ("le", "")),
+    ("ger", ("ge", "")),
 ]
 
 # Patterns for circular definitions
 CIRCULAR_PATTERNS = [
     # "in a(n) ... manner/way"
     (re.compile(r"\bin (?:an?|the) ([a-z]+) (?:manner|way)\b", re.IGNORECASE), "manner/way pattern"),
-    # "(the) quality/state/condition of being ..."
-    (re.compile(r"\b(?:the\s+)?(?:quality|state|condition)\s+of\s+being\s+([a-z]+)\b", re.IGNORECASE), "quality/state pattern"),
-    # "(the) act of ...ing"
-    (re.compile(r"\b(?:the\s+)?act\s+of\s+([a-z]+ing)\b", re.IGNORECASE), "act of pattern"),
+    # "(the) quality/state/condition/status of being ..."
+    (re.compile(r"\b(?:the\s+)?(?:quality|state|condition|fact|status)\s+(?:or\s+[a-z]+\s+)?of\s+being\s+(?:an?\s+)?([a-z]+)\b", re.IGNORECASE), "quality/state pattern"),
+    # "(the) act/process/practice of ...ing"
+    (re.compile(r"\b(?:the\s+)?(?:act|action|process|practice|art|method)\s+(?:or\s+[a-z]+\s+)?of\s+([a-z]+ing)\b", re.IGNORECASE), "act/process of pattern"),
+    # "(a) person/someone/one who ...s"
+    (re.compile(r"\b(?:a\s+)?(?:person|someone|one)\s+who\s+([a-z]+(?:s|es|ed))\b", re.IGNORECASE), "person who pattern"),
     # "relating/pertaining to ..."
     (re.compile(r"\b(?:relating|pertaining)\s+to\s+(?:the\s+|an?\s+)?([a-z]+)\b", re.IGNORECASE), "relating to pattern"),
     # "given to ..."
@@ -133,6 +162,8 @@ def get_roots(word: str) -> set[str]:
     for suf, reps in DERIVATIONAL_SUFFIX_RULES:
         if word.endswith(suf) and len(word) - len(suf) >= 3:
             base = word[:-len(suf)]
+            if base in FUNCTION_WORDS:
+                continue
             roots.add(base)
             for rep in reps:
                 roots.add(base + rep)
@@ -220,6 +251,7 @@ class QAChecker:
         self.aliases_by_wk: dict[str, set[str]] = collections.defaultdict(set)
         self.lemmas_by_alias: dict[str, set[str]] = collections.defaultdict(set)
         self.synonyms_by_wk: dict[str, list[str]] = collections.defaultdict(list)
+        self.db_family: dict[str, set[str]] = collections.defaultdict(set)
         
         self._load_db_cache()
 
@@ -244,6 +276,16 @@ class QAChecker:
         # 3. Synonyms
         for wk, syn in cur.execute("SELECT word_key, synonym FROM synonyms"):
             self.synonyms_by_wk[wk].append(syn)
+
+        # 4. Word family table (if present in db)
+        try:
+            for wk, mem, mpos in cur.execute("SELECT word_key, member_headword, member_pos FROM word_family"):
+                hn = wk.split("|")[0].lower()
+                m_low = mem.lower()
+                self.db_family[hn].add(m_low)
+                self.db_family[m_low].add(hn)
+        except sqlite3.OperationalError:
+            pass
 
         con.close()
 
@@ -297,9 +339,32 @@ class QAChecker:
             wn_related.update(self.wn_family.get(r, set()))
         family.update(wn_related)
 
+        # 3b. Word family table links from database (morphological relatives only, excluding semantic pertainyms like ocular -> eye)
+        hn_roots = get_roots(hn)
+        db_raw = set(self.db_family.get(hn, set()))
+        db_related = set()
+        for r in db_raw:
+            r_roots = get_roots(r)
+            shared_morph = {s for s in (hn_roots & r_roots) if len(s) >= 4}
+            pfx_len = 0
+            for i in range(min(len(hn), len(r))):
+                if hn[i] == r[i]:
+                    pfx_len += 1
+                else:
+                    break
+            if shared_morph or pfx_len >= 4:
+                db_related.add(r)
+
+        for r in list(db_related):
+            family.add(r)
+            family.update(self.aliases_by_wk.get(r, set()))
+            for lem in self.lemmas_by_alias.get(r, set()):
+                family.add(lem)
+        family.update(db_related)
+
         # 4. Roots from derivational suffix stripping
-        roots = get_roots(hn)
-        for r in wn_related:
+        roots = set(hn_roots)
+        for r in wn_related | db_related:
             roots.update(get_roots(r))
         family.update(roots)
 

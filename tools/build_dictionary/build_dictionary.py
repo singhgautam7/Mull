@@ -803,7 +803,7 @@ def load_kaikki_antonyms(path: Path, work_dir: Path) -> dict[tuple[str, str], se
 
 def load_curation() -> dict:
     out = {}
-    for name in ("idioms", "holdout", "pairs", "phrases", "collections", "relations"):
+    for name in ("idioms", "holdout", "pairs", "phrases", "collections", "relations", "non_circular"):
         p = CURATION / f"{name}.yaml"
         if p.exists():
             with open(p, encoding="utf-8") as f:
@@ -2533,6 +2533,26 @@ def main(argv=None) -> int:
                         seen.add(cf[0])
                         merged_fam.append(cf)
                 word_family = [(k, fw, fp) for k, fw, fp in word_family if k != key] + [(key, fw, fp) for fw, fp in merged_fam[:8]]
+
+    # Apply curated non-circular definitions (override any previous definition)
+    cur_non_circular = cur.get("non_circular") or {}
+    non_circular_count = 0
+    for key, cdata in cur_non_circular.items():
+        if key in words_by_key:
+            w = words_by_key[key]
+            w.update(
+                definition_short=cdata["definition_short"],
+                definition_full=cdata["definition_full"],
+                definition_source="curated_non_circular",
+            )
+            if cdata.get("example"):
+                examples = [(k, t) for k, t in examples if k != key or t != cdata["example"]]
+                examples.insert(0, (key, cdata["example"]))
+            if cdata.get("synonyms"):
+                synonyms = [(k, s) for k, s in synonyms if k != key] + [(key, s) for s in cdata["synonyms"]]
+            non_circular_count += 1
+    if non_circular_count:
+        print(f"Applied {non_circular_count:,} curated non-circular rewrites.")
 
     # Wiktionary topics are kept for re-slicing the learning set only; on the
     # other 250k rows they are most of the bytes and nothing will read them.
