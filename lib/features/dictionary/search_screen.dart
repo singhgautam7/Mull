@@ -322,7 +322,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       itemCount: n,
       separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
       itemBuilder: (BuildContext context, int i) =>
-          SearchResultCard(result: at(i), query: _query, onTap: () => open(i), trailing: add(i)),
+          SearchResultCard(result: at(i), query: _query, onTap: () => open(i)),
     );
   }
 
@@ -522,8 +522,6 @@ class SearchResultCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: Space.sm),
-                  BandChip(result.chip),
                 ],
               ),
             ),

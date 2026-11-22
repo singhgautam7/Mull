@@ -216,13 +216,22 @@ def judge_batch(
             msg = str(e)
             code = getattr(e, "code", None) or getattr(e, "status_code", None)
             is_429 = code == 429 or "RESOURCE_EXHAUSTED" in msg or "429" in msg or "quota" in msg.lower()
+            is_transient = (
+                code in (500, 502, 503, 504)
+                or "UNAVAILABLE" in msg
+                or "high demand" in msg.lower()
+                or "try again later" in msg.lower()
+                or "internal" in msg.lower()
+            )
 
             if "per day" in msg.lower() or "daily" in msg.lower():
                 raise DailyQuotaExhaustedError(f"Daily quota exhausted: {msg}")
 
-            if is_429:
+            if is_429 or is_transient:
                 if attempt >= max_retries:
-                    raise Sustained429Error(f"Sustained 429 rate limit after {max_retries} retries: {msg}")
+                    if is_429:
+                        raise Sustained429Error(f"Sustained 429 rate limit after {max_retries} retries: {msg}")
+                    raise
 
                 retry_after = None
                 resp = getattr(e, "response", None)
@@ -241,8 +250,9 @@ def judge_batch(
                         except ValueError:
                             pass
 
+                tag = "429 rate limit" if is_429 else "503/server transient error"
                 sleep_s = retry_after if retry_after is not None else min(60.0, (2.0 ** (attempt + 1))) + random.uniform(0.5, 2.0)
-                print(f"  [429 rate limit] backing off for {sleep_s:.1f}s (retry {attempt + 1}/{max_retries})...", flush=True)
+                print(f"  [{tag}] backing off for {sleep_s:.1f}s (retry {attempt + 1}/{max_retries})...", flush=True)
                 time.sleep(sleep_s)
                 continue
             else:
@@ -341,10 +351,16 @@ def print_verdict_table(items: list[dict], verdicts: list[dict]) -> None:
 
 
 def main() -> int:
+    base_dir = Path(__file__).resolve().parent
+    default_work = base_dir / "work"
+    default_ls = default_work / "learning_set.jsonl"
+    default_db = default_work / "dictionary.db"
+    default_cache = default_work / "judge_cache.jsonl"
+
     parser = argparse.ArgumentParser(description="Stage 2 LLM Judge for Mull definitions.")
-    parser.add_argument("--learning-set", type=Path, default=Path("work/learning_set.jsonl"))
-    parser.add_argument("--db", type=Path, default=Path("work/dictionary.db"))
-    parser.add_argument("--cache", type=Path, default=Path("work/judge_cache.jsonl"))
+    parser.add_argument("--learning-set", type=Path, default=default_ls)
+    parser.add_argument("--db", type=Path, default=default_db)
+    parser.add_argument("--cache", type=Path, default=default_cache)
     parser.add_argument("--trial", type=int, default=0, help="Trial mode: run on N words only (must include petulant)")
     parser.add_argument("--rpm", type=int, default=None)
     parser.add_argument("--rpd", type=int, default=None)

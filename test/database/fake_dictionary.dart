@@ -14,6 +14,8 @@ class FakeWord {
     this.ipa,
     this.examples = const <String>[],
     this.synonyms = const <String>[],
+    this.antonyms = const <String>[],
+    this.wordFamily = const <WordFamilyMember>[],
     this.inLearningSet = true,
   });
 
@@ -25,6 +27,8 @@ class FakeWord {
   final String? ipa;
   final List<String> examples;
   final List<String> synonyms;
+  final List<String> antonyms;
+  final List<WordFamilyMember> wordFamily;
   final bool inLearningSet;
 
   String get key => '${DictionaryDb.normalise(headword)}|$pos|1';
@@ -115,6 +119,12 @@ DictionaryDb fakeDictionary({
     }
     for (final String syn in w.synonyms) {
       db.execute('INSERT INTO synonyms(word_key, synonym) VALUES (?,?)', <Object>[w.key, syn]);
+    }
+    for (final String ant in w.antonyms) {
+      db.execute('INSERT INTO antonyms(word_key, antonym) VALUES (?,?)', <Object>[w.key, ant]);
+    }
+    for (final WordFamilyMember fam in w.wordFamily) {
+      db.execute('INSERT INTO word_family(word_key, member_headword, member_pos) VALUES (?,?,?)', <Object>[w.key, fam.headword, fam.pos]);
     }
   }
   int cid = 0;

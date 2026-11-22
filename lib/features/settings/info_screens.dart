@@ -47,6 +47,11 @@ class DictionaryInfoScreen extends ConsumerWidget {
         fact('Senses', grouped(dict.entryCount)),
         fact('Idioms', grouped(dict.idiomCount)),
         fact('Database size', '${(size / 1e6).toStringAsFixed(size > 0 ? 1 : 0)} MB'),
+        const SizedBox(height: Space.lg),
+        Text(
+          'British spelling is shown throughout the dictionary; US forms are identical unless an alternate spelling is noted on the entry.',
+          style: MullType.body.copyWith(color: c.onSurfaceVariant),
+        ),
         const SizedBox(height: Space.section),
         Text('SOURCES AND LICENCES', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
         const SizedBox(height: Space.lg),

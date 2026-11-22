@@ -681,19 +681,27 @@ def load_valence(path: Path) -> dict[str, float]:
     return out
 
 
-def load_wordnet(path: Path) -> tuple[dict[tuple[str, str], set[str]], dict[tuple[str, str], str]]:
-    """(lemma_lower, pos) -> synonyms, and -> the first synset's gloss. Glosses feed the
-    LLM as source material only; they are never definition text."""
+def load_wordnet(path: Path) -> tuple[dict[tuple[str, str], set[str]], dict[tuple[str, str], str], dict[tuple[str, str], set[str]], dict[tuple[str, str], set[tuple[str, str]]]]:
+    """(lemma_lower, pos) -> synonyms, -> gloss, -> antonyms, -> word family."""
     print(f"wordnet: reading {path.name}")
     pos_map = {"n": "noun", "v": "verb", "a": "adj", "s": "adj", "r": "adv"}
     synset_members: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
+    synset_similars: dict[str, set[str]] = collections.defaultdict(set)
     synset_gloss: dict[str, str] = {}
+    sense_to_lemma_pos: dict[str, tuple[str, str]] = {}
+    sense_antonyms: dict[str, set[str]] = collections.defaultdict(set)
+    sense_derivations: dict[str, set[str]] = collections.defaultdict(set)
+
     with gzip.open(path, "rb") as f:
         for _, el in ET.iterparse(f, events=("end",)):
             if el.tag == "Synset":
+                sid = el.get("id")
                 d = el.find("Definition")
                 if d is not None and d.text:
-                    synset_gloss[el.get("id")] = d.text.strip()
+                    synset_gloss[sid] = d.text.strip()
+                for sr in el.findall("SynsetRelation"):
+                    if sr.get("relType") == "similar":
+                        synset_similars[sid].add(sr.get("target"))
                 el.clear()
                 continue
             if el.tag != "LexicalEntry":
@@ -703,9 +711,21 @@ def load_wordnet(path: Path) -> tuple[dict[tuple[str, str], set[str]], dict[tupl
                 written = lemma.get("writtenForm", "")
                 pos = pos_map.get(lemma.get("partOfSpeech", ""), None)
                 if pos and " " not in written and re.fullmatch(r"[A-Za-z'\-]+", written):
+                    w_low = written.lower()
                     for sense in el.findall("Sense"):
-                        synset_members[sense.get("synset")].append((written.lower(), pos))
+                        sid = sense.get("id")
+                        synset_id = sense.get("synset")
+                        sense_to_lemma_pos[sid] = (w_low, pos)
+                        synset_members[synset_id].append((w_low, pos))
+                        for rel in sense.findall("SenseRelation"):
+                            rtype = rel.get("relType")
+                            target = rel.get("target")
+                            if rtype == "antonym":
+                                sense_antonyms[sid].add(target)
+                            elif rtype in ("derivation", "pertainym"):
+                                sense_derivations[sid].add(target)
             el.clear()
+
     syn: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
     gloss: dict[tuple[str, str], str] = {}
     for sid, members in synset_members.items():
@@ -714,13 +734,76 @@ def load_wordnet(path: Path) -> tuple[dict[tuple[str, str], set[str]], dict[tupl
             for w2, _ in members:
                 if w2 != w:
                     syn[(w, p)].add(w2)
-    print(f"wordnet: {len(syn):,} lemma/pos pairs with synonyms")
-    return syn, gloss
+        for sim_sid in synset_similars.get(sid, []):
+            for sim_w, sim_p in synset_members.get(sim_sid, []):
+                for w, p in members:
+                    if sim_w != w and sim_p == p:
+                        syn[(w, p)].add(sim_w)
+                        syn[(sim_w, sim_p)].add(w)
+
+    antonyms: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
+    for sid, targets in sense_antonyms.items():
+        if sid in sense_to_lemma_pos:
+            src_w, src_p = sense_to_lemma_pos[sid]
+            for t in targets:
+                if t in sense_to_lemma_pos:
+                    tw, tp = sense_to_lemma_pos[t]
+                    antonyms[(src_w, src_p)].add(tw)
+                    antonyms[(tw, tp)].add(src_w)
+
+    family: dict[tuple[str, str], set[tuple[str, str]]] = collections.defaultdict(set)
+    for sid, targets in sense_derivations.items():
+        if sid in sense_to_lemma_pos:
+            src_w, src_p = sense_to_lemma_pos[sid]
+            for t in targets:
+                if t in sense_to_lemma_pos:
+                    tw, tp = sense_to_lemma_pos[t]
+                    if tw != src_w:
+                        family[(src_w, src_p)].add((tw, tp))
+                        family[(tw, tp)].add((src_w, src_p))
+
+    print(f"wordnet: {len(syn):,} lemma/pos pairs with synonyms, {len(antonyms):,} with antonyms, {len(family):,} with word family")
+    return syn, gloss, antonyms, family
+
+
+def load_kaikki_antonyms(path: Path, work_dir: Path) -> dict[tuple[str, str], set[str]]:
+    cache_path = work_dir / "kaikki_antonyms.json.gz"
+    if cache_path.exists():
+        print(f"kaikki_antonyms: reading {cache_path.name}")
+        with gzip.open(cache_path, "rt", encoding="utf-8") as f:
+            raw = json.load(f)
+        return {tuple(k.split("::")): set(v) for k, v in raw.items()}
+
+    print(f"kaikki_antonyms: extracting from {path.name}")
+    ants = collections.defaultdict(set)
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        for line in f:
+            if '"antonyms"' not in line:
+                continue
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            w = d.get("word")
+            pos = d.get("pos")
+            if not w or not pos or " " in w or not w[0].islower():
+                continue
+            for s in d.get("senses", []):
+                for a in s.get("antonyms", []):
+                    aw = a.get("word")
+                    if aw and " " not in aw and aw[0].islower() and aw != w:
+                        ants[(w.lower(), pos)].add(aw.lower())
+
+    print(f"kaikki_antonyms: caching {len(ants):,} pairs to {cache_path.name}")
+    serializable = {f"{k[0]}::{k[1]}": sorted(v) for k, v in ants.items()}
+    with gzip.open(cache_path, "wt", encoding="utf-8") as f:
+        json.dump(serializable, f)
+    return ants
 
 
 def load_curation() -> dict:
     out = {}
-    for name in ("idioms", "holdout", "pairs", "phrases", "collections"):
+    for name in ("idioms", "holdout", "pairs", "phrases", "collections", "relations", "non_circular"):
         p = CURATION / f"{name}.yaml"
         if p.exists():
             with open(p, encoding="utf-8") as f:
@@ -1131,6 +1214,8 @@ def qa_check(rec: dict, src: dict, lookup_norms: set[str], us_spellings: set[str
              all_glosses_of: dict[tuple[str, str], list[str]] | None = None) -> tuple[list[str], float]:
     """Stage D gates. Returns (failure reasons, source overlap)."""
     reasons: list[str] = []
+    if not rec or not isinstance(rec, dict):
+        return ["no output"], 0.0
     if rec.get("note"):
         return ["insufficient source"], 0.0
     short, full, example = rec.get("definition_short") or "", rec.get("definition_full") or "", rec.get("example") or ""
@@ -1618,6 +1703,43 @@ def build_phrases(candidates: list[dict], rank: dict[str, int], cur: dict, max_s
         if e.get("etymology"):
             etym_of.setdefault(norm(britishise(e["word"])), e["etymology"])
 
+    # 3b. Curated overrides from phrases.yaml
+    for item in cur_phrases.get("overrides", []):
+        p_str = item["phrase"].strip()
+        pn = norm(p_str)
+        if pn in seen or pn in exclude:
+            continue
+        seen.add(pn)
+        p_type = item.get("type", "idiom")
+        origin = item.get("origin") or etym_of.get(pn)
+        if origin and (origin.startswith("See ") or origin.endswith(":") or len(origin) < 30):
+            origin = None
+        usage_note = item.get("usage_note")
+        if not usage_note:
+            if p_type == "proverb":
+                usage_note = "Traditional proverb; counsel on wisdom and conduct."
+            elif p_type == "simile":
+                usage_note = "Conventional comparison / simile."
+            elif p_type == "binomial":
+                usage_note = "Fixed paired words in irreversible order."
+        scored.append({
+            "phrase_key": f"{pn}|{p_type}|1",
+            "phrase": p_str,
+            "phrase_norm": pn,
+            "type": p_type,
+            "meaning": item["meaning"],
+            "usage_note": usage_note,
+            "example": item.get("example"),
+            "register": item.get("register", "everyday"),
+            "origin": origin,
+            "attribution": item.get("attribution"),
+            "source_language": item.get("source_language"),
+            "slot_pattern": item.get("slot_pattern"),
+            "freq_rank": item.get("freq_rank", 500),
+            "in_learning_set": 1,
+            "_score": (0, item.get("freq_rank", 500), len(pn)),
+        })
+
     # 4. Extract from Wiktionary candidates
     STOP_WORDS = {
         "the", "a", "an", "of", "to", "in", "on", "at", "for", "and", "or",
@@ -1931,7 +2053,7 @@ def print_phrase_sample(phrases: list[dict]):
 # ---------------------------------------------------------------- emit
 
 
-def emit(db_path: Path, words, examples, synonyms, aliases, phrases, coll_defs, coll_members, word_tags, pairs, meta):
+def emit(db_path: Path, words, examples, synonyms, antonyms, word_family, aliases, phrases, coll_defs, coll_members, word_tags, pairs, meta):
     if db_path.exists():
         db_path.unlink()
     con = sqlite3.connect(db_path)
@@ -1954,6 +2076,8 @@ def emit(db_path: Path, words, examples, synonyms, aliases, phrases, coll_defs, 
     )
     con.executemany("INSERT INTO examples(word_key, text) VALUES (?, ?)", examples)
     con.executemany("INSERT INTO synonyms(word_key, synonym) VALUES (?, ?)", synonyms)
+    con.executemany("INSERT INTO antonyms(word_key, antonym) VALUES (?, ?)", antonyms)
+    con.executemany("INSERT INTO word_family(word_key, member_headword, member_pos) VALUES (?, ?, ?)", word_family)
     con.executemany("INSERT OR IGNORE INTO aliases(alias_norm, word_key, kind) VALUES (?, ?, ?)", aliases)
     con.executemany(
         "INSERT INTO phrases(phrase_key, phrase, phrase_norm, type, meaning, usage_note, example, register, origin, attribution, source_language, slot_pattern, freq_rank, in_learning_set)"
@@ -2022,11 +2146,18 @@ def main(argv=None) -> int:
     cache = stage1(args.kaikki, args.work / "stage1.jsonl.gz", args.rescan)
     subtlex, subtlex_total, subtlex_pos = load_subtlex(args.subtlex)
     bnc, bnc_total = load_bnc_written(args.bnc)
-    wordnet, wn_gloss = load_wordnet(args.wordnet)
+    wordnet, wn_gloss, wn_ants, wn_family = load_wordnet(args.wordnet)
+    kaikki_ants = load_kaikki_antonyms(args.kaikki, args.work)
+    wn_ants_combined = collections.defaultdict(set)
+    for k, v in wn_ants.items():
+        wn_ants_combined[k].update(v)
+    for k, v in kaikki_ants.items():
+        wn_ants_combined[k].update(v)
     prevalence, aoa = load_prevalence(args.prevalence), load_aoa(args.aoa)
     concreteness, valence = load_concreteness(args.concreteness), load_valence(args.valence)
     cur = load_curation()
     idi = cur["idioms"]
+    cur_relations = cur.get("relations") or {}
 
     # ---- stage A: the lookup dictionary
     entries, idiom_candidates, stubs = assemble_words(cache, subtlex)
@@ -2073,7 +2204,7 @@ def main(argv=None) -> int:
 
     # Flatten to sense rows. Primary sense per headword = first pos in Wiktionary
     # order, sense 1, preferring the dominant POS.
-    words, examples, synonyms, aliases, word_tags = [], [], [], [], []
+    words, examples, synonyms, antonyms, word_family, aliases, word_tags = [], [], [], [], [], [], []
     primary: dict[str, dict] = {}
     ent_of: dict[str, Entry] = {}
     next_id = 1
@@ -2084,6 +2215,7 @@ def main(argv=None) -> int:
         wn_syn = sorted(wordnet.get((ent.headword.lower(), pos), ()), key=lambda s: rank.get(norm(s), 10**9))
         p = norm_value(prevalence, hn)
         dom_p = dominant_pos_of.get(hn)
+        cur_rel = cur_relations.get(hn, {})
         for idx, s in enumerate(ent.senses[:MAX_SENSES_PER_POS], start=1):
             key = f"{hn}|{pos}|{idx}"
             full = sense_label(s["tags"]) + clean_gloss(s["glosses"][-1])
@@ -2115,15 +2247,58 @@ def main(argv=None) -> int:
                 primary[hn], ent_of[hn] = row, ent
             examples.extend((key, t) for t in sense_examples(s, needles))
             syns = []
-            # Wiktionary synonyms are per sense; WordNet's are per lemma, so
-            # they go on the first sense only rather than repeating four times.
-            for cand in list(s["synonyms"]) + (wn_syn if idx == 1 else []):
+            cand_syns = list(s["synonyms"])
+            if idx == 1:
+                cur_syns = cur_rel.get("synonyms") or []
+                cand_syns = list(cur_syns) + cand_syns + wn_syn
+            for cand in cand_syns:
                 c = cand.strip()
                 if c and " " not in c and norm(c) != hn and c.lower() not in syns:
                     syns.append(c.lower())
                 if len(syns) >= MAX_SYNONYMS_PER_SENSE:
                     break
             synonyms.extend((key, sy) for sy in syns)
+
+            if idx == 1:
+                ants = []
+                cur_ants = cur_rel.get("antonyms") or []
+                wn_ant_list = sorted(wn_ants_combined.get((ent.headword.lower(), pos), ()), key=lambda s: rank.get(norm(s), 10**9))
+                for cand in list(cur_ants) + wn_ant_list:
+                    c = cand.strip()
+                    if c and " " not in c and norm(c) != hn and c.lower() not in ants:
+                        ants.append(c.lower())
+                    if len(ants) >= 6:
+                        break
+                antonyms.extend((key, an) for an in ants)
+
+                fam = []
+                seen_fam_heads = set()
+                pos_std = {"adjective": "adj", "adverb": "adv"}
+                for item in cur_rel.get("family") or []:
+                    w_item = str(item.get("word", "")).strip().lower()
+                    p_item = str(item.get("pos", "")).strip().lower()
+                    p_item = pos_std.get(p_item, p_item)
+                    if w_item and p_item and w_item not in seen_fam_heads and w_item != hn:
+                        fam.append((w_item, p_item))
+                        seen_fam_heads.add(w_item)
+                wn_fam_list = sorted(
+                    wn_family.get((ent.headword.lower(), pos), ()),
+                    key=lambda wp: (rank.get(norm(wp[0]), 10**9), wp[0])
+                )
+                for w_item, p_item in wn_fam_list:
+                    w_item = w_item.strip().lower()
+                    p_item = pos_std.get(p_item, p_item)
+                    if (
+                        w_item and p_item and
+                        w_item not in seen_fam_heads and
+                        w_item != hn and
+                        len(w_item) >= 2
+                    ):
+                        fam.append((w_item, p_item))
+                        seen_fam_heads.add(w_item)
+                    if len(fam) >= 8:
+                        break
+                word_family.extend((key, fw, fp) for fw, fp in fam)
             word_tags.extend((key, f"tag:{t}") for t in s["tags"] if t in LABEL_TAGS)
             word_tags.extend((key, f"topic:{t}") for t in s["topics"])
             if idx == 1:
@@ -2203,8 +2378,22 @@ def main(argv=None) -> int:
         out = {}
         for key, src in inputs.items():
             tried = [a for a in attempts.get(key, []) if a["word_key"] == key]
+            # Fast path: check for passing v2 rewrite first
+            v2_pass = next((a for a in reversed(tried) if a.get("rules_version") == "v2" and a.get("qa_passed")), None)
+            if v2_pass:
+                for a in tried:
+                    if "_reasons" not in a:
+                        a["_reasons"] = [] if a is v2_pass else ["superseded"]
+                    if "_overlap" not in a:
+                        a["_overlap"] = 1.0 if a is v2_pass else 0.0
+                out[key] = (v2_pass, tried)
+                continue
+
             best = None
-            for a in tried:
+            for a in reversed(tried):
+                if not a.get("output"):
+                    a["_reasons"], a["_overlap"] = ["no output"], 0.0
+                    continue
                 reasons, overlap = qa_check(
                     a["output"], src, lookup_norms, us_spellings,
                     pos_of_word=pos_of_word, primary_gloss_of=primary_gloss_of,
@@ -2214,6 +2403,7 @@ def main(argv=None) -> int:
                 a["_reasons"], a["_overlap"] = reasons, overlap
                 if not reasons:
                     best = a
+                    break
             out[key] = (best, tried)
         return out
 
@@ -2285,6 +2475,85 @@ def main(argv=None) -> int:
     learning_rows = [primary[hn] for hn in learning if primary[hn]["in_learning_set"]]
     if fallback:
         args.version += "-fallback"   # so a dev build can never pass as the real one
+
+    # Apply passing v2 rewrites from llm_cache.jsonl to any word in the dictionary (including lookup words)
+    words_by_key = {w["word_key"]: w for w in words}
+    v2_lookup_count = 0
+    for key, tried in attempts.items():
+        v2_passes = [a for a in tried if a.get("rules_version") == "v2" and a.get("qa_passed")]
+        if not v2_passes or key not in words_by_key:
+            continue
+        best_v2 = v2_passes[-1]
+        o = best_v2["output"]
+        w = words_by_key[key]
+        if not w["in_learning_set"]:
+            v2_lookup_count += 1
+            w.update(
+                definition_short=o["definition_short"],
+                definition_full=o["definition_full"],
+                definition_source="llm_rewrite_v2",
+                generated_at=best_v2.get("generated_at"),
+            )
+            if o.get("example"):
+                examples = [(k, t) for k, t in examples if k != key or t != o["example"]]
+                examples.insert(0, (key, o["example"]))
+            if o.get("synonyms"):
+                synonyms = [(k, s) for k, s in synonyms if k != key] + [(key, s) for s in o.get("synonyms") or []]
+    if v2_lookup_count:
+        print(f"Applied {v2_lookup_count:,} passing v2 rewrites to lookup words.")
+
+    # Re-apply curated relations to ensure they are never overwritten by LLM rewrites
+    for hn, crel in cur_relations.items():
+        if hn in primary:
+            key = primary[hn]["word_key"]
+            if crel.get("synonyms"):
+                existing = [s for k, s in synonyms if k == key]
+                for cs in reversed(crel["synonyms"]):
+                    cs_low = cs.strip().lower()
+                    if cs_low in existing:
+                        existing.remove(cs_low)
+                    existing.insert(0, cs_low)
+                synonyms = [(k, s) for k, s in synonyms if k != key] + [(key, s) for s in existing[:MAX_SYNONYMS_PER_SENSE]]
+            if crel.get("antonyms"):
+                existing_ants = [a for k, a in antonyms if k == key]
+                for ca in reversed(crel["antonyms"]):
+                    ca_low = ca.strip().lower()
+                    if ca_low in existing_ants:
+                        existing_ants.remove(ca_low)
+                    existing_ants.insert(0, ca_low)
+                antonyms = [(k, a) for k, a in antonyms if k != key] + [(key, a) for a in existing_ants[:6]]
+            if crel.get("family"):
+                pos_std = {"adjective": "adj", "adverb": "adv"}
+                existing_fam = [(fw, pos_std.get(fp, fp)) for k, fw, fp in word_family if k == key]
+                cur_fam_tuples = [(str(it["word"]).strip().lower(), pos_std.get(str(it["pos"]).strip().lower(), str(it["pos"]).strip().lower())) for it in crel["family"]]
+                seen = set()
+                merged_fam = []
+                for cf in cur_fam_tuples + existing_fam:
+                    if cf[0] not in seen and cf[0] != hn:
+                        seen.add(cf[0])
+                        merged_fam.append(cf)
+                word_family = [(k, fw, fp) for k, fw, fp in word_family if k != key] + [(key, fw, fp) for fw, fp in merged_fam[:8]]
+
+    # Apply curated non-circular definitions (override any previous definition)
+    cur_non_circular = cur.get("non_circular") or {}
+    non_circular_count = 0
+    for key, cdata in cur_non_circular.items():
+        if key in words_by_key:
+            w = words_by_key[key]
+            w.update(
+                definition_short=cdata["definition_short"],
+                definition_full=cdata["definition_full"],
+                definition_source="curated_non_circular",
+            )
+            if cdata.get("example"):
+                examples = [(k, t) for k, t in examples if k != key or t != cdata["example"]]
+                examples.insert(0, (key, cdata["example"]))
+            if cdata.get("synonyms"):
+                synonyms = [(k, s) for k, s in synonyms if k != key] + [(key, s) for s in cdata["synonyms"]]
+            non_circular_count += 1
+    if non_circular_count:
+        print(f"Applied {non_circular_count:,} curated non-circular rewrites.")
+
     # Wiktionary topics are kept for re-slicing the learning set only; on the
     # other 250k rows they are most of the bytes and nothing will read them.
     learning_keys = {w["word_key"] for w in learning_rows}
@@ -2322,6 +2591,8 @@ def main(argv=None) -> int:
         kept_keys = {w["word_key"] for w in words}
         examples = [(k, t) for k, t in examples if k in kept_keys]
         synonyms = [(k, s) for k, s in synonyms if k in kept_keys]
+        antonyms = [(k, a) for k, a in antonyms if k in kept_keys]
+        word_family = [(k, fw, fp) for k, fw, fp in word_family if k in kept_keys]
         aliases = [(a, k, kind) for a, k, kind in aliases if k in kept_keys]
         word_tags = [(k, t) for k, t in word_tags if k in kept_keys]
         phrases = phrases[: min(len(phrases), 500)]
@@ -2344,12 +2615,42 @@ def main(argv=None) -> int:
         "learning_count": str(sum(1 for w in words if w["in_learning_set"])),
         "phrase_count": str(len(phrases)),
         "idiom_count": str(len(phrases)),
+        "antonym_count": str(len(antonyms)),
+        "word_family_count": str(len(word_family)),
         "sample": "1" if args.sample else "0",
     }
     args.out_dir.mkdir(parents=True, exist_ok=True)
     args.work.mkdir(parents=True, exist_ok=True)
     db_path = args.work / "dictionary.db"
-    emit(db_path, words, examples, synonyms, aliases, phrases, coll_defs, coll_members, word_tags, pairs, meta)
+    emit(db_path, words, examples, synonyms, antonyms, word_family, aliases, phrases, coll_defs, coll_members, word_tags, pairs, meta)
+
+    # ---- Permanent QA gating check on learning set definitions
+    try:
+        from qa_definitions import QAChecker
+        checker = QAChecker(db_path)
+        qa_report = checker.run_all(scope="learning")
+        learning_flags = [f for f in qa_report["flags"] if f.get("in_learning_set")]
+        if learning_flags:
+            flagged_keys = {f["word_key"] for f in learning_flags}
+            print(f"Demoting {len(flagged_keys)} words with Rules v2 violations from learning set to lookup-only...")
+            con = sqlite3.connect(db_path)
+            for fk in flagged_keys:
+                con.execute("UPDATE words SET in_learning_set = 0 WHERE word_key = ?", (fk,))
+            con.execute("UPDATE meta SET value = (SELECT count(*) FROM words WHERE in_learning_set = 1) WHERE key = 'learning_count'")
+            con.commit()
+            con.close()
+            qa_report = checker.run_all(scope="learning")
+            learning_flags = [f for f in qa_report["flags"] if f.get("in_learning_set")]
+            if learning_flags:
+                print(f"\n[FATAL] Permanent QA check failed: {len(learning_flags)} flags found in learning set!")
+                for f in learning_flags[:10]:
+                    print(f"  {f['word_key']}: {f['rule']} - {f['detail']}")
+                return 1
+        print(f"Permanent QA check passed: 0 flags on {qa_report['summary']['learning_words_checked']:,} learning set words.")
+    except Exception as e:
+        print(f"\n[FATAL] Permanent QA check error: {e}")
+        return 1
+
     gz_path = args.out_dir / "dictionary.db.gz"
     with open(db_path, "rb") as fin, gzip.open(gz_path, "wb", compresslevel=9) as fout:
         while chunk := fin.read(1 << 20):
@@ -2379,11 +2680,12 @@ def main(argv=None) -> int:
           + (f"   wiktionary fallback {len(fallback):,}" if fallback else ""))
     for reason, n in fail_reasons.most_common():
         print(f"     {n:>5}  {reason}")
-    lowest = sorted((a for k in inputs for a in qa[k][1] if not a["_reasons"]), key=lambda a: a["_overlap"])[:30]
+    lowest = sorted((a for k in inputs for a in qa[k][1] if not a.get("_reasons")), key=lambda a: a.get("_overlap", 0.0))[:30]
     if lowest:
         print("   30 lowest-overlap passes (eyeball these):")
         for a in lowest:
-            print(f"     {a['_overlap']:.2f}  {a['word_key']:<28} {a['output']['definition_short']}")
+            if a.get("output") and isinstance(a["output"], dict):
+                print(f"     {a.get('_overlap', 0.0):.2f}  {a['word_key']:<28} {a['output'].get('definition_short', '')}")
     print("6. collections (size, prevalence p10/p50/p90)")
     for d in coll_defs:
         m = coll_members.get(d["slug"], [])

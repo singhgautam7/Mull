@@ -33,6 +33,10 @@ DEFAULT_ALLOWLIST: set[str] = {
     "plural", "singular", "verb", "noun", "adjective", "adverb", "preposition",
     # Specific common concepts often irreducible in simple definitions
     "especially", "particularly", "typically", "specifically", "relating",
+    # Core defining concepts with no simpler plain alternative (from user direction & defining vocabulary)
+    "childish", "sulky", "temper", "tempered", "playful", "charming", "rude", "humble",
+    "awkward", "shy", "bold", "chemical", "hatred", "miserable", "racial", "formal", "differ", "differs",
+    "cannot", "liquid", "powder", "strict", "anger", "harsh", "sickness", "illness", "yarn", "hollow", "supreme",
 }
 
 # Function words: Closed-class words, auxiliary verbs, pronouns, prepositions, conjunctions, numbers
@@ -73,15 +77,15 @@ DERIVATIONAL_SUFFIX_RULES = [
     ("ty", ("",)),
     ("ness", ("", "y")),
     ("ment", ("",)),
-    ("ation", ("ate", "e", "")),
+    ("ation", ("ate", "ator", "e", "")),
     ("ition", ("ite", "e", "")),
-    ("sion", ("de", "se", "")),
+    ("sion", ("de", "se", "t", "")),
     ("tion", ("t", "te", "e", "")),
     ("ance", ("ant", "e", "")),
     ("ence", ("ent", "e", "")),
-    ("ancy", ("ant", "")),
+    ("ancy", ("ant", "ate", "")),
     ("ency", ("ent", "")),
-    ("able", ("e", "")),
+    ("able", ("ate", "e", "")),
     ("ible", ("e", "")),
     ("ical", ("ic", "y", "s", "")),
     ("less", ("",)),
@@ -99,16 +103,45 @@ DERIVATIONAL_SUFFIX_RULES = [
     ("al", ("", "e")),
     ("ic", ("", "y", "e")),
     ("sy", ("",)),
+    # Latin root alternations
+    ("scription", ("scribe", "script", "scrib")),
+    ("scriptions", ("scribe", "script", "scrib")),
+    ("ption", ("be", "ve", "pt", "p", "")),
+    ("ptions", ("be", "ve", "pt", "p", "")),
+    ("ception", ("ceive", "cept", "ceiv")),
+    ("sumption", ("sume", "sumpt", "sum")),
+    ("mission", ("mit", "miss")),
+    ("missions", ("mit", "miss")),
+    ("cision", ("cide", "cis")),
+    ("vision", ("vide", "vis")),
+    ("clusion", ("clude", "clus")),
+    ("tension", ("tend", "tens")),
+    ("hension", ("hend", "hens")),
+    # Additional derivational suffixes
+    ("acy", ("ate", "at", "e", "")),
+    ("cy", ("", "t")),
+    ("ery", ("", "or", "er")),
+    ("ry", ("", "or", "er")),
+    ("ier", ("", "y")),
+    ("ate", ("", "e")),
+    ("age", ("", "e")),
+    ("hood", ("",)),
+    ("ism", ("", "ic", "ist", "e")),
+    ("ist", ("", "ic", "ism", "e")),
+    ("ler", ("le", "")),
+    ("ger", ("ge", "")),
 ]
 
 # Patterns for circular definitions
 CIRCULAR_PATTERNS = [
     # "in a(n) ... manner/way"
     (re.compile(r"\bin (?:an?|the) ([a-z]+) (?:manner|way)\b", re.IGNORECASE), "manner/way pattern"),
-    # "(the) quality/state/condition of being ..."
-    (re.compile(r"\b(?:the\s+)?(?:quality|state|condition)\s+of\s+being\s+([a-z]+)\b", re.IGNORECASE), "quality/state pattern"),
-    # "(the) act of ...ing"
-    (re.compile(r"\b(?:the\s+)?act\s+of\s+([a-z]+ing)\b", re.IGNORECASE), "act of pattern"),
+    # "(the) quality/state/condition/status of being ..."
+    (re.compile(r"\b(?:the\s+)?(?:quality|state|condition|fact|status)\s+(?:or\s+[a-z]+\s+)?of\s+being\s+(?:an?\s+)?([a-z]+)\b", re.IGNORECASE), "quality/state pattern"),
+    # "(the) act/process/practice of ...ing"
+    (re.compile(r"\b(?:the\s+)?(?:act|action|process|practice|art|method)\s+(?:or\s+[a-z]+\s+)?of\s+([a-z]+ing)\b", re.IGNORECASE), "act/process of pattern"),
+    # "(a) person/someone/one who ...s"
+    (re.compile(r"\b(?:a\s+)?(?:person|someone|one)\s+who\s+([a-z]+(?:s|es|ed))\b", re.IGNORECASE), "person who pattern"),
     # "relating/pertaining to ..."
     (re.compile(r"\b(?:relating|pertaining)\s+to\s+(?:the\s+|an?\s+)?([a-z]+)\b", re.IGNORECASE), "relating to pattern"),
     # "given to ..."
@@ -129,6 +162,8 @@ def get_roots(word: str) -> set[str]:
     for suf, reps in DERIVATIONAL_SUFFIX_RULES:
         if word.endswith(suf) and len(word) - len(suf) >= 3:
             base = word[:-len(suf)]
+            if base in FUNCTION_WORDS:
+                continue
             roots.add(base)
             for rep in reps:
                 roots.add(base + rep)
@@ -216,6 +251,7 @@ class QAChecker:
         self.aliases_by_wk: dict[str, set[str]] = collections.defaultdict(set)
         self.lemmas_by_alias: dict[str, set[str]] = collections.defaultdict(set)
         self.synonyms_by_wk: dict[str, list[str]] = collections.defaultdict(list)
+        self.db_family: dict[str, set[str]] = collections.defaultdict(set)
         
         self._load_db_cache()
 
@@ -241,11 +277,23 @@ class QAChecker:
         for wk, syn in cur.execute("SELECT word_key, synonym FROM synonyms"):
             self.synonyms_by_wk[wk].append(syn)
 
+        # 4. Word family table (if present in db)
+        try:
+            for wk, mem, mpos in cur.execute("SELECT word_key, member_headword, member_pos FROM word_family"):
+                hn = wk.split("|")[0].lower()
+                m_low = mem.lower()
+                self.db_family[hn].add(m_low)
+                self.db_family[m_low].add(hn)
+        except sqlite3.OperationalError:
+            pass
+
         con.close()
 
     def get_token_rank(self, token: str) -> int:
         """Get best frequency rank for a token from headword ranks or alias ranks."""
         t = token.lower()
+        if t.endswith("'s") and len(t) > 2:
+            t = t[:-2]
         if t in self.hw_ranks:
             return self.hw_ranks[t]
         if t in self.alias_ranks:
@@ -258,6 +306,19 @@ class QAChecker:
                     return self.hw_ranks[base]
                 if base in self.alias_ranks:
                     return self.alias_ranks[base]
+                # Suffix stripping with silent e (e.g. hop -> hope, car -> care)
+                base_e = base + "e"
+                if base_e in self.hw_ranks:
+                    return self.hw_ranks[base_e]
+                if base_e in self.alias_ranks:
+                    return self.alias_ranks[base_e]
+                # Suffix stripping with consonant dedoubling (e.g. stopp -> stop, runn -> run)
+                if len(base) >= 3 and base[-1] == base[-2] and base[-1] in "bdfglmnprt":
+                    dedup = base[:-1]
+                    if dedup in self.hw_ranks:
+                        return self.hw_ranks[dedup]
+                    if dedup in self.alias_ranks:
+                        return self.alias_ranks[dedup]
         return 999999
 
     def get_family_words(self, headword: str, word_key: str) -> set[str]:
@@ -278,9 +339,32 @@ class QAChecker:
             wn_related.update(self.wn_family.get(r, set()))
         family.update(wn_related)
 
+        # 3b. Word family table links from database (morphological relatives only, excluding semantic pertainyms like ocular -> eye)
+        hn_roots = get_roots(hn)
+        db_raw = set(self.db_family.get(hn, set()))
+        db_related = set()
+        for r in db_raw:
+            r_roots = get_roots(r)
+            shared_morph = {s for s in (hn_roots & r_roots) if len(s) >= 4}
+            pfx_len = 0
+            for i in range(min(len(hn), len(r))):
+                if hn[i] == r[i]:
+                    pfx_len += 1
+                else:
+                    break
+            if shared_morph or pfx_len >= 4:
+                db_related.add(r)
+
+        for r in list(db_related):
+            family.add(r)
+            family.update(self.aliases_by_wk.get(r, set()))
+            for lem in self.lemmas_by_alias.get(r, set()):
+                family.add(lem)
+        family.update(db_related)
+
         # 4. Roots from derivational suffix stripping
-        roots = get_roots(hn)
-        for r in wn_related:
+        roots = set(hn_roots)
+        for r in wn_related | db_related:
             roots.update(get_roots(r))
         family.update(roots)
 
@@ -302,7 +386,7 @@ class QAChecker:
             if rank > self.top_n_frequency:
                 failures.append(f"content word '{tok}' (rank {rank}) outside top {self.top_n_frequency}")
             # Check more common than headword
-            elif rank > hw_rank:
+            elif hw_rank > self.top_n_frequency and rank > hw_rank:
                 failures.append(f"content word '{tok}' (rank {rank}) is harder than headword (rank {hw_rank})")
         return failures
 
@@ -468,6 +552,7 @@ class QAChecker:
         self,
         flags_out_path: Path | str | None = None,
         report_out_path: Path | str | None = None,
+        scope: str = "all",
     ) -> dict:
         """Run checks across all rows in dictionary.db and write flags and report."""
         con = sqlite3.connect(self.db_path)
@@ -476,6 +561,8 @@ class QAChecker:
             "SELECT id, word_key, headword, headword_norm, pos, sense_index, "
             "definition_short, definition_full, freq_rank, in_learning_set FROM words"
         )
+        if scope == "learning":
+            query += " WHERE in_learning_set = 1"
         rows = cur.execute(query).fetchall()
         con.close()
 
@@ -528,6 +615,13 @@ class QAChecker:
             "flags_by_rule_learning": {k: len(v) for k, v in flags_by_rule_learning.items()},
             "flags_by_rule_lookup": {k: len(v) for k, v in flags_by_rule_lookup.items()},
             "elapsed_seconds": elapsed,
+            "flags": all_flags,
+            "summary": {
+                "total_checked": total_rows,
+                "learning_words_checked": learning_rows,
+                "lookup_words_checked": lookup_rows,
+                "total_flags": len(all_flags),
+            },
         }
 
     def _write_report(
@@ -631,11 +725,15 @@ class QAChecker:
 
 
 def main() -> int:
+    base_dir = Path(__file__).resolve().parent
+    default_work = base_dir / "work"
+    default_raw = base_dir / "raw"
+
     parser = argparse.ArgumentParser(description="Deterministic quality checks for Mull dictionary definitions.")
-    parser.add_argument("--db", type=Path, default=Path("work/dictionary.db"), help="Path to dictionary.db")
-    parser.add_argument("--wordnet", type=Path, default=Path("raw/english-wordnet-2024.xml.gz"), help="Path to english-wordnet XML")
-    parser.add_argument("--flags-out", type=Path, default=Path("work/qa_flags.jsonl"), help="Output path for qa_flags.jsonl")
-    parser.add_argument("--report-out", type=Path, default=Path("work/qa_report.md"), help="Output path for qa_report.md")
+    parser.add_argument("--db", type=Path, default=default_work / "dictionary.db", help="Path to dictionary.db")
+    parser.add_argument("--wordnet", type=Path, default=default_raw / "english-wordnet-2024.xml.gz", help="Path to english-wordnet XML")
+    parser.add_argument("--flags-out", type=Path, default=default_work / "qa_flags.jsonl", help="Output path for qa_flags.jsonl")
+    parser.add_argument("--report-out", type=Path, default=default_work / "qa_report.md", help="Output path for qa_report.md")
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N_FREQUENCY, help="Max frequency rank for content words (R2)")
     parser.add_argument("--short-max", type=int, default=DEFAULT_SHORT_DEF_MAX_WORDS, help="Max words in definition_short (R4)")
     parser.add_argument("--full-max", type=int, default=DEFAULT_FULL_DEF_MAX_WORDS, help="Max words in definition_full (R4)")

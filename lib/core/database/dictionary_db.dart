@@ -234,6 +234,26 @@ class ShelfRows {
   final List<Idiom> idioms;
 }
 
+/// One related member of a word family with its part of speech.
+@immutable
+class WordFamilyMember {
+  const WordFamilyMember(this.headword, this.pos);
+
+  final String headword;
+  final String pos;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WordFamilyMember &&
+          runtimeType == other.runtimeType &&
+          headword == other.headword &&
+          pos == other.pos;
+
+  @override
+  int get hashCode => Object.hash(headword, pos);
+}
+
 /// Everything one Mull card draws, read in one trip to the worker.
 @immutable
 class WordEntry {
@@ -410,6 +430,22 @@ class DictionaryDb {
         <Object>[wordKey],
       )
       .map((Row r) => r['synonym'] as String)
+      .toList();
+
+  List<String> antonyms(String wordKey) => _db
+      .select(
+        'SELECT antonym FROM antonyms WHERE word_key = ? ORDER BY id',
+        <Object>[wordKey],
+      )
+      .map((Row r) => r['antonym'] as String)
+      .toList();
+
+  List<WordFamilyMember> wordFamily(String wordKey) => _db
+      .select(
+        'SELECT member_headword, member_pos FROM word_family WHERE word_key = ? ORDER BY id',
+        <Object>[wordKey],
+      )
+      .map((Row r) => WordFamilyMember(r['member_headword'] as String, r['member_pos'] as String))
       .toList();
 
   /// The US spelling of a headword, if the dictionary carries one.

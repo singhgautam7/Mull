@@ -70,7 +70,7 @@ void main() {
   Finder addButton() => find.bySemanticsLabel('Add rose to a list');
 
   for (final SearchStyle style in SearchStyle.values) {
-    testWidgets('${style.name} results: button opens the sheet, row tap opens the word', (WidgetTester tester) async {
+    testWidgets('${style.name} results: button opens the sheet in table mode, card mode omits button', (WidgetTester tester) async {
       await tester.runAsync(() async {
         final SemanticsHandle handle = tester.ensureSemantics();
         await pumpSearch(tester, style);
@@ -81,15 +81,20 @@ void main() {
         await settle(tester);
         final Finder result = find.byType(style == SearchStyle.table ? SearchResultRow : SearchResultCard);
         expect(result, findsOneWidget);
-        expect(addButton(), findsOneWidget);
-        expect(tester.getSize(addButton()).shortestSide, greaterThanOrEqualTo(48));
 
-        await tester.tap(addButton());
-        await settle(tester);
-        expect(find.text('Add rose to'), findsOneWidget);
-        await tester.tap(find.text('Done'));
-        await settle(tester);
-        expect(find.text('Add rose to'), findsNothing);
+        if (style == SearchStyle.table) {
+          expect(addButton(), findsOneWidget);
+          expect(tester.getSize(addButton()).shortestSide, greaterThanOrEqualTo(48));
+
+          await tester.tap(addButton());
+          await settle(tester);
+          expect(find.text('Add rose to'), findsOneWidget);
+          await tester.tap(find.text('Done'));
+          await settle(tester);
+          expect(find.text('Add rose to'), findsNothing);
+        } else {
+          expect(addButton(), findsNothing, reason: 'card mode omits add to list button');
+        }
 
         await tester.tap(result);
         await settle(tester);
