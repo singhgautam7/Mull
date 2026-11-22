@@ -5,6 +5,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import 'app_icon_button.dart';
+import '../../core/motion/motion.dart';
 
 /// `NAME` over a box with a plain text field in it.
 class LabelledField extends StatelessWidget {
@@ -84,9 +85,10 @@ class ColorSwatchRow extends StatelessWidget {
                 button: true,
                 selected: selected == i,
                 label: 'Colour ${i + 1}',
-                child: InkWell(
+                child: Pressable(
+                  kind: PressKind.chip,
+                  morphCorners: false,
                   onTap: () => onChanged(i),
-                  customBorder: const CircleBorder(),
                   child: Container(
                     width: 30,
                     height: 30,

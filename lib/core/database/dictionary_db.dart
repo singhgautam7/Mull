@@ -101,6 +101,7 @@ class Collection {
     required this.sortOrder,
     required this.wordCount,
     this.color,
+    this.note,
   });
 
   /// The row id in whichever database owns it. Never stored in user data.
@@ -120,6 +121,10 @@ class Collection {
 
   /// User collections only: an index into `MullColors.tagHues`.
   final int? color;
+
+  /// User collections only: the shelf's own note. (`icon` above is the topic
+  /// icon for dictionary shelves and a `ShelfIcons` id for user shelves.)
+  final String? note;
 
   /// Lives in the user database: a system or user collection.
   bool get isUsers => kind == 'user' || kind == 'system';

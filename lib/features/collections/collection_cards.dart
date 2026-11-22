@@ -9,6 +9,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/progress.dart';
+import '../../shared/widgets/shelf_icon.dart';
 
 /// The progress states, HANDOFF 12. Not started: empty track, "not
 /// started". In progress: "{n} seen" in `accent`. Complete: the
@@ -84,6 +85,9 @@ class TopicCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (!compact) ...<Widget>[
+                if (collection.kind == 'user')
+                  ShelfIcon(icon: collection.icon, color: collection.color, size: 30)
+                else
                 Container(
                   width: 30,
                   height: 30,
@@ -98,7 +102,9 @@ class TopicCard extends StatelessWidget {
               Row(
                 spacing: Space.sm,
                 children: <Widget>[
-                  if (compact && collection.isUsers)
+                  if (compact && collection.kind == 'user')
+                    ShelfIcon(icon: collection.icon, color: collection.color, size: 24)
+                  else if (compact && collection.isUsers)
                     Container(width: 10, height: 10, decoration: BoxDecoration(color: swatchColor(c, collection), shape: BoxShape.circle)),
                   Expanded(child: Text(collection.title, style: MullType.titleMedium.copyWith(color: fg), maxLines: 2, overflow: TextOverflow.ellipsis)),
                 ],
@@ -225,7 +231,10 @@ class ListRow extends StatelessWidget {
           child: Row(
             spacing: 13,
             children: <Widget>[
-              Container(width: 30, height: 30, decoration: BoxDecoration(color: swatchColor(c, collection), borderRadius: BorderRadius.circular(9))),
+              if (collection.kind == 'user')
+                ShelfIcon(icon: collection.icon, color: collection.color, size: 30)
+              else
+                Container(width: 30, height: 30, decoration: BoxDecoration(color: swatchColor(c, collection), borderRadius: BorderRadius.circular(9))),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

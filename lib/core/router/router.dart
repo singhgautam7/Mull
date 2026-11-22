@@ -7,11 +7,11 @@ import '../../features/collections/add_to_shelf_screen.dart';
 import '../../features/collections/collection_screen.dart';
 import '../../features/collections/collections_screen.dart';
 import '../../features/collections/import_words_screen.dart';
+import '../../features/collections/shelf_edit_screen.dart';
 import '../../features/collections/shelf_stats_screen.dart';
 import '../../features/dictionary/search_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/linger/linger_screen.dart';
-import '../../features/linger/saved_mixes_screen.dart';
 import '../../features/quiz/quiz_screen.dart';
 import '../../features/settings/about_screen.dart';
 import '../../features/settings/data_screen.dart';
@@ -37,7 +37,7 @@ abstract final class Routes {
 
   static const String collections = '/collections';
   static const String importWords = '/shelves/import';
-  static const String mixes = '/mixes';
+  static const String newShelf = '/shelves/new';
   static const String stats = '/more/stats';
   static const String settings = '/more/settings';
   static const String theme = '/more/settings/theme';
@@ -54,6 +54,7 @@ abstract final class Routes {
   static String collection(String slug) => '/collection/$slug';
   static String quiz(String slug) => '/collection/$slug/quiz';
   static String shelfStats(String slug) => '/collection/$slug/stats';
+  static String editShelf(String slug) => '/collection/$slug/edit';
 
   /// Scoped play: the Mull tab plays one collection, mix untouched.
   static String scoped(String slug) => '$mull?scope=$slug';
@@ -62,7 +63,7 @@ abstract final class Routes {
   static String shelfAdd(String slug, {bool phrases = false}) =>
       '/collection/$slug/add?kind=${phrases ? 'phrases' : 'words'}';
 
-  /// Play a saved mix from the saved mixes page.
+  /// Play a saved mix (the mix sheet's saved list, Review the bookmarked).
   static String playMix(int id) => '$mull?mix=$id';
 }
 
@@ -111,9 +112,16 @@ GoRouter buildRouter({required bool onboarded}) {
         ),
       ),
       GoRoute(
-        path: Routes.mixes,
+        path: Routes.newShelf,
         pageBuilder: (BuildContext c, GoRouterState s) =>
-            mullPage<void>(state: s, child: const SavedMixesScreen()),
+            mullPage<String?>(state: s, child: const ShelfEditScreen()),
+      ),
+      GoRoute(
+        path: '/collection/:slug/edit',
+        pageBuilder: (BuildContext c, GoRouterState s) => mullPage<String?>(
+          state: s,
+          child: ShelfEditScreen(slug: s.pathParameters['slug']),
+        ),
       ),
       GoRoute(
         path: Routes.stats,

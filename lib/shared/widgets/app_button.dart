@@ -86,12 +86,14 @@ class AppButton extends StatelessWidget {
       ],
     );
 
+    final Duration fade = Motion.levelOf(context) == MotionLevel.off ? Motion.fxInstant : Motion.fxFast;
     final bool dashed = type == AppButtonType.dotted && !disabled;
     // A minimum height, not a fixed one: the pill grows with its text.
     // Pill at rest, radius 8 while pressed (Expressive).
     final Widget button = Pressable(
       kind: PressKind.button,
       restRadius: height / 2,
+      pressedRadius: compact ? 8 : 12,
       enabled: !disabled,
       builder: (BuildContext context, double radius, double _) {
         final BorderRadius br = BorderRadius.circular(radius);
@@ -99,8 +101,13 @@ class AppButton extends StatelessWidget {
             skin.border == null || dashed ? BorderSide.none : BorderSide(color: skin.border!);
         Widget b = ConstrainedBox(
           constraints: BoxConstraints(minHeight: height, minWidth: fullWidth ? double.infinity : 0),
-          child: Material(
-            color: skin.bg,
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: skin.bg),
+            duration: fade,
+            curve: Motion.curveEffects,
+            builder: (BuildContext context, Color? color, Widget? child) => Material(
+            color: color,
+            animationDuration: Duration.zero,
             // A stadium at rest; a rounded rectangle only while it morphs.
             shape: radius >= height / 2
                 ? StadiumBorder(side: side)
@@ -110,9 +117,11 @@ class AppButton extends StatelessWidget {
               onTap: disabled ? null : onPressed,
               child: Padding(
                 padding: padding ?? EdgeInsets.symmetric(horizontal: compact ? 13 : 22, vertical: 4),
-                child: content,
+                child: child,
               ),
             ),
+            ),
+            child: content,
           ),
         );
         if (dashed) {

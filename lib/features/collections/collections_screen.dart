@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
+import '../../core/database/user_db.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
@@ -21,7 +22,7 @@ import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/states.dart';
 import '../../shared/widgets/two_column_grid.dart';
 import 'collection_cards.dart';
-import 'create_list_sheet.dart';
+import 'shelf_edit_screen.dart';
 
 enum _Filter { all, words, phrases, bands, topics, yours, inProgress }
 
@@ -56,10 +57,12 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   bool _slow = false;
   Timer? _slowTimer;
 
+  // `select`, not the AsyncValue: watching the whole seen stream here
+  // rebuilt the Shelves tab (offstage or not) on every swipe of the Mull tab.
   bool _settling({required bool watch}) => watch
-      ? ref.watch(userCollectionsProvider).isLoading ||
+      ? ref.watch(userCollectionsProvider.select((AsyncValue<List<UserCollection>> v) => v.isLoading)) ||
           ref.watch(collectionKeysSettlingProvider) ||
-          ref.watch(seenMapProvider).isLoading
+          ref.watch(seenMapProvider.select((AsyncValue<Map<String, SeenWord>> v) => v.isLoading))
       : ref.read(userCollectionsProvider).isLoading ||
           ref.read(collectionKeysSettlingProvider) ||
           ref.read(seenMapProvider).isLoading;
@@ -85,7 +88,12 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final List<Collection> all = ref.watch(collectionsProvider);
-    final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
+    // The in-progress set changes when a shelf starts or finishes; the
+    // numbers change on every seen write and only the sort needs them. Each
+    // card watches its own progress.
+    final SlugSet inProgress = ref.watch(inProgressSlugsProvider);
+    final Map<String, Progress> progress =
+        _sort == _Sort.progress ? ref.watch(collectionProgressProvider) : const <String, Progress>{};
     // The dictionary's shelves are here at once; their word keys come off
     // the worker isolate, and the user's own and the seen progress a frame
     // later from the user database. Until then the sections hold their shape
@@ -117,7 +125,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         _Filter.bands => x.kind == 'band',
         _Filter.topics => x.kind != 'band' && !x.isUsers,
         _Filter.yours => x.isUsers,
-        _Filter.inProgress => of(x).started && !of(x).complete,
+        _Filter.inProgress => inProgress.contains(x.slug),
       };
     }
     bool visible(Collection x) => visibleFor(x, _filter);
@@ -163,7 +171,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           ],
                         );
                         if (action == 'new' && context.mounted) {
-                          await showCreateListSheet(context);
+                          await openShelfEditor(context);
                         } else if (action == 'import' && context.mounted) {
                           await context.push(Routes.importWords);
                         }
@@ -293,7 +301,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                                 if (i > 0) Divider(color: c.divider, height: 1),
                                 settle(
                                   const SkeletonRow(),
-                                  BandRow(collection: bands[i], progress: of(bands[i]), onTap: () => context.push(Routes.collection(bands[i].slug))),
+                                  Consumer(
+                                    builder: (BuildContext context, WidgetRef ref, Widget? _) => BandRow(
+                                      collection: bands[i],
+                                      progress: ref.watch(progressOfProvider(bands[i].slug)),
+                                      onTap: () => context.push(Routes.collection(bands[i].slug)),
+                                    ),
+                                  ),
                                 ),
                               ],
                             ],
@@ -318,7 +332,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                               animate: _intro && n < 6,
                               child: settle(
                                 const SkeletonCard(),
-                                TopicCard(collection: topics[n], progress: of(topics[n]), onTap: () => context.push(Routes.collection(topics[n].slug))),
+                                Consumer(
+                                  builder: (BuildContext context, WidgetRef ref, Widget? _) => TopicCard(
+                                    collection: topics[n],
+                                    progress: ref.watch(progressOfProvider(topics[n].slug)),
+                                    onTap: () => context.push(Routes.collection(topics[n].slug)),
+                                  ),
+                                ),
                               ),
                             );
                             return TwoColumnGrid.row(

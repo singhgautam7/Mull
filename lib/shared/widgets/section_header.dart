@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -32,11 +33,13 @@ class SectionHeader extends StatelessWidget {
       padding: inset
           ? const EdgeInsets.fromLTRB(Space.screen, 2, Space.screen, Space.row)
           : EdgeInsets.zero,
-      // Both sides take their natural width and the free space sits between
-      // them, so the trailing action is flush right. Only when they cannot
-      // both fit do they share the row.
+      // Both sides keep their natural width (each may take at most half, so
+      // the largest font scale wraps instead of overflowing) and spaceBetween
+      // puts the trailing's right edge on the content edge. The trailing must
+      // not expand itself (no bare Center): SectionHeaderAction does not.
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Flexible(
             child: Text(
@@ -46,8 +49,47 @@ class SectionHeader extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null) Flexible(child: trailing!),
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: Space.md),
+            Flexible(child: trailing!),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// The right-hand action of a [SectionHeader] ("See all"): a 48dp tall hit
+/// region, the text flush with the content edge.
+class SectionHeaderAction extends StatelessWidget {
+  const SectionHeaderAction({
+    required this.label,
+    required this.onTap,
+    this.semanticLabel,
+    super.key,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Semantics(
+      button: true,
+      label: semanticLabel ?? label,
+      excludeSemantics: true,
+      child: Pressable(
+        kind: PressKind.row,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+          child: Align(
+            widthFactor: 1,
+            child: Text(label, style: MullType.monoLabel.copyWith(color: c.accent)),
+          ),
+        ),
       ),
     );
   }

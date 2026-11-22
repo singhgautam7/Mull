@@ -22,6 +22,7 @@ class AppIconButton extends StatelessWidget {
     this.active = false,
     this.tint,
     this.background,
+    this.onLongPress,
     super.key,
   });
 
@@ -51,6 +52,9 @@ class AppIconButton extends StatelessWidget {
   final Color? tint;
   final Color? background;
 
+  /// Fires with the long-press haptic.
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
@@ -79,14 +83,32 @@ class AppIconButton extends StatelessWidget {
               kind: PressKind.iconButton,
               restRadius: size / 2,
               enabled: onPressed != null,
-              builder: (BuildContext context, double radius, double _) {
+              builder: (BuildContext context, double radius, double pressed) {
                 final BorderRadius shape = BorderRadius.circular(radius);
+                // Standard fill warms toward the pressed tone (Kuber).
+                final Color fill = filled &&
+                        !active &&
+                        background == null &&
+                        Motion.levelOf(context) == MotionLevel.expressive
+                    ? Color.lerp(
+                        bg,
+                        Color.alphaBlend(c.onSurface.withValues(alpha: 0.08), bg),
+                        pressed.clamp(0.0, 1.0),
+                      )!
+                    : bg;
                 return Material(
-                  color: bg,
+                  color: fill,
+                  animationDuration: Duration.zero,
                   shape: RoundedRectangleBorder(borderRadius: shape),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
                     onTap: onPressed,
+                    onLongPress: onLongPress == null
+                        ? null
+                        : () {
+                            MullHaptics.longPress();
+                            onLongPress!();
+                          },
                     customBorder: RoundedRectangleBorder(borderRadius: shape),
                     child: SizedBox(
                       width: size,

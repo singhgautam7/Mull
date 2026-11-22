@@ -58,14 +58,38 @@ class MullMotionScope extends ConsumerWidget {
 typedef _WidgetThemeKey = ({String family, ThemeMode mode, bool amoled, bool expressive, Color? seed});
 
 final Provider<_WidgetThemeKey> _widgetThemeKeyProvider = Provider<_WidgetThemeKey>((Ref ref) {
-  final AppSettings s = ref.watch(settingsProvider);
+  final bool dynamic = ref.watch(settingsProvider.select((AppSettings s) => s.dynamicColor));
   return (
+    family: ref.watch(settingsProvider.select((AppSettings s) => s.familyId)),
+    mode: ref.watch(settingsProvider.select((AppSettings s) => s.themeMode)),
+    amoled: ref.watch(settingsProvider.select((AppSettings s) => s.amoled)),
+    expressive: ref.watch(settingsProvider.select((AppSettings s) => s.expressiveColors)),
+    seed: dynamic ? ref.watch(wallpaperSeedProvider).value : null,
+  );
+});
+
+/// What the MaterialApp itself is built from: the theme inputs, the text
+/// size and nothing else. A change to any other setting (header, reminder,
+/// pronunciation) used to rebuild the whole app from its root.
+typedef _AppKey = ({
+  String family,
+  ThemeMode mode,
+  bool amoled,
+  bool expressive,
+  bool dynamic,
+  double textScale,
+});
+
+final Provider<_AppKey> _appKeyProvider = Provider<_AppKey>((Ref ref) {
+  _AppKey key(AppSettings s) => (
     family: s.familyId,
     mode: s.themeMode,
     amoled: s.amoled,
     expressive: s.expressiveColors,
-    seed: s.dynamicColor ? ref.watch(wallpaperSeedProvider).value : null,
+    dynamic: s.dynamicColor,
+    textScale: s.textScale,
   );
+  return ref.watch(settingsProvider.select(key));
 });
 
 class MullApp extends ConsumerStatefulWidget {
@@ -80,6 +104,13 @@ class _MullAppState extends ConsumerState<MullApp> {
     onboarded: ref.read(settingsProvider).onboarded,
   );
   bool _widgetSynced = false;
+
+  /// Since the first build. A dictionary that opens inside
+  /// [Delayed.threshold] never showed the install state, so there is
+  /// nothing to cross-fade from: the router appears at once instead of
+  /// running Home's first build under a 260 ms fade of two whole apps.
+  final Stopwatch _sinceStart = Stopwatch()..start();
+  bool? _fadeIn;
 
   @override
   void initState() {
@@ -115,7 +146,8 @@ class _MullAppState extends ConsumerState<MullApp> {
 
   @override
   Widget build(BuildContext context) {
-    final AppSettings s = ref.watch(settingsProvider);
+    ref.watch(_appKeyProvider);
+    final AppSettings s = ref.read(settingsProvider);
     final AsyncValue<DictionaryDb> dict = ref.watch(dictionaryProvider);
     // Dynamic colour takes one seed from the OS; every other role is derived
     // exactly as a bundled family's would be, so the two never diverge.
@@ -144,8 +176,9 @@ class _MullAppState extends ConsumerState<MullApp> {
         .platformDispatcher
         .accessibilityFeatures
         .disableAnimations;
+    if (dict is AsyncData<DictionaryDb>) _fadeIn ??= _sinceStart.elapsed > Delayed.threshold;
     Widget crossFade(Widget child) => AnimatedSwitcher(
-      duration: reduced ? Motion.reducedFade : Motion.sheet,
+      duration: _fadeIn == false ? Duration.zero : reduced ? Motion.reducedFade : Motion.sheet,
       switchInCurve: reduced ? Curves.linear : Motion.decelerate,
       switchOutCurve: reduced ? Curves.linear : Motion.decelerate,
       child: child,

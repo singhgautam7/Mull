@@ -7,6 +7,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
+import 'app_button.dart';
+import 'app_icon_button.dart';
 
 /// The toast message specification.
 class SnackMessage {
@@ -336,19 +338,18 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
                       ),
                     ),
                     if (m.actionLabel != null)
-                      TextButton(
+                      AppButton(
+                        label: m.actionLabel!,
+                        type: AppButtonType.secondary,
+                        compact: true,
                         onPressed: () => _handleAction(m.onAction),
-                        child: Text(
-                          m.actionLabel!.toUpperCase(),
-                          style: MullType.label
-                              .copyWith(color: c.primary, letterSpacing: 0.24)
-                              .weight(700),
-                        ),
                       ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      color: c.onSurfaceVariant,
-                      tooltip: 'Dismiss',
+                    AppIconButton(
+                      icon: Icons.close_rounded,
+                      glyphSize: 18,
+                      filled: false,
+                      tint: c.onSurfaceVariant,
+                      semanticLabel: 'Dismiss',
                       onPressed: widget.onRequestClose,
                     ),
                     const SizedBox(width: Space.xs),

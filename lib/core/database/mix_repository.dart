@@ -209,47 +209,7 @@ class MixRepository {
     });
   }
 
-  Future<void> rename(int id, String name) =>
-      (_db.update(_db.mixes)..where((Mixes m) => m.id.equals(id))).write(
-        MixesCompanion(name: Value<String>(name), updatedAt: Value<DateTime>(DateTime.now())),
-      );
-
-  /// Rewrites a user mix's sources and policy. Presets are never edited.
-  Future<void> update(
-    int id, {
-    required List<String> sources,
-    required SeenPolicy seenPolicy,
-  }) async {
-    final MixSpec? m = await byId(id);
-    if (m == null || m.isPreset) return;
-    await _db.transaction(() async {
-      await (_db.update(_db.mixSettings)..where((MixSettings t) => t.mixId.equals(id)))
-          .write(MixSettingsCompanion(seenPolicy: Value<String>(seenPolicy.dbValue)));
-      await (_db.update(_db.mixes)..where((Mixes t) => t.id.equals(id)))
-          .write(MixesCompanion(updatedAt: Value<DateTime>(DateTime.now())));
-      await _replaceSources(id, sources);
-    });
-  }
-
   Stream<List<Mix>> watchMixRows() => _db.select(_db.mixes).watch();
-
-  /// A preset cannot be edited, but it can be copied into a user mix.
-  Future<int> duplicate(int id, {required String name}) async {
-    final MixSpec src = (await byId(id))!;
-    return create(
-      name: name,
-      sources: src.sources,
-      seenPolicy: src.seenPolicy,
-      shuffle: src.shuffle,
-      includeBookmarkedOnly: src.includeBookmarkedOnly,
-    );
-  }
-
-  Future<void> delete(int id) async {
-    final MixSpec? m = await byId(id);
-    if (m == null || m.isPreset) return;
-    await (_db.delete(_db.mixes)..where((Mixes t) => t.id.equals(id))).go();
-  }
 
   // ---------------------------------------------------------------- app state
 

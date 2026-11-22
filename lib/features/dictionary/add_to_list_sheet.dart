@@ -15,7 +15,8 @@ import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_snackbar.dart';
 import '../../shared/widgets/dashed_border.dart';
-import '../collections/create_list_sheet.dart';
+import '../../shared/widgets/shelf_icon.dart';
+import '../collections/shelf_edit_screen.dart';
 
 /// Checkbox rows, 22dp square, radius 6, one per collection of the user's
 /// own: Bookmarks, From my reading, then created lists. A word in no list
@@ -107,7 +108,9 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
           _Row(
             label: l.title,
             count: l.wordCount,
-            swatch: l.kind == 'user' ? c.tagColor(l.color) : null,
+            shelf: l.kind == 'user',
+            icon: l.icon,
+            color: l.color,
             checked: _checked!.contains(l.slug),
             onChanged: (bool v) => _toggle(l.slug, v),
           ),
@@ -118,7 +121,7 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
             kind: PressKind.button,
             restRadius: Radii.full,
             onTap: () async {
-              final String? slug = await showCreateListSheet(context);
+              final String? slug = await openShelfEditor(context, openAfterCreate: false);
               if (slug != null) await _toggle(slug, true);
             },
             child: Container(
@@ -143,13 +146,15 @@ class _AddToListSheetState extends ConsumerState<_AddToListSheet> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.count, required this.checked, required this.onChanged, this.swatch});
+  const _Row({required this.label, required this.count, required this.checked, required this.onChanged, this.shelf = false, this.icon, this.color});
 
   final String label;
   final int? count;
   final bool checked;
   final ValueChanged<bool> onChanged;
-  final Color? swatch;
+  final bool shelf;
+  final String? icon;
+  final int? color;
 
   @override
   Widget build(BuildContext context) {
@@ -176,12 +181,7 @@ class _Row extends StatelessWidget {
                 ),
                 child: checked ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
               ),
-              if (swatch != null)
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(color: swatch, shape: BoxShape.circle),
-                ),
+              if (shelf) ShelfIcon(icon: icon, color: color, size: 28),
               Expanded(
                 child: Text(label, style: MullType.titleMedium.copyWith(color: c.onSurface)),
               ),

@@ -99,13 +99,14 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final AppSettings s = ref.watch(settingsProvider);
-    final Color? seed = s.dynamicColor
+    final bool dynamicColor = ref.watch(settingsProvider.select((AppSettings s) => s.dynamicColor));
+    final String familyId = ref.watch(settingsProvider.select((AppSettings s) => s.familyId));
+    final Color? seed = dynamicColor
         ? ref.watch(wallpaperSeedProvider).value
         : null;
     final MullColors imageColors = ShareImageCard.shareColors(
       c,
-      seed == null ? s.family : ThemeFamily.fromSeed(seed),
+      seed == null ? ThemeFamily.byId(familyId) : ThemeFamily.fromSeed(seed),
     );
 
     return Column(

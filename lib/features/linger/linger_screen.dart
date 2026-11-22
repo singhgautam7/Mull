@@ -300,7 +300,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
       context: context,
       anchorContext: anchor,
       entries: const <AppMenuEntry<String>>[
-        AppMenuEntry<String>(value: 'share', label: 'Share', icon: Icons.ios_share_rounded),
+        AppMenuEntry<String>(value: 'share', label: 'Share', icon: Icons.share_rounded),
         AppMenuEntry<String>(value: 'collection', label: 'Add to shelf', icon: Icons.playlist_add_rounded),
       ],
     );
@@ -319,7 +319,13 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    final AppSettings s = ref.watch(settingsProvider);
+    // Only the three fields the card reads: a settings change elsewhere
+    // (theme, header, reminder) must not rebuild the Mull tab.
+    final ({bool showSynonyms, Spelling spelling, double ttsRate}) s = ref.watch(
+      settingsProvider.select(
+        (AppSettings a) => (showSynonyms: a.showSynonyms, spelling: a.spelling, ttsRate: a.ttsRate),
+      ),
+    );
     final Set<String> bookmarks = ref.watch(bookmarksProvider).value ?? const <String>{};
     final String? scopeTitle = _scope == null ? null : ref.watch(collectionBySlugProvider)[_scope!]?.title;
     final EdgeInsets pad = MediaQuery.paddingOf(context);

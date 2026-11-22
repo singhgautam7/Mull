@@ -101,9 +101,10 @@ class _DataScreenState extends ConsumerState<DataScreen> {
                       onPressed: () => context.push(Routes.export),
                     ),
                     const SizedBox(width: Space.sm),
-                    TextButton(
+                    AppButton(
+                      label: 'Not now',
+                      type: AppButtonType.muted,
                       onPressed: _dismissReminder,
-                      child: Text('Not now', style: MullType.body.copyWith(color: c.onSurfaceVariant)),
                     ),
                   ],
                 ),

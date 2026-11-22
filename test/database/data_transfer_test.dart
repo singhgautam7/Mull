@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mull/core/database/data_transfer_repository.dart';
@@ -16,6 +18,7 @@ void main() {
     'verb',
     'To lessen in force or intensity.',
   );
+  const FakePhrase bite = FakePhrase('bite the bullet', 'idiom', 'To face something hard.');
   const FakeWord dither = FakeWord(
     'dither',
     'verb',
@@ -34,6 +37,7 @@ void main() {
 
     dict = fakeDictionary(
       words: <FakeWord>[abate, dither],
+      phrases: <FakePhrase>[bite],
       collections: <String, List<String>>{
         'everyday': <String>[abate.key, dither.key],
       },
@@ -90,7 +94,7 @@ void main() {
       fileName: 'test-backup.json',
     );
     expect(preview.data['format'], equals('mull.export'));
-    expect(preview.data['format_version'], equals(1));
+    expect(preview.data['format_version'], equals(2));
     expect(preview.count('collections'), greaterThanOrEqualTo(1));
     expect(preview.count('notes'), equals(1));
     expect(preview.count('contexts'), equals(1));
@@ -273,5 +277,105 @@ void main() {
     expect(restored.length, equals(1));
     expect(restored.first.contextText, contains('abate towards morning'));
     expect(restored.first.sourceHint, equals('org.mozilla.firefox'));
+  });
+
+  Future<UserDatabase> freshDb() async =>
+      UserDatabase.forTesting(NativeDatabase.memory());
+
+  test('a shelf icon and note round-trip through export and import', () async {
+    final String slug = await userRepo.createCollection(
+      'Viva',
+      color: 2,
+      icon: 'school',
+      note: 'For the oral exam',
+    );
+    await userRepo.addToCollection(slug, abate.key);
+    final String json = await transferRepo.exportJson();
+    final ImportPreview preview = transferRepo.parse(json, fileName: 'a.json');
+    final Map<String, Object?> shelf =
+        ((preview.data['collections']! as List<Object?>).cast<Map<String, Object?>>())
+            .firstWhere((Map<String, Object?> c) => c['name'] == 'Viva');
+    expect(shelf['icon'], 'school');
+    expect(shelf['note'], 'For the oral exam');
+
+    final UserDatabase fresh = await freshDb();
+    final UserRepository freshRepo = UserRepository(fresh);
+    await DataTransferRepository(fresh, dict, prefs).apply(preview, mode: ImportMode.merge);
+    final UserCollection got =
+        (await freshRepo.collections()).firstWhere((UserCollection c) => c.name == 'Viva');
+    expect((got.icon, got.note, got.color), ('school', 'For the oral exam', 2));
+    await fresh.close();
+  });
+
+  test('merge fills a matching shelf only where its icon or note is empty', () async {
+    final String bare = await userRepo.createCollection('Bare');
+    final String kept = await userRepo.createCollection('Kept', icon: 'book', note: 'Mine');
+    ImportPreview file(String name) => ImportPreview(
+      payload(<String, Object?>{
+        'collections': <Object?>[
+          <String, Object?>{'slug': 'u9', 'name': name, 'kind': 'user', 'icon': 'star', 'note': 'Theirs'},
+        ],
+      }),
+      'f.json',
+    );
+    await transferRepo.apply(file('Bare'), mode: ImportMode.merge);
+    await transferRepo.apply(file('Kept'), mode: ImportMode.merge);
+    final UserCollection a = (await userRepo.collection(bare))!;
+    final UserCollection b = (await userRepo.collection(kept))!;
+    expect((a.icon, a.note), ('star', 'Theirs'));
+    expect((b.icon, b.note), ('book', 'Mine'));
+  });
+
+  test('a version 1 file (no icon, no note) still imports', () async {
+    final ImportPreview v1 = transferRepo.parse(
+      jsonEncode(<String, Object?>{
+        'format': 'mull.export',
+        'format_version': 1,
+        'collections': <Object?>[
+          <String, Object?>{'slug': 'u1', 'name': 'Old shelf', 'kind': 'user', 'color': 1},
+        ],
+      }),
+      fileName: 'v1.json',
+    );
+    await transferRepo.apply(v1, mode: ImportMode.merge);
+    final UserCollection c =
+        (await userRepo.collections()).firstWhere((UserCollection c) => c.name == 'Old shelf');
+    expect((c.color, c.icon, c.note), (1, null, null));
+    expect(
+      () => transferRepo.parse(jsonEncode(<String, Object?>{'format': 'mull.export', 'format_version': 3}), fileName: 'x'),
+      throwsA(isA<DataTransferException>()),
+    );
+  });
+
+  test('phrase notes export, import and merge like word notes', () async {
+    await userRepo.putNote(bite.key, 'Phrase note');
+    final String json = await transferRepo.exportJson();
+    final ImportPreview preview = transferRepo.parse(json, fileName: 'p.json');
+    expect(preview.count('notes'), 1);
+
+    final UserDatabase fresh = await freshDb();
+    final UserRepository freshRepo = UserRepository(fresh);
+    final DataTransferRepository into = DataTransferRepository(fresh, dict, prefs);
+    await into.apply(preview, mode: ImportMode.merge);
+    expect(await freshRepo.note(bite.key), 'Phrase note');
+    await fresh.close();
+
+    // An existing phrase note is kept and the imported one appended.
+    await userRepo.putNote(bite.key, 'Local phrase note');
+    await transferRepo.apply(
+      ImportPreview(
+        payload(<String, Object?>{
+          'notes': <Object?>[
+            <String, Object?>{'word_key': bite.key, 'body': 'From the file', 'updated_at': DateTime(2026, 3).toIso8601String()},
+          ],
+        }),
+        'm.json',
+      ),
+      mode: ImportMode.merge,
+    );
+    final String? merged = await userRepo.note(bite.key);
+    expect(merged, startsWith('Local phrase note'));
+    expect(merged, contains(DataTransferRepository.importedNoteMarker));
+    expect(merged, endsWith('From the file'));
   });
 }

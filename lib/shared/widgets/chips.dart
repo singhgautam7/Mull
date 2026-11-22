@@ -43,12 +43,15 @@ const double kSelectedRadius = 12;
 Duration _selectDuration(MotionLevel level) =>
     level == MotionLevel.off ? Duration.zero : Motion.fxFast;
 
-/// A synonym chip on the card, or a filter chip on the browse screen.
+/// A synonym chip on the card, or a filter chip (Kuber's `KuberChip`).
 ///
-/// [selected] null: a plain tap-only chip, always a pill. A bool makes it one
-/// choice of a single-select group: selected is a 12dp squircle, unselected a
-/// pill, the shape springs at Expressive, jumps at Subtle (only the fill
-/// fades) and is instant at Off. A changed selection plays the tick.
+/// Unselected: a stadium with a 1dp outline and no fill. Selected: a 12dp
+/// squircle with the selected-container fill and a transparent border. The
+/// shape follows the selection (not the press) on the fast spring at
+/// Expressive, the subtle spring at Subtle, at once at Off; fill and border
+/// fade on `fxFast`. Press is a scale only. [selected] null is a tap-only
+/// chip: it looks unselected. 32dp tall, with a 48dp tall hit region when
+/// it has an [onTap]. A changed selection plays the tick.
 class PillChip extends StatelessWidget {
   const PillChip({
     required this.label,
@@ -57,11 +60,9 @@ class PillChip extends StatelessWidget {
     this.count,
     this.showCountWhenSelectedOnly = false,
     this.trailing,
+    this.showCheck = false,
     super.key,
   });
-
-  /// Pill radius for the group chips (half of the 32dp chip).
-  static const double pillRadius = 16;
 
   final String label;
   final VoidCallback? onTap;
@@ -70,84 +71,135 @@ class PillChip extends StatelessWidget {
   final bool showCountWhenSelectedOnly;
   final Widget? trailing;
 
+  /// A check that grows 0 to 18dp on the selected chip (springStandard).
+  final bool showCheck;
+
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final MotionLevel level = Motion.levelOf(context);
-    final bool group = selected != null;
     final bool sel = selected ?? false;
+    final bool off = level == MotionLevel.off;
     final bool showCount = count != null && (!showCountWhenSelectedOnly || sel);
-    final Color fg = sel ? c.onPrimaryContainer : c.onSurface;
+    final Color fg = sel ? c.onPrimaryContainer : c.onSurfaceVariant;
+    final SpringCurve shapeC = Motion.spatialCurve(level, Motion.fastCurve);
+    final SpringCurve checkC = Motion.spatialCurve(level, Motion.standardCurve);
+    final Duration fade = off ? Motion.fxInstant : Motion.fxFast;
+    final bool tappable = onTap != null;
 
-    Widget body(double radius, Color fill) => Material(
-      color: fill,
-      animationDuration: Duration.zero,
-      shape: group
-          ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius))
-          : const StadiumBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap == null
-            ? null
-            : () {
-                if (group && !sel) MullHaptics.tick();
-                onTap!();
-              },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 6,
-            children: <Widget>[
-              Text(label, style: MullType.label.copyWith(fontSize: 13, color: fg).weight(sel ? 600 : 500)),
-              if (showCount)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                  decoration: BoxDecoration(
-                    color: sel ? c.surface : c.surfaceContainer,
-                    borderRadius: Radii.fullR,
-                  ),
-                  child: Text(
-                    '$count',
-                    style: MullType.monoLabel.copyWith(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: sel ? c.onPrimaryContainer : c.onSurfaceVariant,
-                    ),
+    Widget body(double k) => Container(
+      constraints: const BoxConstraints(minHeight: 32),
+      padding: EdgeInsets.symmetric(horizontal: Space.md + 2 - (showCheck ? 4 * k : 0)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (showCheck)
+            ClipRect(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                widthFactor: k,
+                child: Opacity(
+                  opacity: k.clamp(0.0, 1.0),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: Space.sm),
+                    child: Icon(Icons.check_rounded, size: 18, color: c.onPrimaryContainer),
                   ),
                 ),
-              ?trailing,
-            ],
-          ),
-        ),
+              ),
+            ),
+          AnimatedWeight(label, isActive: sel, rest: 500, active: 650, style: MullType.label.copyWith(fontSize: 13, color: fg)),
+          if (showCount) ...<Widget>[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: sel ? c.surface : c.surfaceContainerHigh,
+                borderRadius: Radii.fullR,
+              ),
+              child: Text(
+                '$count',
+                style: MullType.monoLabel.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: sel ? c.onPrimaryContainer : c.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+          if (trailing != null) ...<Widget>[const SizedBox(width: 6), trailing!],
+        ],
       ),
     );
 
-    Widget chip = TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: sel ? 1 : 0),
-      duration: _selectDuration(level),
-      curve: Motion.curveEffects,
-      builder: (BuildContext context, double t, Widget? _) {
-        final Color fill = Color.lerp(c.surfaceContainerHigh, c.primaryContainer, t)!;
-        if (!group) return body(0, fill);
-        // Only Expressive morphs the shape; Subtle and Off jump.
-        final double r = level == MotionLevel.expressive
-            ? pillRadius + (kSelectedRadius - pillRadius) * t
-            : (sel ? kSelectedRadius : pillRadius);
-        if (onTap == null) return body(r, fill);
-        return Pressable(
-          kind: PressKind.chip,
-          restRadius: r,
-          haptic: false,
-          builder: (BuildContext context, double radius, double _) => body(radius, fill),
-        );
-      },
+    Widget chip = Pressable(
+      kind: PressKind.chip,
+      enabled: tappable,
+      morphCorners: false,
+      haptic: false,
+      builder: (BuildContext context, double _, double _) => TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: sel ? 1 : 0),
+        duration: off ? Duration.zero : shapeC.settle,
+        curve: shapeC.clamped,
+        builder: (BuildContext context, double sq, Widget? child) => TweenAnimationBuilder<Color?>(
+          tween: ColorTween(end: sel ? c.primaryContainer : Colors.transparent),
+          duration: fade,
+          curve: Motion.curveEffects,
+          builder: (BuildContext context, Color? fill, Widget? child) => Material(
+            color: fill,
+            animationDuration: Duration.zero,
+            shape: _chipShape(sq, c.outline, sel),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: tappable
+                  ? () {
+                      if (!sel) MullHaptics.tick();
+                      onTap!();
+                    }
+                  : null,
+              child: child,
+            ),
+          ),
+          child: child,
+        ),
+        child: showCheck
+            ? TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: sel ? 1 : 0),
+                duration: off ? Duration.zero : checkC.settle,
+                curve: checkC.clamped,
+                builder: (BuildContext context, double k, Widget? _) => body(k),
+              )
+            : body(0),
+      ),
     );
-    if (!group && onTap != null) {
-      chip = Pressable(kind: PressKind.chip, morphCorners: false, child: chip);
+    if (tappable) {
+      // The chip is 32dp; the hit region is 48dp tall.
+      chip = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (!sel) MullHaptics.tick();
+          onTap!();
+        },
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+          child: Center(widthFactor: 1, child: chip),
+        ),
+      );
     }
-    return Semantics(button: onTap != null, selected: sel, child: chip);
+    return Semantics(button: tappable, selected: sel, child: chip);
   }
+}
+
+/// Unselected: a stadium with a 1dp outline; selected: a 12dp squircle with a
+/// transparent border; in between the two morph.
+OutlinedBorder _chipShape(double t, Color outline, bool selected) {
+  final StadiumBorder pill = StadiumBorder(side: BorderSide(color: outline));
+  final RoundedRectangleBorder squircle = RoundedRectangleBorder(
+    borderRadius: Radii.mediumR,
+    side: BorderSide(color: selected ? Colors.transparent : outline),
+  );
+  if (t <= 0) return pill;
+  if (t >= 1) return squircle;
+  return ShapeBorder.lerp(pill, squircle, t)! as OutlinedBorder;
 }
 
 /// Single-choice button group (Kuber's `KuberButtonGroup`): Cards/Table,

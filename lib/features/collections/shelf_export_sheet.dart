@@ -61,6 +61,7 @@ class _ShelfExportSheetState extends ConsumerState<_ShelfExportSheet> {
       final DictionaryDb dict = ref.read(dictProvider);
       final List<String> keys = ref.read(collectionKeysProvider)[widget.slug] ?? const <String>[];
       final List<DictionaryWord> words = dict.byKeys(keys);
+      final Set<String> wordKeys = <String>{for (final DictionaryWord w in words) w.wordKey};
       final Map<String, String> notes = await userRepo.allNotes();
       final Map<String, DateTime> added = await userRepo.collectionAddedDates(
         widget.slug,
@@ -83,6 +84,17 @@ class _ShelfExportSheetState extends ConsumerState<_ShelfExportSheet> {
               added[w.wordKey]?.toIso8601String().substring(0, 10) ?? '',
               notes[w.wordKey] ?? '',
             ],
+          // Idiom shelves hold phrase keys; a phrase note is keyed the same.
+          for (final String k in keys.where((String k) => !wordKeys.contains(k)))
+            if (dict.phraseByKey(k) case final Phrase ph)
+              <dynamic>[
+                ph.phrase,
+                'phrase',
+                ph.meaning,
+                ph.example ?? '',
+                added[k]?.toIso8601String().substring(0, 10) ?? '',
+                notes[k] ?? '',
+              ],
         ];
         final String csv = const ListToCsvConverter().convert(rows);
         file = File(p.join(dir.path, '$safeSlug-$stamp.csv'));

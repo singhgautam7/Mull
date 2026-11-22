@@ -6,6 +6,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import 'app_icon_button.dart';
+import 'app_button.dart';
 
 /// The one sheet shell: drag handle, 28dp top radius, safe area, scrollable
 /// body, optional pinned actions. Word detail, idiom detail, notes, add to
@@ -202,13 +203,15 @@ Future<bool> confirmDialog(
               mainAxisAlignment: MainAxisAlignment.end,
               spacing: Space.sm,
               children: <Widget>[
-                TextButton(
+                AppButton(
+                  label: 'Cancel',
+                  type: AppButtonType.secondary,
                   onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text('Cancel', style: MullType.titleMedium.copyWith(color: c.onSurface)),
                 ),
-                TextButton(
+                AppButton(
+                  label: confirmLabel,
+                  type: AppButtonType.danger,
                   onPressed: () => Navigator.of(ctx).pop(true),
-                  child: Text(confirmLabel, style: MullType.titleMedium.copyWith(color: c.danger)),
                 ),
               ],
             ),

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
-import '../../core/database/user_db.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
@@ -24,7 +23,7 @@ import '../../shared/widgets/progress.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/two_column_grid.dart';
 import '../collections/collection_cards.dart';
-import '../collections/create_list_sheet.dart';
+import '../collections/shelf_edit_screen.dart';
 import '../dictionary/add_to_list_sheet.dart';
 import '../dictionary/word_sheet.dart';
 
@@ -55,8 +54,17 @@ final FutureProvider<List<DictionaryWord>> _recentWordsProvider = FutureProvider
 /// Collections (a shortlist: last opened, in progress, then built-ins), Your
 /// lists. Both collection sections read the one unified query, so a list
 /// made here is here. On scroll the greeting collapses to "Home".
+///
+/// The screen watches nothing but the shelf count. Each section is its own
+/// consumer and each progress number its own select, so a seen write (every
+/// swipe on the Mull tab, while Home sits offstage) rebuilds only the ring
+/// whose number moved, never the screen.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
+
+  /// Home lists at most this many of the user's shelves; "See all" opens
+  /// the Shelves tab, which lists every one lazily.
+  static const int yourShelvesShown = 6;
 
   static String greeting() {
     final int h = DateTime.now().hour;
@@ -67,31 +75,8 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final MullColors c = context.colors;
-    final DictionaryWord? wotd = ref.watch(wordOfTheDayProvider);
-    final List<Collection> collections = ref.watch(collectionsProvider);
-    final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
-    final List<String> recent = ref.watch(recentLookupsProvider).value ?? const <String>[];
-    final List<Collection> grid = ref.watch(homeCollectionsProvider);
-    final List<Collection> yours = collections.where((Collection x) => x.isUsers).toList();
-    final List<DictionaryWord> recentWords = ref.watch(_recentWordsProvider).value ?? const <DictionaryWord>[];
-
-    // Continue: the most recently started, unfinished collection.
-    final Map<String, SeenWord> seen = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
-    final Map<String, List<String>> keys = ref.watch(collectionKeysProvider);
-    Collection? cont;
-    DateTime? latest;
-    for (final Collection col in collections) {
-      final Progress p = progress[col.slug] ?? const Progress(0, 0);
-      if (!p.started || p.complete) continue;
-      for (final String k in keys[col.slug] ?? const <String>[]) {
-        final DateTime? at = seen[k]?.lastSeenAt;
-        if (at != null && (latest == null || at.isAfter(latest))) {
-          latest = at;
-          cont = col;
-        }
-      }
-    }
+    final int shelfCount = ref.watch(collectionsProvider.select((List<Collection> l) => l.length));
+    Widget seeAll(String label) => SectionHeaderAction(label: label, onTap: () => context.push(Routes.collections));
 
     return Scaffold(
       body: HeaderPage(
@@ -123,95 +108,145 @@ class HomeScreen extends ConsumerWidget {
           padding: const EdgeInsets.only(bottom: Space.bottomSafe),
           children: <Widget>[
             HeaderPage.gap(),
-            if (wotd != null) _WordOfTheDay(word: wotd, example: ref.watch(_wotdExampleProvider(wotd.wordKey)).value),
-            if (cont != null) ...<Widget>[
-              const SizedBox(height: Space.section),
-              const SectionHeader(label: 'Continue'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                child: _Continue(collection: cont, progress: progress[cont.slug]!),
-              ),
-            ],
+            const _WotdSection(),
+            const _ContinueSection(),
             const SizedBox(height: Space.section),
             const SectionHeader(label: 'Recently searched'),
-            if (recent.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                child: CustomPaint(
-                  foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.card),
-                  child: Padding(
-                    padding: const EdgeInsets.all(Space.lg),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text('Nothing looked up yet', style: MullType.titleMedium.copyWith(color: c.onSurface)),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Words you search land here, so the ones you met in the wild stay in reach. Tap + on any of them to keep it.',
-                          style: MullType.note.copyWith(color: c.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              // A row, not a fixed-height list: the chips are as
-              // tall as their text.
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                child: Row(
-                  spacing: Space.sm,
-                  children: <Widget>[for (final DictionaryWord w in recentWords) _RecentChip(word: w)],
-                ),
-              ),
+            const _RecentSection(),
             const SizedBox(height: Space.section),
-            SectionHeader(
-              label: 'Shelves',
-              trailing: Pressable(
-                onTap: () => context.push(Routes.collections),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
-                  child: Center(
-                    child: Text('See all ${collections.length}', style: MullType.monoLabel.copyWith(color: c.accent)),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-              child: TwoColumnGrid(
-                children: <Widget>[
-                  for (final Collection x in grid)
-                    TopicCard(
-                      collection: x,
-                      progress: progress[x.slug] ?? const Progress(0, 0),
-                      compact: true,
-                      onTap: () => context.push(Routes.collection(x.slug)),
-                    ),
-                  _NewListCard(onTap: () => showCreateListSheet(context)),
-                ],
-              ),
-            ),
+            SectionHeader(label: 'Shelves', trailing: seeAll('See all $shelfCount')),
+            const _ShelfGrid(),
             const SizedBox(height: Space.section),
-            SectionHeader(
-              label: 'Your shelves',
-              trailing: Pressable(
-                onTap: () => context.push(Routes.collections),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
-                  child: Center(
-                    child: Text('See all', style: MullType.monoLabel.copyWith(color: c.accent)),
-                  ),
-                ),
-              ),
-            ),
-            YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
+            SectionHeader(label: 'Your shelves', trailing: seeAll('See all')),
+            const _YourShelves(),
           ],
         ),
       ),
     );
+  }
+}
+
+/// The word of the day comes off the worker; until it lands the card's
+/// frame and label hold the top of the screen and the rest fades in, so
+/// nothing below jumps by a whole card.
+class _WotdSection extends ConsumerWidget {
+  const _WotdSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<DictionaryWord?> wotd = ref.watch(wordOfTheDayProvider);
+    final DictionaryWord? word = wotd.value;
+    if (wotd.hasValue && word == null) return const SizedBox.shrink();
+    return _WordOfTheDay(
+      word: word,
+      example: word == null ? null : ref.watch(_wotdExampleProvider(word.wordKey)).value,
+    );
+  }
+}
+
+class _ContinueSection extends ConsumerWidget {
+  const _ContinueSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final String? slug = ref.watch(continueSlugProvider);
+    final Collection? cont = slug == null
+        ? null
+        : ref.watch(collectionBySlugProvider.select((Map<String, Collection> m) => m[slug]));
+    if (cont == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: Space.section),
+        const SectionHeader(label: 'Continue'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+          child: _Continue(collection: cont, progress: ref.watch(progressOfProvider(cont.slug))),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecentSection extends ConsumerWidget {
+  const _RecentSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final MullColors c = context.colors;
+    final bool empty = ref.watch(recentLookupsProvider.select((AsyncValue<List<String>> v) => (v.value ?? const <String>[]).isEmpty));
+    if (empty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+        child: CustomPaint(
+          foregroundPainter: DashedBorderPainter(c.outline, radius: Radii.card),
+          child: Padding(
+            padding: const EdgeInsets.all(Space.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text('Nothing looked up yet', style: MullType.titleMedium.copyWith(color: c.onSurface)),
+                const SizedBox(height: 4),
+                Text(
+                  'Words you search land here, so the ones you met in the wild stay in reach. Tap + on any of them to keep it.',
+                  style: MullType.note.copyWith(color: c.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final List<DictionaryWord> recentWords = ref.watch(_recentWordsProvider).value ?? const <DictionaryWord>[];
+    // A row, not a fixed-height list: the chips are as tall as their text.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+      child: Row(
+        spacing: Space.sm,
+        children: <Widget>[for (final DictionaryWord w in recentWords) _RecentChip(word: w)],
+      ),
+    );
+  }
+}
+
+class _ShelfGrid extends ConsumerWidget {
+  const _ShelfGrid();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<Collection> grid = ref.watch(homeCollectionsProvider);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+      child: TwoColumnGrid(
+        children: <Widget>[
+          for (final Collection x in grid)
+            Consumer(
+              builder: (BuildContext context, WidgetRef ref, Widget? _) => TopicCard(
+                collection: x,
+                progress: ref.watch(progressOfProvider(x.slug)),
+                compact: true,
+                onTap: () => context.push(Routes.collection(x.slug)),
+              ),
+            ),
+          _NewListCard(onTap: () => openShelfEditor(context)),
+        ],
+      ),
+    );
+  }
+}
+
+class _YourShelves extends ConsumerWidget {
+  const _YourShelves();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<Collection> yours = ref
+        .watch(collectionsProvider)
+        .where((Collection x) => x.isUsers)
+        .take(HomeScreen.yourShelvesShown)
+        .toList();
+    return YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug)));
   }
 }
 
@@ -221,16 +256,19 @@ class HomeScreen extends ConsumerWidget {
 class _WordOfTheDay extends StatelessWidget {
   const _WordOfTheDay({required this.word, required this.example});
 
-  final DictionaryWord word;
+  /// Null for the frames before the worker answers: the frame and the label
+  /// show, the body fades in when it lands.
+  final DictionaryWord? word;
   final String? example;
 
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
+    final DictionaryWord? word = this.word;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.screen),
       child: Pressable(
-        onTap: () => showWordSheet(context, wordKey: word.wordKey),
+        onTap: word == null ? null : () => showWordSheet(context, wordKey: word.wordKey),
         child: Container(
           padding: const EdgeInsets.all(Space.lg),
           decoration: BoxDecoration(
@@ -242,42 +280,54 @@ class _WordOfTheDay extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const SectionHeader(label: 'Word of the day', accent: true, inset: false),
-              const SizedBox(height: Space.sm),
-              // 42 at most, stepping down by grapheme count like the card,
-              // and never scaled: a headword is never broken mid-word.
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  word.headword,
-                  style: MullType.headwordAt(math.max(1, MullType.headwordStep(word.headword)))
-                      .copyWith(fontSize: MullType.headwordStep(word.headword) <= 1 ? 42 : null, color: c.onSurface),
-                  textScaler: TextScaler.noScaling,
-                  softWrap: false,
-                ),
+              AnimatedSize(
+                duration: Motion.of(context, Motion.reflow),
+                curve: Motion.curveOf(context, Motion.decelerate),
+                alignment: Alignment.topLeft,
+                child: word == null
+                    ? const SizedBox(width: double.infinity)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                    const SizedBox(height: Space.sm),
+                    // 42 at most, stepping down by grapheme count like the card,
+                    // and never scaled: a headword is never broken mid-word.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        word.headword,
+                        style: MullType.headwordAt(math.max(1, MullType.headwordStep(word.headword)))
+                            .copyWith(fontSize: MullType.headwordStep(word.headword) <= 1 ? 42 : null, color: c.onSurface),
+                        textScaler: TextScaler.noScaling,
+                        softWrap: false,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: Space.sm,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: <Widget>[
+                        if (word.ipa != null)
+                          Text(word.ipa!, style: MullType.monoTabular.copyWith(color: c.onSurfaceVariant)),
+                        Text(
+                          posLabel(word.pos),
+                          style: MullType.label.copyWith(fontStyle: FontStyle.italic, color: c.onSurfaceMuted),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: Space.md),
+                    Text(word.definitionShort, style: MullType.body.copyWith(fontSize: 16, color: c.onSurface)),
+                    if (example != null) ...<Widget>[
+                      const SizedBox(height: Space.sm),
+                      Text(
+                        example!,
+                        style: MullType.note.copyWith(color: c.onSurfaceVariant, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                        ],
+                      ),
               ),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: Space.sm,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  if (word.ipa != null)
-                    Text(word.ipa!, style: MullType.monoTabular.copyWith(color: c.onSurfaceVariant)),
-                  Text(
-                    posLabel(word.pos),
-                    style: MullType.label.copyWith(fontStyle: FontStyle.italic, color: c.onSurfaceMuted),
-                  ),
-                ],
-              ),
-              const SizedBox(height: Space.md),
-              Text(word.definitionShort, style: MullType.body.copyWith(fontSize: 16, color: c.onSurface)),
-              if (example != null) ...<Widget>[
-                const SizedBox(height: Space.sm),
-                Text(
-                  example!,
-                  style: MullType.note.copyWith(color: c.onSurfaceVariant, fontStyle: FontStyle.italic),
-                ),
-              ],
             ],
           ),
         ),

@@ -11,7 +11,12 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
+import '../../shared/widgets/app_icon_button.dart';
+import '../../shared/widgets/app_snackbar.dart';
 
+/// A note on a word or a phrase: [wordKey] is its `word_key` or `idiom_key`
+/// (the notes table keys both the same way), [headword] the title.
+///
 /// The note sheet: plain text, autosaves on pause (600 ms debounce), "SAVED"
 /// in `monoLabel` at top right. No formatting toolbar. Done dismisses; the
 /// note is already saved.
@@ -41,11 +46,13 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
 
   static const Duration _kAutosave = Duration(milliseconds: 600);
 
-  UserRepository get _user => ref.read(userRepositoryProvider);
+  // Held in a field: `ref` is unsafe to read in dispose().
+  late final UserRepository _user;
 
   @override
   void initState() {
     super.initState();
+    _user = ref.read(userRepositoryProvider);
     unawaited(_load());
   }
 
@@ -124,6 +131,76 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
         const SizedBox(height: Space.lg),
         AppButton(label: 'Done', fullWidth: true, onPressed: () => Navigator.of(context).pop()),
       ],
+    );
+  }
+}
+
+// autoDispose: keyed by word or phrase, so without it every entry ever opened
+// would keep a live query for the rest of the process.
+final StreamProvider<String?> Function(String) noteProvider = StreamProvider.autoDispose.family<String?, String>(
+  (Ref ref, String key) => ref.watch(userRepositoryProvider).watchNote(key),
+);
+
+/// The note on a word or phrase as it sits on its sheet. With a note: a card
+/// with Edit and Delete (48dp each); Delete removes it at once and a toast
+/// offers Undo, the app's pattern for a destructive action. Without one:
+/// "Add a note" when [showAdd], else nothing.
+class NoteSection extends ConsumerWidget {
+  const NoteSection({required this.noteKey, required this.title, this.showAdd = true, super.key});
+
+  final String noteKey;
+  final String title;
+  final bool showAdd;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<String?> async = ref.watch(noteProvider(noteKey));
+    if (!async.hasValue) return const SizedBox.shrink();
+    final String? note = async.value;
+    void edit() => showNoteSheet(context, wordKey: noteKey, headword: title);
+    if (note == null) {
+      if (!showAdd) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: Space.xl),
+        child: AppButton(label: 'Add a note', icon: Icons.edit_note_rounded, type: AppButtonType.dotted, fullWidth: true, onPressed: edit),
+      );
+    }
+    final MullColors c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Space.lg),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.sm, Space.lg),
+        decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.cardR),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(child: Text('YOUR NOTE', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant))),
+                AppIconButton(icon: Icons.edit_rounded, size: 48, glyphSize: 18, filled: false, semanticLabel: 'Edit note', onPressed: edit),
+                AppIconButton(
+                  icon: Icons.delete_outline_rounded,
+                  size: 48,
+                  glyphSize: 18,
+                  filled: false,
+                  tint: c.danger,
+                  semanticLabel: 'Delete note',
+                  onPressed: () {
+                    final UserRepository user = ref.read(userRepositoryProvider);
+                    unawaited(user.putNote(noteKey, ''));
+                    AppSnackbar.undo(context, 'Note deleted', () => unawaited(user.putNote(noteKey, note)));
+                  },
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: Space.md),
+              child: Text(note, style: MullType.note.copyWith(color: c.onSurface)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

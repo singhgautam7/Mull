@@ -67,6 +67,17 @@ class _WordEntry {
     this.examples,
   );
 
+  /// Resolves each related term to its word key once, so a chip is tappable
+  /// only when the word exists and the tap is a direct `showWordSheet`.
+  static List<_Related> _resolve(DictionaryDb dict, Iterable<(String, String?)> terms) => <_Related>[
+    for (final (String term, String? pos) in terms)
+      _Related(
+        term,
+        dict.senses(DictionaryDb.normalise(term)).firstOrNull?.wordKey,
+        pos,
+      ),
+  ];
+
   factory _WordEntry.read(DictionaryDb dict, String wordKey) {
     final DictionaryWord? word = dict.byKey(wordKey);
     if (word == null) {
@@ -75,9 +86,9 @@ class _WordEntry {
         const <DictionaryWord>[],
         null,
         const <String>[],
-        const <String>{},
-        const <String>{},
-        const <WordFamilyMember>[],
+        const <_Related>[],
+        const <_Related>[],
+        const <_Related>[],
         const <String, List<String>>{},
       );
     }
@@ -96,9 +107,13 @@ class _WordEntry {
       senses,
       dict.usSpelling(senses.first.wordKey),
       dict.inflections(senses.first.wordKey),
-      <String>{for (final DictionaryWord w in senses) ...dict.synonyms(w.wordKey)},
-      <String>{for (final DictionaryWord w in senses) ...dict.antonyms(w.wordKey)},
-      wordFamily,
+      _resolve(dict, <String>{
+        for (final DictionaryWord w in senses) ...dict.synonyms(w.wordKey),
+      }.map((String t) => (t, null))),
+      _resolve(dict, <String>{
+        for (final DictionaryWord w in senses) ...dict.antonyms(w.wordKey),
+      }.map((String t) => (t, null))),
+      _resolve(dict, wordFamily.map((WordFamilyMember m) => (m.headword, m.pos))),
       <String, List<String>>{
         for (final DictionaryWord w in senses) w.wordKey: dict.examples(w.wordKey),
       },
@@ -109,10 +124,20 @@ class _WordEntry {
   final List<DictionaryWord> senses;
   final String? us;
   final List<String> inflections;
-  final Set<String> synonyms;
-  final Set<String> antonyms;
-  final List<WordFamilyMember> wordFamily;
+  final List<_Related> synonyms;
+  final List<_Related> antonyms;
+  final List<_Related> wordFamily;
   final Map<String, List<String>> examples;
+}
+
+/// A related term: [key] is its word key, or null when it is not in the
+/// dictionary. [pos] is set for word family members.
+class _Related {
+  const _Related(this.term, this.key, this.pos);
+
+  final String term;
+  final String? key;
+  final String? pos;
 }
 
 class _WordSheet extends ConsumerStatefulWidget {
@@ -133,10 +158,13 @@ class _WordSheet extends ConsumerStatefulWidget {
 }
 
 class _WordSheetState extends ConsumerState<_WordSheet> {
-  late final _WordEntry _entry = _WordEntry.read(
-    ref.read(dictProvider),
-    widget.wordKey,
-  );
+  late final _WordEntry _entry;
+
+  @override
+  void initState() {
+    super.initState();
+    _entry = _WordEntry.read(ref.read(dictProvider), widget.wordKey);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -154,12 +182,12 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
     final List<DictionaryWord> senses = _entry.senses;
     final String? us = _entry.us;
     final List<String> inflections = _entry.inflections;
-    final AppSettings s = ref.watch(settingsProvider);
-    final String headword = s.spelling == Spelling.american && us != null
+    final bool american = ref.watch(settingsProvider.select((AppSettings s) => s.spelling == Spelling.american));
+    final double ttsRate = ref.watch(settingsProvider.select((AppSettings s) => s.ttsRate));
+    final String headword = american && us != null
         ? us
         : word.headword;
     final UserRepository user = ref.read(userRepositoryProvider);
-    final String? note = ref.watch(_noteProvider(wordKey)).value;
     final List<WordContext> contexts =
         ref.watch(_contextsProvider(wordKey)).value ?? const <WordContext>[];
 
@@ -169,9 +197,9 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
     for (final DictionaryWord w in senses) {
       byPos.putIfAbsent(w.pos, () => <DictionaryWord>[]).add(w);
     }
-    final Set<String> synonyms = _entry.synonyms;
-    final Set<String> antonyms = _entry.antonyms;
-    final List<WordFamilyMember> wordFamily = _entry.wordFamily;
+    final List<_Related> synonyms = _entry.synonyms;
+    final List<_Related> antonyms = _entry.antonyms;
+    final List<_Related> wordFamily = _entry.wordFamily;
     final List<String> plural = inflections
         .where(
           (String f) =>
@@ -187,17 +215,7 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
           ArrivalTopRow(sourceHint: sourceHint),
           const SizedBox(height: Space.lg),
         ],
-        if (note != null) ...<Widget>[
-          _NoteCard(
-            note: note,
-            onTap: () => showNoteSheet(
-              context,
-              wordKey: wordKey,
-              headword: word.headword,
-            ),
-          ),
-          const SizedBox(height: Space.lg),
-        ],
+        NoteSection(noteKey: wordKey, title: word.headword, showAdd: false),
         if (contexts.isNotEmpty) ...<Widget>[
           _ContextCard(
             contexts: contexts,
@@ -244,7 +262,7 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
                 onPressed: () => unawaited(
                   ref
                       .read(pronunciationProvider)
-                      .speak(word.headword, rate: s.ttsRate),
+                      .speak(word.headword, rate: ttsRate),
                 ),
               ),
             ] else
@@ -273,49 +291,18 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
           ],
           const SizedBox(height: Space.sm),
         ],
-        if (synonyms.isNotEmpty) ...<Widget>[
+        _RelationSection(title: 'SYNONYMS', items: synonyms),
+        _RelationSection(title: 'ANTONYMS', items: antonyms),
+        _RelationSection(title: 'WORD FAMILY', items: wordFamily),
+        if (us != null) ...<Widget>[
+          const SizedBox(height: Space.xl),
           Text(
-            'SYNONYMS',
-            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
-          ),
-          const SizedBox(height: Space.md),
-          _WordChips(
-            words: synonyms.take(12).toList(),
-            onTap: (String term) => _openTerm(context, ref, term),
-          ),
-          const SizedBox(height: Space.lg),
-        ],
-        if (antonyms.isNotEmpty) ...<Widget>[
-          Text(
-            'ANTONYMS',
-            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
-          ),
-          const SizedBox(height: Space.md),
-          _WordChips(
-            words: antonyms.take(12).toList(),
-            onTap: (String term) => _openTerm(context, ref, term),
-          ),
-          const SizedBox(height: Space.lg),
-        ],
-        if (wordFamily.isNotEmpty) ...<Widget>[
-          Text(
-            'WORD FAMILY',
-            style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant),
-          ),
-          const SizedBox(height: Space.md),
-          _WordFamilyList(
-            family: wordFamily,
-            onTap: (String term) => _openTerm(context, ref, term),
-          ),
-          const SizedBox(height: Space.lg),
-        ],
-        if (us != null)
-          Text(
-            s.spelling == Spelling.american
+            american
                 ? 'British spelling: ${word.headword}'
                 : 'American spelling: $us',
             style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
           ),
+        ],
       ],
     );
   }
@@ -336,9 +323,13 @@ class _WordSheetActions extends ConsumerStatefulWidget {
 
 class _WordSheetActionsState extends ConsumerState<_WordSheetActions> {
   // Read once, not per rebuild: the bookmark stream rebuilds this row.
-  late final DictionaryWord? _word = ref
-      .read(dictProvider)
-      .byKey(widget.wordKey);
+  late final DictionaryWord? _word;
+
+  @override
+  void initState() {
+    super.initState();
+    _word = ref.read(dictProvider).byKey(widget.wordKey);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -393,7 +384,13 @@ class _WordSheetActionsState extends ConsumerState<_WordSheetActions> {
               ),
             ),
             AppIconButton(
-              icon: Icons.ios_share_rounded,
+              icon: Icons.edit_note_rounded,
+              size: 48,
+              semanticLabel: 'Add or edit a note',
+              onPressed: () => showNoteSheet(context, wordKey: wordKey, headword: word.headword),
+            ),
+            AppIconButton(
+              icon: Icons.share_rounded,
               size: 48,
               semanticLabel: 'Share',
               onPressed: () => showShareWordSheet(
@@ -408,14 +405,6 @@ class _WordSheetActionsState extends ConsumerState<_WordSheetActions> {
     );
   }
 }
-
-// autoDispose: keyed by word, so without it every word ever opened would
-// keep a live query for the rest of the process.
-final StreamProvider<String?> Function(String) _noteProvider = StreamProvider
-    .autoDispose
-    .family<String?, String>(
-      (Ref ref, String key) => ref.watch(userRepositoryProvider).watchNote(key),
-    );
 
 final StreamProvider<List<WordContext>> Function(String) _contextsProvider =
     StreamProvider.autoDispose.family<List<WordContext>, String>(
@@ -612,47 +601,6 @@ class _ContextCardState extends State<_ContextCard> {
   }
 }
 
-class _NoteCard extends StatelessWidget {
-  const _NoteCard({required this.note, required this.onTap});
-
-  final String note;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Semantics(
-      button: true,
-      label: 'Your note',
-      child: Pressable(
-        kind: PressKind.card,
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(Space.lg),
-          decoration: BoxDecoration(
-            color: c.surfaceContainerHigh,
-            borderRadius: Radii.cardR,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'YOUR NOTE',
-                style: MullType.sectionHeader.copyWith(
-                  color: c.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: Space.sm),
-              Text(note, style: MullType.note.copyWith(color: c.onSurface)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _Sense extends StatelessWidget {
   const _Sense({required this.sense, required this.examples});
 
@@ -699,107 +647,83 @@ class _Sense extends StatelessWidget {
   }
 }
 
-void _openTerm(BuildContext context, WidgetRef ref, String term) {
-  final DictionaryDb dict = ref.read(dictProvider);
-  final DictionaryWord? hit =
-      dict.senses(DictionaryDb.normalise(term)).firstOrNull;
-  if (hit != null) {
-    showWordSheet(context, wordKey: hit.wordKey);
-  }
-}
+/// One relation section (synonyms, antonyms, word family): label, `Space.sm`,
+/// a wrap of chips, with `Space.xl` above. A term in the dictionary is a chip
+/// that opens its sheet on top; one that is not is plain muted text. Past
+/// [_kRelationVisible] the rest sits behind "Show all (N)".
+const int _kRelationVisible = 8;
 
-class _WordChips extends StatelessWidget {
-  const _WordChips({required this.words, required this.onTap});
+class _RelationSection extends StatefulWidget {
+  const _RelationSection({required this.title, required this.items});
 
-  final List<String> words;
-  final ValueChanged<String> onTap;
+  final String title;
+  final List<_Related> items;
 
   @override
-  Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Wrap(
-      spacing: Space.sm,
-      runSpacing: Space.xs,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        for (int i = 0; i < words.length; i++) ...<Widget>[
-          Pressable(
-            kind: PressKind.chip,
-            onTap: () => onTap(words[i]),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                words[i],
-                style: MullType.body.copyWith(
-                  color: c.onSurface,
-                  fontStyle: FontStyle.italic,
-                  decoration: TextDecoration.underline,
-                  decorationColor: c.onSurface.withValues(alpha: 0.35),
-                ),
-              ),
-            ),
-          ),
-          if (i < words.length - 1)
-            Text(
-              '·',
-              style: MullType.body.copyWith(color: c.onSurfaceMuted),
-            ),
-        ],
-      ],
+  State<_RelationSection> createState() => _RelationSectionState();
+}
+
+class _RelationSectionState extends State<_RelationSection> {
+  bool _expanded = false;
+
+  Widget _item(BuildContext context, _Related r) {
+    final String? key = r.key;
+    if (key == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: Space.sm),
+        child: Text(
+          r.pos == null ? r.term : '${r.term} (${posLabel(r.pos!)})',
+          style: MullType.label.copyWith(fontSize: 13, color: context.colors.onSurfaceMuted),
+        ),
+      );
+    }
+    return PillChip(
+      label: r.term,
+      trailing: r.pos == null
+          ? null
+          : Text(posLabel(r.pos!), style: MullType.monoLabel.copyWith(color: context.colors.onSurfaceMuted)),
+      onTap: () => showWordSheet(context, wordKey: key),
     );
   }
-}
 
-class _WordFamilyList extends StatelessWidget {
-  const _WordFamilyList({required this.family, required this.onTap});
-
-  final List<WordFamilyMember> family;
-  final ValueChanged<String> onTap;
+  Widget _wrap(BuildContext context, Iterable<_Related> items) => Wrap(
+    spacing: Space.sm,
+    runSpacing: Space.sm,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: <Widget>[for (final _Related r in items) _item(context, r)],
+  );
 
   @override
   Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Wrap(
-      spacing: Space.sm,
-      runSpacing: Space.xs,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        for (int i = 0; i < family.length; i++) ...<Widget>[
-          Pressable(
-            kind: PressKind.chip,
-            onTap: () => onTap(family[i].headword),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text.rich(
-                TextSpan(
-                  children: <InlineSpan>[
-                    TextSpan(
-                      text: family[i].headword,
-                      style: MullType.body.copyWith(
-                        color: c.onSurface,
-                        fontStyle: FontStyle.italic,
-                        decoration: TextDecoration.underline,
-                        decorationColor: c.onSurface.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    TextSpan(
-                      text: ' (${posLabel(family[i].pos)})',
-                      style: MullType.monoLabel.copyWith(
-                        color: c.onSurfaceMuted,
-                      ),
-                    ),
-                  ],
-                ),
+    final List<_Related> items = widget.items;
+    if (items.isEmpty) return const SizedBox.shrink();
+    final bool more = items.length > _kRelationVisible;
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(widget.title, style: MullType.sectionHeader.copyWith(color: context.colors.onSurfaceVariant)),
+          const SizedBox(height: Space.sm),
+          _wrap(context, items.take(_kRelationVisible)),
+          if (more) ...<Widget>[
+            ExpandCollapse(
+              expanded: _expanded,
+              child: Padding(
+                padding: const EdgeInsets.only(top: Space.sm),
+                child: _wrap(context, items.skip(_kRelationVisible)),
               ),
             ),
-          ),
-          if (i < family.length - 1)
-            Text(
-              '·',
-              style: MullType.body.copyWith(color: c.onSurfaceMuted),
+            Padding(
+              padding: const EdgeInsets.only(top: Space.sm),
+              child: PillChip(
+                label: _expanded ? 'Show less' : 'Show all (${items.length})',
+                onTap: () => setState(() => _expanded = !_expanded),
+              ),
             ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

@@ -123,6 +123,23 @@ class MullColors extends ThemeExtension<MullColors> {
         : Oklch(0.55, 0.14, hue).toColor();
   }
 
+  /// A tag hue as a tonal pair (Kuber's `categoryTones`): a soft container and
+  /// the strong glyph tone on it. Null is the accent family.
+  Color tagContainer(int? index) {
+    if (index == null) return primaryContainer;
+    final double hue = tagHues[index.abs() % tagHues.length];
+    return isDark ? Oklch(0.30, 0.05, hue).toColor() : Oklch(0.93, 0.045, hue).toColor();
+  }
+
+  Color tagOnContainer(int? index) {
+    if (index == null) return onPrimaryContainer;
+    final double hue = tagHues[index.abs() % tagHues.length];
+    return isDark ? Oklch(0.82, 0.11, hue).toColor() : Oklch(0.45, 0.13, hue).toColor();
+  }
+
+  /// Names for the picker row, in [tagHues] order.
+  static const List<String> tagNames = <String>['Blue', 'Teal', 'Green', 'Amber', 'Red', 'Pink', 'Purple'];
+
   @override
   MullColors copyWith({
     Color? surface,

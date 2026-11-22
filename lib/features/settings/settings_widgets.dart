@@ -23,6 +23,7 @@ class SettingsGroup extends StatelessWidget {
     required this.label,
     required this.children,
     this.danger = false,
+    this.gap = Space.xl,
     super.key,
   });
 
@@ -30,11 +31,14 @@ class SettingsGroup extends StatelessWidget {
   final List<Widget> children;
   final bool danger;
 
+  /// Space below the group (More uses `Space.section`).
+  final double gap;
+
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     return Padding(
-      padding: const EdgeInsets.only(bottom: Space.xl),
+      padding: EdgeInsets.only(bottom: gap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

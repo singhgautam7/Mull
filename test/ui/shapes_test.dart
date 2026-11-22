@@ -125,10 +125,10 @@ void main() {
     await tester.pumpWidget(_app(MotionLevel.expressive, const _Chips()));
     await tester.pumpAndSettle();
     expect(_r(_material(tester, chips.at(0), 0)), 12);
-    expect(_r(_material(tester, chips.at(1), 0)), PillChip.pillRadius);
+    expect(_material(tester, chips.at(1), 0).shape, isA<StadiumBorder>());
     await tester.tap(find.text('Chip 1'));
     await tester.pumpAndSettle();
-    expect(_r(_material(tester, chips.at(0), 0)), PillChip.pillRadius);
+    expect(_material(tester, chips.at(0), 0).shape, isA<StadiumBorder>());
     expect(_r(_material(tester, chips.at(1), 0)), 12);
   });
 

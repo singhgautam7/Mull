@@ -40,7 +40,10 @@ class DataTransferRepository {
   DataTransferRepository(this._db, this._dictionary, this._prefs);
 
   static const String format = 'mull.export';
-  static const int formatVersion = 1;
+  static const int formatVersion = 2;
+
+  /// Version 1 has no shelf `icon` or `note`; both read as null.
+  static const Set<int> readableVersions = <int>{1, 2};
   static const String lastExportKey = 'data.last_export_at';
 
   /// Separates an imported note from the one already on the phone.
@@ -107,6 +110,8 @@ class DataTransferRepository {
             'name': collection.name,
             'kind': collection.kind,
             'color': collection.color,
+            'icon': collection.icon,
+            'note': collection.note,
             'created_at': collection.createdAt.toIso8601String(),
             'members': collectionMembers[collection.id] ?? const <Object?>[],
           },
@@ -215,7 +220,7 @@ class DataTransferRepository {
     if (data['format'] != format) {
       throw const DataTransferException('That file is not a Mull export.');
     }
-    if (data['format_version'] != formatVersion) {
+    if (!readableVersions.contains(data['format_version'])) {
       throw const DataTransferException(
         'This Mull export uses a format this version cannot import.',
       );
@@ -319,6 +324,19 @@ class DataTransferRepository {
       if (existing != null) {
         collectionId = existing.id;
         slug = existing.slug;
+        // The phone's icon and note win; the file only fills what is empty.
+        final String? icon = existing.icon ?? _text(row['icon']);
+        final String? note = existing.note ?? _text(row['note']);
+        if (icon != existing.icon || note != existing.note) {
+          await (_db.update(_db.userCollections)
+                ..where((UserCollections c) => c.id.equals(existing.id)))
+              .write(
+                UserCollectionsCompanion(
+                  icon: Value<String?>(icon),
+                  note: Value<String?>(note),
+                ),
+              );
+        }
       } else {
         slug =
             kind == 'system' &&
@@ -334,6 +352,8 @@ class DataTransferRepository {
                 kind: kind == 'system' ? 'system' : 'user',
                 name: name,
                 color: Value<int?>(row['color'] as int?),
+                icon: Value<String?>(_text(row['icon'])),
+                note: Value<String?>(_text(row['note'])),
                 createdAt: _date(row['created_at']) ?? DateTime.now(),
               ),
             );
@@ -613,6 +633,8 @@ class DataTransferRepository {
             if (e.key is String) e.key as String: e.value,
         }
       : const <String, Object?>{};
+  static String? _text(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value : null;
   static DateTime? _date(Object? value) =>
       value is String ? DateTime.tryParse(value) : null;
   static DateTime? _latest(DateTime? a, DateTime? b) => a == null

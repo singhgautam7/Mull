@@ -93,11 +93,11 @@ void main() {
       expect(find.text('Setting the dictionary down on your phone.'), findsOneWidget);
 
       // Let the real gunzip finish, then settle.
-      for (int i = 0; i < 100 && find.text('01 / 03').evaluate().isEmpty; i++) {
+      for (int i = 0; i < 100 && find.text('Define words anywhere').evaluate().isEmpty; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await tester.pump();
       }
-      expect(find.text('01 / 03'), findsOneWidget);
+      expect(find.text('Define words anywhere'), findsOneWidget);
       // The install state cross-fades out under the first-run screen.
       for (int i = 0; i < 10 && find.byType(InstallScreen).evaluate().isNotEmpty; i++) {
         await tester.pump(Motion.sheet);

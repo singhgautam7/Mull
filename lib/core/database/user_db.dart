@@ -70,6 +70,10 @@ class UserCollections extends Table {
   /// An index into `MullColors.tagHues`, or null for the theme accent.
   IntColumn get color => integer().nullable()();
   DateTimeColumn get createdAt => dateTime()();
+
+  /// A stable id from `ShelfIcons` (never a code point), or null.
+  TextColumn get icon => text().nullable()();
+  TextColumn get note => text().nullable()();
 }
 
 @DataClassName('UserCollectionWord')
@@ -257,7 +261,7 @@ class UserDatabase extends _$UserDatabase {
   UserDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -273,6 +277,11 @@ class UserDatabase extends _$UserDatabase {
         await m.createTable(quizSessions);
         await m.createTable(quizAnswers);
         await m.createTable(collectionStats);
+      }
+      // From < 3 just created the table with these columns already.
+      if (from >= 3 && from < 5) {
+        await m.addColumn(userCollections, userCollections.icon);
+        await m.addColumn(userCollections, userCollections.note);
       }
     },
     beforeOpen: (OpeningDetails details) async {

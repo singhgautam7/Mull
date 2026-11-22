@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/motion/motion.dart';
 import '../core/theme/tokens.dart';
 import 'nav_bar.dart';
 
@@ -79,7 +80,17 @@ class NavHidden extends Notifier<bool> {
   void set({required bool hidden}) => state = hidden;
 }
 
-/// Hosts the four destinations and the floating nav.
+/// Hosts the five destinations and the floating nav.
+///
+/// A switch animates only the incoming tab: a short slide (6% of the width,
+/// from the side of travel) and a fade, at Expressive on
+/// `containerTransform` / `decelerate`; a fade alone at Subtle; a 90 ms fade at
+/// Off. The page sits in a [RepaintBoundary] *inside* the transition, so the
+/// animation composites one cached layer and repaints nothing. The old slide
+/// translated the whole shell with the boundary outside the transform, which
+/// repainted the incoming tab every frame. Kuber's PageView was tried and
+/// measured: its far-tab jump lays out a third page in the first frame
+/// (specs/app-polish-2/performance.md).
 ///
 /// The pill translates down 72 and fades out on scroll-down past 24px, and
 /// comes back on any scroll-up, as in Perch. The Mull tab pages vertically,
@@ -98,21 +109,22 @@ class NavShell extends ConsumerStatefulWidget {
 
 class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMixin {
   late final AnimationController _hide = AnimationController(vsync: this, duration: Motion.navHide);
-  late final AnimationController _page = AnimationController(
-    vsync: this,
-    duration: Motion.containerTransform,
-    value: 1.0,
-  );
+  late final AnimationController _page = AnimationController(vsync: this, value: 1.0);
   double _lastOffset = 0;
   bool _forward = true;
 
   static const int _mullTab = 1;
+
+  /// How far the incoming tab travels, as a fraction of the width.
+  static const double _travel = 0.06;
 
   @override
   void didUpdateWidget(NavShell oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.index != oldWidget.index) {
       _forward = widget.index > oldWidget.index;
+      final MotionLevel level = Motion.levelOf(context);
+      _page.duration = level == MotionLevel.off ? Motion.fxInstant : Motion.containerTransform;
       _page.forward(from: 0.0);
       _hide.reverse();
     }
@@ -152,12 +164,12 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final bool reduced = Motion.reduced(context);
+    final MotionLevel level = Motion.levelOf(context);
+    final bool reduced = level != MotionLevel.expressive;
     final bool hidden = ref.watch(navHiddenProvider);
-    final Animation<double> pageCurved = CurvedAnimation(
-      parent: _page,
-      curve: Motion.curveOf(context, Motion.decelerate),
-    );
+    final Animation<double> fade = CurvedAnimation(parent: _page, curve: Motion.curveEffects);
+    final Animation<double> move = CurvedAnimation(parent: _page, curve: Motion.decelerate);
+    final double from = reduced ? 0 : (_forward ? _travel : -_travel);
     return PopScope(
       canPop: widget.index == 0,
       onPopInvokedWithResult: (bool didPop, Object? _) {
@@ -171,18 +183,11 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
               GestureDetector(
                 onHorizontalDragEnd: _onHorizontalFling,
                 behavior: HitTestBehavior.translucent,
-                child: ClipRect(
-                  child: RepaintBoundary(
-                    child: AnimatedBuilder(
-                      animation: pageCurved,
-                      builder: (BuildContext context, Widget? child) {
-                        final double t = pageCurved.value;
-                        if (t == 1.0 || reduced) return child!;
-                        final double dx = _forward ? (1.0 - t) : -(1.0 - t);
-                        return FractionalTranslation(translation: Offset(dx, 0.0), child: child);
-                      },
-                      child: widget.child,
-                    ),
+                child: FadeTransition(
+                  opacity: fade,
+                  child: SlideTransition(
+                    position: Tween<Offset>(begin: Offset(from, 0), end: Offset.zero).animate(move),
+                    child: RepaintBoundary(child: widget.child),
                   ),
                 ),
               ),

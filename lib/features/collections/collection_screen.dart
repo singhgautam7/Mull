@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
-import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
@@ -27,7 +26,7 @@ import '../dictionary/idiom_sheet.dart';
 import '../dictionary/search_screen.dart';
 import '../dictionary/word_sheet.dart';
 import '../settings/settings_controller.dart';
-import 'create_list_sheet.dart';
+import 'shelf_edit_screen.dart';
 import '../quiz/quiz_screen.dart';
 import 'shelf_export_sheet.dart';
 
@@ -421,8 +420,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         if (collection?.kind == 'user') ...<AppMenuEntry<String>>[
           const AppMenuEntry<String>.divider(),
           const AppMenuEntry<String>(
-            value: 'rename',
-            label: 'Rename',
+            value: 'edit',
+            label: 'Edit shelf',
             icon: Icons.edit_outlined,
           ),
           const AppMenuEntry<String>(
@@ -497,13 +496,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         unawaited(
           ref.read(settingsProvider.notifier).setLens(_scopeKey, 'table'),
         );
-      case 'rename':
-        await showCreateListSheet(
-          context,
-          renameSlug: widget.slug,
-          initialName: collection!.title,
-          initialColor: collection.color,
-        );
+      case 'edit':
+        await openShelfEditor(context, slug: widget.slug);
       case 'delete':
         final bool ok = await confirmDialog(
           context,
@@ -571,8 +565,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final DictionaryDb dict = ref.watch(dictProvider);
     final Set<String> bookmarks =
         ref.watch(bookmarksProvider).value ?? const <String>{};
-    final Map<String, SeenWord> seen =
-        ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
+    // The seen count only: one shelf's progress, never the whole seen map
+    // (a seen write elsewhere must not rebuild this list).
+    final int seenCount = ref.watch(progressOfProvider(widget.slug)).seen;
 
     final Collection? collection = ref.watch(
       collectionBySlugProvider,
@@ -629,10 +624,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         displayItems.insert(math.min(g.value.$1, displayItems.length), g.value.$2);
       }
     }
-
-    final int seenCount = rawEntries
-        .where((CollectionEntry e) => seen.containsKey(e.key))
-        .length;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -713,6 +704,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
+                                if (collection?.note != null && collection!.note!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
+                                    child: Text(collection.note!, style: MullType.note.copyWith(color: c.onSurfaceVariant)),
+                                  ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: Space.screen,
