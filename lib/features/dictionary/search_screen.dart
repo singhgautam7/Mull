@@ -6,6 +6,7 @@ import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/nav_bar.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
@@ -293,9 +294,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _recentList(MullColors c) {
-    if (_recent.isEmpty) return const SliverToBoxAdapter(child: SizedBox(height: Space.bottomSafe));
+    if (_recent.isEmpty) return SliverToBoxAdapter(child: SizedBox(height: Space.bottomSafe + MullNavPill.liftOf(context)));
     return SliverPadding(
-      padding: const EdgeInsets.only(top: Space.lg, bottom: Space.bottomSafe),
+      padding: EdgeInsets.only(top: Space.lg, bottom: Space.bottomSafe + MullNavPill.liftOf(context)),
       sliver: SliverList(
         delegate: SliverChildListDelegate(<Widget>[
           const SectionHeader(label: 'Recent'),
@@ -353,7 +354,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     if (style == SearchStyle.table) {
       return SliverPadding(
-        padding: const EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe),
+        padding: EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe + MullNavPill.liftOf(context)),
         sliver: SliverList.builder(
           itemCount: n,
           itemBuilder: (BuildContext context, int i) =>
@@ -362,7 +363,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.bottomSafe),
+      padding: EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.bottomSafe + MullNavPill.liftOf(context)),
       sliver: SliverList.separated(
         itemCount: n,
         separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
@@ -379,7 +380,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       SearchSegment.idioms => _words.isNotEmpty,
     };
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(Space.screen, 48, Space.screen, Space.bottomSafe),
+      padding: EdgeInsets.fromLTRB(Space.screen, 48, Space.screen, Space.bottomSafe + MullNavPill.liftOf(context)),
       sliver: SliverList(
         delegate: SliverChildListDelegate(<Widget>[
           Text('No entry for ${_query.trim()}', style: MullType.display.copyWith(fontSize: 28, color: c.onSurface)),

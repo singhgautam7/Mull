@@ -43,6 +43,19 @@ class MullNavPill extends StatelessWidget {
   /// A selected item is the icon, 8, the label, and 11 / 14 of padding.
   static const double _labelExtra = 11 + 20 + 8 + 14 - _item;
 
+  /// The pill's distance from the bottom of the screen at rest.
+  static const double _bottom = 22;
+
+  /// How much higher the pill sits to clear a three-button system bar (48dp),
+  /// with 8 to spare. The gesture handle (32dp at most) needs nothing: the pill
+  /// floats over it. Whatever keeps clear of the pill adds this too.
+  static double liftOf(BuildContext context) {
+    final double inset = MediaQuery.paddingOf(context).bottom;
+    return inset > 32 ? inset + Space.sm - _bottom : 0;
+  }
+
+  static double bottomOf(BuildContext context) => _bottom + liftOf(context);
+
   static double _labelWidth(BuildContext context, String label) {
     final TextPainter tp = TextPainter(
       text: TextSpan(text: label, style: Motion.weightStyle(MullType.titleSmall, 700)),

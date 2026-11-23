@@ -11,8 +11,9 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/app_button.dart';
-import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/app_snackbar.dart';
+import '../../shared/widgets/quote_block.dart';
+import '../../shared/widgets/section_header.dart';
 
 /// A note on a word or a phrase: [wordKey] is its `word_key` or `idiom_key`
 /// (the notes table keys both the same way), [headword] the title.
@@ -43,6 +44,7 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
   final TextEditingController _text = TextEditingController();
   Timer? _debounce;
   bool _saved = false;
+  bool _loaded = false;
 
   static const Duration _kAutosave = Duration(milliseconds: 600);
 
@@ -58,6 +60,7 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
 
   Future<void> _load() async {
     final String existing = await _user.note(widget.wordKey) ?? '';
+    _loaded = true;
     if (mounted && _text.text.isEmpty) {
       _text.text = existing;
       _text.selection = TextSelection.collapsed(offset: existing.length);
@@ -67,7 +70,8 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
   @override
   void dispose() {
     _debounce?.cancel();
-    unawaited(_user.putNote(widget.wordKey, _text.text));
+    // Closed before the note was read: an empty field is not an empty note.
+    if (_loaded || _text.text.isNotEmpty) unawaited(_user.putNote(widget.wordKey, _text.text));
     _text.dispose();
     super.dispose();
   }
@@ -81,6 +85,27 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
     });
   }
 
+  void _clear() {
+    final String old = _text.text;
+    _debounce?.cancel();
+    _text.clear();
+    unawaited(_user.putNote(widget.wordKey, ''));
+    if (_saved) setState(() => _saved = false);
+    AppSnackbar.undo(context, 'Note cleared', () => unawaited(_restore(old)));
+  }
+
+  /// Undo may come after the sheet has closed, or after more was typed: that
+  /// is kept, under the restored text.
+  Future<void> _restore(String old) async {
+    final String now = mounted ? _text.text : await _user.note(widget.wordKey) ?? '';
+    final String text = now.trim().isEmpty ? old : '$old\n$now';
+    if (mounted) {
+      _debounce?.cancel();
+      _text.text = text;
+    }
+    await _user.putNote(widget.wordKey, text);
+  }
+
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
@@ -91,7 +116,15 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
         Row(
           children: <Widget>[
             Expanded(
-              child: Text('Note on ${widget.headword}', style: MullType.sheetTitle.copyWith(color: c.onSurface)),
+              child: Text.rich(
+                TextSpan(
+                  text: 'Your note on ',
+                  children: <InlineSpan>[
+                    TextSpan(text: '\u201c${widget.headword}\u201d', style: TextStyle(color: c.accent)),
+                  ],
+                ),
+                style: MullType.sheetTitle.copyWith(color: c.onSurface),
+              ),
             ),
             AnimatedOpacity(
               duration: Motion.of(context, Motion.fast),
@@ -129,7 +162,25 @@ class _NoteSheetState extends ConsumerState<_NoteSheet> {
         const SizedBox(height: Space.sm),
         Text('Plain text. No formatting.', style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted)),
         const SizedBox(height: Space.lg),
-        AppButton(label: 'Done', fullWidth: true, onPressed: () => Navigator.of(context).pop()),
+        Row(
+          spacing: Space.md,
+          children: <Widget>[
+            Expanded(
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _text,
+                builder: (BuildContext context, TextEditingValue v, Widget? _) => AppButton(
+                  label: 'Clear all',
+                  type: AppButtonType.danger,
+                  fullWidth: true,
+                  onPressed: v.text.trim().isEmpty ? null : _clear,
+                ),
+              ),
+            ),
+            Expanded(
+              child: AppButton(label: 'Done', fullWidth: true, onPressed: () => Navigator.of(context).pop()),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -141,10 +192,9 @@ final StreamProvider<String?> Function(String) noteProvider = StreamProvider.aut
   (Ref ref, String key) => ref.watch(userRepositoryProvider).watchNote(key),
 );
 
-/// The note on a word or phrase as it sits on its sheet. With a note: a card
-/// with Edit and Delete (48dp each); Delete removes it at once and a toast
-/// offers Undo, the app's pattern for a destructive action. Without one:
-/// "Add a note" when [showAdd], else nothing.
+/// The note on a word or phrase as it sits on its sheet: a quote under its
+/// title, with Edit on the right (the note sheet, which also clears it).
+/// Without one: "Add a note" when [showAdd], else nothing.
 class NoteSection extends ConsumerWidget {
   const NoteSection({required this.noteKey, required this.title, this.showAdd = true, super.key});
 
@@ -165,42 +215,20 @@ class NoteSection extends ConsumerWidget {
         child: AppButton(label: 'Add a note', icon: Icons.sticky_note_2_outlined, type: AppButtonType.dotted, fullWidth: true, onPressed: edit),
       );
     }
-    final MullColors c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Space.lg),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.sm, Space.lg),
-        decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.cardR),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(child: Text('YOUR NOTE', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant))),
-                AppIconButton(icon: Icons.edit_rounded, size: 48, glyphSize: 18, filled: false, semanticLabel: 'Edit note', onPressed: edit),
-                AppIconButton(
-                  icon: Icons.delete_outline_rounded,
-                  size: 48,
-                  glyphSize: 18,
-                  filled: false,
-                  tint: c.danger,
-                  semanticLabel: 'Delete note',
-                  onPressed: () {
-                    final UserRepository user = ref.read(userRepositoryProvider);
-                    unawaited(user.putNote(noteKey, ''));
-                    AppSnackbar.undo(context, 'Note deleted', () => unawaited(user.putNote(noteKey, note)));
-                  },
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: Space.md),
-              child: Text(note, style: MullType.note.copyWith(color: c.onSurface)),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // The action's 48dp hit region is the rest of the gap above and below.
+        const SizedBox(height: Space.sm),
+        SectionHeader(
+          label: 'Your note',
+          inset: false,
+          trailing: SectionHeaderAction(label: 'Edit', icon: Icons.edit_outlined, semanticLabel: 'Edit note', onTap: edit),
         ),
-      ),
+        QuoteBlock(
+          child: Text(note, style: MullType.body.copyWith(color: context.colors.onSurfaceVariant)),
+        ),
+      ],
     );
   }
 }

@@ -152,6 +152,8 @@ implementation:
 | 3dp progress track, 46dp ring | `ProgressTrack`, `ProgressRing` |
 | Section header | `SectionHeader` (+ `SectionNote`, `SectionHeaderAction` for "See all") |
 | Two columns of cards whose height follows their text | `TwoColumnGrid` (never a grid delegate with a fixed extent) |
+| A quiet line of help with an info glyph | `InfoNote` |
+| Quoted text (a note, an example): accent bar, no card | `QuoteBlock` |
 | The user's own collections as rows | `ListRow`, `YourLists` |
 | A user shelf's icon disc, its editor, the icon and colour sheet | `ShelfIcon`, `openShelfEditor`, `showIconColorPicker` |
 | A note on a word or phrase, with edit and delete | `NoteSection` (+ `showNoteSheet`, `noteProvider`) |
@@ -530,5 +532,8 @@ never opened a shelf's own menu and never tapped a tab it had not warmed).
 - **No ink sparkle on anything whose own fill changes** (chips, segmented toggle): it lay over the new fill for
   about a second and read as a flicker. `pressedLayer` is the state layer.
 - **Nothing in a chip row pops its width.** The count badge grows and shrinks with the selection.
+- **The tab pill clears a three-button system bar** (`MullNavPill.bottomOf`): whatever pads for the pill on a tab
+  screen adds `MullNavPill.liftOf(context)` (0 with gestures). A sticky button adds its margin to the system
+  inset, never `max` of the two. Check both navigation modes.
 - **Read `HeaderPage.insetOf` below `HeaderPage`.** Read above it, it is 0: that hid the whole Search field,
   and tests with no status bar could not see it.

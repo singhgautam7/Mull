@@ -93,7 +93,21 @@ void main() {
     await tester.runAsync(() async => expect(await user.note(idiom.idiomKey), 'second thought'));
 
     // Delete.
-    await tester.tap(find.bySemanticsLabel('Delete note'));
+    await tester.tap(find.bySemanticsLabel('Edit note'));
+    await settle(tester);
+    await tester.tap(find.text('Clear all'));
+    await settle(tester);
+    await tester.runAsync(() async => expect(await user.note(idiom.idiomKey), isNull));
+
+    // Undo brings it back, above what was typed since.
+    await tester.enterText(find.byType(TextField), 'third thought');
+    await tester.tap(find.bySemanticsLabel('Undo'));
+    await settle(tester);
+    await tester.runAsync(() async => expect(await user.note(idiom.idiomKey), 'second thought\nthird thought'));
+
+    await tester.tap(find.text('Clear all'));
+    await settle(tester);
+    await tester.tap(find.text('Done'));
     await settle(tester);
     expect(find.text('second thought'), findsNothing);
     expect(find.text('Add a note'), findsOneWidget);

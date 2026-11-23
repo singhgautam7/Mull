@@ -17,7 +17,7 @@ Parts:
 - **I:** testing, and looking at the app on a device
 - **J:** app icon and splash screen
 - **K:** app size
-- **L:** the shared component contract (buttons, chips, toggles, switches, menus, sheets, search, rows)
+- **L:** the shared component contract (buttons, chips, toggles, switches, menus, sheets, search, rows, form pages)
 - **M:** welcome and setup
 - **N:** faults to avoid (from Mull). **Read this before you write any code.**
 
@@ -72,6 +72,7 @@ Don't stop for review between parts. **Don't call the work done until the device
 | Icon button | `lib/shared/widgets/app_icon_button.dart` | same path (its semantics node carries the tap) |
 | Chips | `lib/shared/widgets/kuber_chips.dart` | `lib/shared/widgets/chips.dart` (**use this one**, N1 and N2) |
 | Single choice | `kuber_button_group.dart`, `kuber_segmented_control.dart` | `SegmentedToggle` in `chips.dart` |
+| Form page with a sticky submit | `KuberFormScaffold` in `lib/shared/widgets/kuber_form_widgets.dart` (as in `add_transaction_screen.dart`, **not** the older `KuberSaveButton` with its bar and divider) | `lib/features/collections/shelf_edit_screen.dart` |
 | Switch rows | `settings_pages.dart`, `switchTheme` in `app_theme.dart` | `switchTheme` in `lib/core/theme/app_theme.dart` |
 | Menu | `lib/shared/widgets/kuber_menu.dart` | `lib/shared/widgets/app_menu.dart` (**use this one**, N4) |
 | Search bar | `lib/shared/widgets/kuber_search_pill.dart` | `SearchField` in `fields.dart` (**use this one**, N6) and `HeaderSearchBar` in `app_header.dart` |
@@ -295,6 +296,15 @@ Each component is built **once** and used everywhere. "Looks the same" is not en
 
 **L11. The user's own things come first.** A screen that mixes built-in and user-made lists puts the user's section at the top, with the same name on every screen.
 
+**L12. Form pages (add, edit, create).** The submit button is sticky, with **only a gradient behind it**: no full-width bar, no container fill, no divider and no shadow. This replaces any `bottomNavigationBar` or bar-style save button on every form in the app.
+- **Button:** one `AppButton`, primary, full width, 56 dp, inside the screen margins.
+- **Layout:** the button sits below the scroll area in the layout, not over it, so it never covers a field. The scroll area fills the rest and ends where the button starts.
+- **Gradient:** the last 24 dp of the scroll area fades from `surface` at alpha 0 to `surface`. It ignores taps, and the list has at least 24 dp of bottom padding so the last field scrolls clear of it.
+- **Keyboard:** the scaffold resizes, so the button rides on top of the keyboard and the focused field scrolls to just above it. Below the button: **the system bar inset plus 16 dp** when the keyboard is closed, 16 dp when it is open. Not the larger of the two (Kuber's own rule): with three-button navigation that leaves the button touching the bar. Check with both gesture and three-button navigation.
+- **Nothing else sits with the button.** Help text goes in the form, as a quiet info line below the field it explains. Disabled until the form is valid (L10).
+- **Header:** a form closes, so its header has a close (x) button, not a back arrow.
+- **Fields:** each has an all-caps title above it, pickers included, and the title is not repeated inside the row. No preview card that only repeats what the fields show.
+
 ---
 
 ## Part M: Welcome and setup (if the app has one)
@@ -424,6 +434,7 @@ Shrink the release download size without changing behaviour. There is no hard ta
 17. **Sheets and pages that skip the start of their animation** because the first frame was built on the animation's clock (D2, L6). The values matched Kuber's and it still felt wrong. Record the opening and look at the first five frames.
 18. **Tabs that only faded.** Kuber slides the whole page (D2).
 19. **"Done" without a device.** Two rounds of changes were committed before anyone saw them on a screen.
+20. **A sticky submit in a full-width bar with a divider.** Kuber's add transaction page has only the button over a gradient (L12).
 
 ---
 

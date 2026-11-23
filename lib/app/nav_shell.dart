@@ -389,7 +389,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 22,
+                bottom: MullNavPill.bottomOf(context),
                 child: RepaintBoundary(
                   child: AnimatedBuilder(
                     animation: _hide,

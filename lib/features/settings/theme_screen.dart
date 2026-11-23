@@ -12,6 +12,7 @@ import '../../core/utils/wallpaper_seed.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/family_card.dart';
+import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/two_column_grid.dart';
 import 'settings_controller.dart';
 import 'settings_widgets.dart';
@@ -109,26 +110,9 @@ class ThemeScreen extends ConsumerWidget {
                 ),
               ),
               if (s.themeMode == ThemeMode.system)
-                Padding(
-                  padding: const EdgeInsets.only(left: Space.lg, top: Space.sm),
-                  child: Row(
-                    spacing: 6,
-                    children: <Widget>[
-                      Icon(
-                        Icons.info_outline_rounded,
-                        size: 14,
-                        color: c.onSurfaceVariant,
-                      ),
-                      Expanded(
-                        child: Text(
-                          'Applies when your phone is in dark mode',
-                          style: MullType.monoLabel.copyWith(
-                            color: c.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                const Padding(
+                  padding: EdgeInsets.only(left: Space.lg, top: Space.sm),
+                  child: InfoNote('Applies when your phone is in dark mode'),
                 ),
               const SizedBox(height: Space.lg),
               TwoColumnGrid(

@@ -18,10 +18,14 @@ import '../../shared/widgets/app_header.dart';
 import '../../shared/widgets/fields.dart';
 import '../../shared/widgets/icon_color_picker_sheet.dart';
 import '../../shared/widgets/app_snackbar.dart';
+import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/shelf_icon.dart';
 
 const int _nameMax = 80;
 const int _noteMax = 500;
+
+/// The fade where the form ends above the button.
+const double _fade = 24;
 
 /// Opens the shelf editor: new when [slug] is null, else edit. On create the
 /// editor replaces itself with the new shelf when [openAfterCreate], and
@@ -141,108 +145,105 @@ class _ShelfEditScreenState extends ConsumerState<ShelfEditScreen> {
         header: AppHeader(
           title: _editing ? 'Edit shelf' : 'New shelf',
           onBack: () => unawaited(Navigator.of(context).maybePop()),
+          backIcon: Icons.close_rounded,
+          backLabel: 'Close',
         ),
         body: !_loaded
             ? const SizedBox.shrink()
             : GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => FocusScope.of(context).unfocus(),
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, Space.xxl),
+                // Kuber's `KuberFormScaffold`: the button sits in the layout, not over
+                // the form, so a focused field scrolls to just above it and it rides
+                // on the keyboard. The fade at the end of the list is all there is
+                // between them.
+                child: Column(
                   children: <Widget>[
-                    HeaderPage.gap(),
-                    _Preview(name: _name.text.trim(), icon: _icon, color: _color),
-                    const SizedBox(height: Space.xl),
-                    LabelledField(
-                      label: 'Name',
-                      controller: _name,
-                      autofocus: !_editing,
-                      hint: 'Words for the viva',
-                      onChanged: (String v) {
-                        if (v.length > _nameMax) {
-                          _name.text = v.substring(0, _nameMax);
-                          _name.selection = const TextSelection.collapsed(offset: _nameMax);
-                        }
-                        setState(() {});
-                      },
+                    Expanded(
+                      child: Stack(
+                        children: <Widget>[
+                          ListView(
+                            padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, _fade),
+                            children: <Widget>[
+                              HeaderPage.gap(),
+                              LabelledField(
+                                label: 'Name',
+                                controller: _name,
+                                autofocus: !_editing,
+                                hint: 'Example: Viva Words',
+                                onChanged: (String v) {
+                                  if (v.length > _nameMax) {
+                                    _name.text = v.substring(0, _nameMax);
+                                    _name.selection = const TextSelection.collapsed(offset: _nameMax);
+                                  }
+                                  setState(() {});
+                                },
+                              ),
+                              const SizedBox(height: Space.lg),
+                              const _FieldLabel('Icon & colour'),
+                              _PickerRow(icon: _icon, color: _color, onTap: _pick),
+                              const SizedBox(height: Space.lg),
+                              _NoteField(controller: _note),
+                              if (!_editing) ...<Widget>[
+                                const SizedBox(height: Space.md),
+                                const InfoNote('You can add words or phrases to this shelf once you have created it.'),
+                              ],
+                            ],
+                          ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            height: _fade,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: <Color>[c.surface.withValues(alpha: 0), c.surface],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: Space.lg),
-                    _PickerRow(icon: _icon, color: _color, onTap: _pick),
-                    const SizedBox(height: Space.lg),
-                    _NoteField(controller: _note),
+                    SafeArea(
+                      top: false,
+                      // On top of the system bar's inset, not instead of it.
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.lg),
+                        child: AppButton(
+                          label: _editing ? 'Save' : 'Create shelf',
+                          fullWidth: true,
+                          onPressed: _canSave ? _save : null,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-      ),
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          color: c.surface,
-          border: Border(top: BorderSide(color: c.divider)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (!_editing) ...<Widget>[
-                  Text(
-                    'You can add words in the next step.',
-                    textAlign: TextAlign.center,
-                    style: MullType.bodySmall.copyWith(color: c.onSurfaceMuted),
-                  ),
-                  const SizedBox(height: Space.sm),
-                ],
-                AppButton(
-                  label: _editing ? 'Save' : 'Create shelf',
-                  fullWidth: true,
-                  onPressed: _canSave ? _save : null,
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
 }
 
-/// The live card: the tile and the name as the shelf will read.
-class _Preview extends StatelessWidget {
-  const _Preview({required this.name, required this.icon, required this.color});
+/// The title over a field, as [LabelledField] draws its own.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.label);
 
-  final String name;
-  final String? icon;
-  final int? color;
+  final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Container(
-      padding: const EdgeInsets.all(Space.lg),
-      decoration: BoxDecoration(
-        color: c.surfaceContainer,
-        borderRadius: Radii.cardR,
-        border: Border.all(color: c.outline),
-      ),
-      child: Row(
-        spacing: Space.lg,
-        children: <Widget>[
-          ShelfIcon(icon: icon, color: color, size: 56),
-          Expanded(
-            child: Text(
-              name.isEmpty ? 'Shelf name' : name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: MullType.title.copyWith(color: name.isEmpty ? c.onSurfaceMuted : c.onSurface),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: Space.sm),
+    child: Text(
+      label.toUpperCase(),
+      style: MullType.sectionHeader.copyWith(color: context.colors.onSurfaceVariant),
+    ),
+  );
 }
 
 /// Kuber's `KuberPickerRow`: 72dp, surface-container card, 1dp outline.
@@ -276,18 +277,11 @@ class _PickerRow extends StatelessWidget {
               children: <Widget>[
                 ShelfIcon(icon: icon, color: color),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        '${ShelfIcons.labelOf(icon)} · $colour',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: MullType.titleMedium.copyWith(color: c.onSurface),
-                      ),
-                      Text('Icon and colour', style: MullType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                    ],
+                  child: Text(
+                    '${ShelfIcons.labelOf(icon)} · $colour',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MullType.titleMedium.copyWith(color: c.onSurface),
                   ),
                 ),
                 Icon(Icons.chevron_right_rounded, size: 20, color: c.onSurfaceVariant),
@@ -312,8 +306,7 @@ class _NoteField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text('NOTE (OPTIONAL)', style: MullType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
-        const SizedBox(height: Space.sm),
+        const _FieldLabel('Note (optional)'),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(

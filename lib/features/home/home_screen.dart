@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/nav_bar.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
@@ -105,7 +106,7 @@ class HomeScreen extends ConsumerWidget {
           ],
         ),
         body: ListView(
-          padding: const EdgeInsets.only(bottom: Space.bottomSafe),
+          padding: EdgeInsets.only(bottom: Space.bottomSafe + MullNavPill.liftOf(context)),
           children: <Widget>[
             HeaderPage.gap(),
             const _WotdSection(),

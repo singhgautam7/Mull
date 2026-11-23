@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/nav_bar.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/user_db.dart';
 import '../../core/motion/motion.dart';
@@ -119,6 +120,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     final bool settling = _settling(watch: true);
     final ({Set<String> withWords, Set<String> withPhrases}) kinds = ref.watch(shelfKindsProvider);
     final String q = _search.text.trim().toLowerCase();
+    final Widget newShelf = SectionHeaderAction(
+      label: '+ New shelf',
+      semanticLabel: 'New shelf',
+      onTap: () => openShelfEditor(context),
+    );
 
     Progress of(Collection x) => progress[x.slug] ?? const Progress(0, 0);
     // A placeholder that flashes is worse than none: while the counts settle
@@ -157,6 +163,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     final List<Collection> bands = all.where((Collection x) => x.kind == 'band' && visible(x)).toList()..sort(compare);
     final List<Collection> topics = all.where((Collection x) => x.kind != 'band' && !x.isUsers && visible(x)).toList()..sort(compare);
     final List<Collection> yours = all.where((Collection x) => x.isUsers && visible(x)).toList()..sort(compare);
+    final bool yoursSettling = settling && yours.isEmpty && _filter == _Filter.all && q.isEmpty;
 
     return Scaffold(
       body: HeaderPage(
@@ -284,10 +291,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: Space.section),
+                    // My Shelf's action is a 48dp target: half the gap is already in it.
+                    SizedBox(height: yours.isNotEmpty || yoursSettling ? Space.section / 2 : Space.section),
                     ]),
                     SliverList.list(key: const ValueKey<String>('yours'), children: <Widget>[
-                    if (settling && yours.isEmpty && _filter == _Filter.all && q.isEmpty)
+                    if (yoursSettling)
                       // Bookmarks and From my reading always exist, so two
                       // rows is the least the section will be. Nothing is
                       // drawn until the read has actually taken a moment.
@@ -295,7 +303,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
-                            const SectionHeader(label: 'My Shelf', trailing: SectionNote('yours to fill')),
+                            SectionHeader(label: 'My Shelf', trailing: newShelf),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: Space.screen),
                               child: Container(
@@ -314,7 +322,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                         ),
                       )
                     else if (yours.isNotEmpty) ...<Widget>[
-                      const SectionHeader(label: 'My Shelf', trailing: SectionNote('yours to fill')),
+                      SectionHeader(label: 'My Shelf', trailing: newShelf),
                       YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
                     ],
                     if (yours.isNotEmpty) const SizedBox(height: Space.section),
@@ -396,7 +404,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           child: Text('No shelves match', style: MullType.body.copyWith(color: c.onSurfaceMuted)),
                         ),
                       ),
-                    const SizedBox(height: Space.bottomSafe),
+                    SizedBox(height: Space.bottomSafe + MullNavPill.liftOf(context)),
                     ]),
                   ],
                 ),

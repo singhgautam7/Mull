@@ -10,6 +10,7 @@ import '../../core/theme/typography.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/definable_text.dart';
+import '../../shared/widgets/quote_block.dart';
 import 'note_sheet.dart';
 
 /// HANDOFF 3.6. IDIOM label, the phrase at 36, register chip, then WHAT IT
@@ -67,9 +68,7 @@ class _IdiomSheet extends ConsumerWidget {
         DefinableText(idiom.meaning, style: MullType.body.copyWith(color: c.onSurface)),
         if (idiom.example != null) ...<Widget>[
           label('IN CONTEXT'),
-          Container(
-            padding: const EdgeInsets.only(left: Space.md),
-            decoration: BoxDecoration(border: Border(left: BorderSide(color: c.primary, width: 2))),
+          QuoteBlock(
             child: Text(
               idiom.example!,
               style: MullType.body.copyWith(color: c.onSurfaceVariant, fontStyle: FontStyle.italic),

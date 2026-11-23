@@ -76,12 +76,32 @@ void main() {
       expect(find.bySemanticsLabel('Bookmark'), findsNothing);
       expect(find.bySemanticsLabel('Remove bookmark'), findsNothing);
       expect(find.text('Add to shelf'), findsOneWidget);
-      expect(find.bySemanticsLabel('Add or edit a note'), findsOneWidget);
+      expect(find.bySemanticsLabel('Add note'), findsOneWidget);
       expect(find.bySemanticsLabel('Share'), findsOneWidget);
       expect(find.byIcon(Icons.library_add_outlined), findsOneWidget);
       expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
       expect(Icons.sticky_note_2_outlined, isNot(Icons.library_add_outlined));
       await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  testWidgets('a word with a note: the note button is on and the note sits under the entry', (WidgetTester tester) async {
+    await tester.runAsync(() async {
+      await repo.putNote(rose.key, 'a note of mine');
+      await open(tester);
+      expect(find.byIcon(Icons.sticky_note_2_outlined), findsNothing);
+      final Finder button = find.byIcon(Icons.sticky_note_2_rounded);
+      expect(button, findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('YOUR NOTE')).dy,
+        greaterThan(tester.getTopLeft(find.text(rose.headword).first).dy),
+      );
+      await tester.tap(button);
+      await settle(tester);
+      expect(find.text('Your note on \u201c${rose.headword}\u201d', findRichText: true), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await tester.pump();
     });
   });
 

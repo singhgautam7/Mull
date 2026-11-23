@@ -31,7 +31,10 @@ class SectionHeader extends StatelessWidget {
     final MullColors c = context.colors;
     return Padding(
       padding: inset
-          ? const EdgeInsets.fromLTRB(Space.screen, 2, Space.screen, Space.row)
+          // An action's 48dp hit region already holds the space around the text.
+          ? trailing is SectionHeaderAction
+              ? const EdgeInsets.symmetric(horizontal: Space.screen)
+              : const EdgeInsets.fromLTRB(Space.screen, 2, Space.screen, Space.row)
           : EdgeInsets.zero,
       // Both sides keep their natural width (each may take at most half, so
       // the largest font scale wraps instead of overflowing) and spaceBetween
@@ -65,12 +68,14 @@ class SectionHeaderAction extends StatelessWidget {
   const SectionHeaderAction({
     required this.label,
     required this.onTap,
+    this.icon,
     this.semanticLabel,
     super.key,
   });
 
   final String label;
   final VoidCallback onTap;
+  final IconData? icon;
   final String? semanticLabel;
 
   @override
@@ -87,7 +92,14 @@ class SectionHeaderAction extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
           child: Align(
             widthFactor: 1,
-            child: Text(label, style: MullType.monoLabel.copyWith(color: c.accent)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: Space.xs,
+              children: <Widget>[
+                if (icon != null) Icon(icon, size: 14, color: c.accent),
+                Flexible(child: Text(label, style: MullType.monoLabel.copyWith(color: c.accent))),
+              ],
+            ),
           ),
         ),
       ),
@@ -107,4 +119,26 @@ class SectionNote extends StatelessWidget {
     text,
     style: MullType.monoLabel.copyWith(color: context.colors.onSurfaceMuted),
   );
+}
+
+/// A quiet line of help with an info glyph, under the control it explains.
+class InfoNote extends StatelessWidget {
+  const InfoNote(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 6,
+      children: <Widget>[
+        Icon(Icons.info_outline_rounded, size: 14, color: c.onSurfaceVariant),
+        Expanded(
+          child: Text(text, style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+        ),
+      ],
+    );
+  }
 }

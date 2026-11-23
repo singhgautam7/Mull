@@ -67,6 +67,7 @@ class AppHeader extends StatelessWidget {
     this.onBack,
     this.actions = const <Widget>[],
     this.backLabel = 'Back',
+    this.backIcon = Icons.arrow_back_rounded,
     this.collapsed = false,
     this.subtitle,
     this.pillTitle,
@@ -83,6 +84,9 @@ class AppHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final List<Widget> actions;
   final String backLabel;
+
+  /// A form closes (`close_rounded`) rather than goes back.
+  final IconData backIcon;
 
   /// Only outside a [HeaderPage] (the legacy [CollapseOnScroll] path): the
   /// title steps to `screenTitle` and the bar takes `surface` and a hairline.
@@ -140,7 +144,7 @@ class AppHeader extends StatelessWidget {
         child: Row(
           children: <Widget>[
             if (hasBack) ...<Widget>[
-              AppIconButton(icon: Icons.arrow_back_rounded, onPressed: onBack, semanticLabel: backLabel),
+              AppIconButton(icon: backIcon, onPressed: onBack, semanticLabel: backLabel),
               const SizedBox(width: 6),
             ],
             Expanded(
@@ -199,7 +203,7 @@ class AppHeader extends StatelessWidget {
         child: Row(
           children: <Widget>[
             if (hasBack) ...<Widget>[
-              AppIconButton(icon: Icons.arrow_back_rounded, onPressed: onBack, semanticLabel: backLabel),
+              AppIconButton(icon: backIcon, onPressed: onBack, semanticLabel: backLabel),
               const SizedBox(width: 6),
             ],
             Expanded(

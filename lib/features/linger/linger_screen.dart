@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/nav_bar.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/database/mix_repository.dart';
 import '../../core/database/user_db.dart';
@@ -345,9 +346,9 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
               child: SkeletonCrossFade(
                 loading: _loading,
                 placeholder: _showSkeleton
-                    ? const Padding(
-                        padding: EdgeInsets.fromLTRB(14, 34, 14, 104),
-                        child: SkeletonWordCard(),
+                    ? Padding(
+                        padding: EdgeInsets.fromLTRB(14, 34, 14, 104 + MullNavPill.liftOf(context)),
+                        child: const SkeletonWordCard(),
                       )
                     : const SizedBox.shrink(),
                 child: _loading
@@ -372,7 +373,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
                                 return Transform.scale(scale: 1 - 0.04 * t, child: child);
                               },
                               child: Padding(
-                                padding: const EdgeInsets.fromLTRB(14, 34, 14, 104),
+                                padding: EdgeInsets.fromLTRB(14, 34, 14, 104 + MullNavPill.liftOf(context)),
                                 child: WordCard(
                                   word: data.word,
                                   examples: data.examples,
@@ -449,7 +450,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
 
     final bool scoped = _scope != null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 34, 14, 104),
+      padding: EdgeInsets.fromLTRB(14, 34, 14, 104 + MullNavPill.liftOf(context)),
       child: Container(
         padding: const EdgeInsets.all(Space.xl),
         decoration: BoxDecoration(

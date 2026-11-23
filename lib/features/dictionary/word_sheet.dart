@@ -220,7 +220,6 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
           ArrivalTopRow(sourceHint: sourceHint),
           const SizedBox(height: Space.lg),
         ],
-        NoteSection(noteKey: wordKey, title: word.headword, showAdd: false),
         if (contexts.isNotEmpty) ...<Widget>[
           _ContextCard(
             contexts: contexts,
@@ -312,6 +311,7 @@ class _WordSheetState extends ConsumerState<_WordSheet> {
             style: MullType.monoLabel.copyWith(color: c.onSurfaceMuted),
           ),
         ],
+        if (!late) NoteSection(noteKey: wordKey, title: word.headword, showAdd: false),
       ],
     );
   }
@@ -346,6 +346,7 @@ class _WordSheetActionsState extends ConsumerState<_WordSheetActions> {
     final String wordKey = widget.wordKey;
     final DictionaryWord? word = _word;
     if (word == null) return const SizedBox.shrink();
+    final bool hasNote = ref.watch(noteProvider(wordKey).select((AsyncValue<String?> n) => n.value != null));
     return Row(
       spacing: Space.md,
       children: <Widget>[
@@ -363,9 +364,10 @@ class _WordSheetActionsState extends ConsumerState<_WordSheetActions> {
           ),
         ),
         AppIconButton(
-          icon: Icons.sticky_note_2_outlined,
+          icon: hasNote ? Icons.sticky_note_2_rounded : Icons.sticky_note_2_outlined,
           size: 48,
-          semanticLabel: 'Add or edit a note',
+          active: hasNote,
+          semanticLabel: hasNote ? 'Edit note' : 'Add note',
           onPressed: () => showNoteSheet(context, wordKey: wordKey, headword: word.headword),
         ),
         AppIconButton(

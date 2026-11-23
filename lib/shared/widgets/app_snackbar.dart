@@ -7,7 +7,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
-import 'app_button.dart';
 import 'app_icon_button.dart';
 
 /// The toast message specification.
@@ -229,7 +228,10 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final SnackMessage m = widget.message;
-    final Color barColor = m.isError ? c.danger : c.primary;
+    // Kuber: an error is its container, anything else the raised surface.
+    final Color bg = m.isError ? c.dangerContainer : c.surfaceContainerHigh;
+    final Color fg = m.isError ? c.onDangerContainer : c.onSurface;
+    final Color accent = m.isError ? c.danger : c.primary;
     final double topPadding = MediaQuery.paddingOf(context).top;
 
     return Positioned(
@@ -261,100 +263,85 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
           onVerticalDragStart: _onDragStart,
           onVerticalDragUpdate: _onDragUpdate,
           onVerticalDragEnd: _onDragEnd,
-          child: Material(
-            color: Colors.transparent,
-            child: Semantics(
-              liveRegion: true,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: c.surfaceContainer,
-                  borderRadius: Radii.cardR,
-                  border: Border.all(
-                    color: m.isError ? c.danger : c.outline,
-                  ),
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: c.shadow,
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: <Widget>[
-                    // Left bar indicator
-                    Container(
-                      width: 4,
-                      height: 44,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: barColor,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: Space.md),
-                    Icon(
-                      m.isError
-                          ? Icons.error_outline_rounded
-                          : Icons.check_circle_outline_rounded,
-                      color: barColor,
-                      size: 20,
-                    ),
-                    const SizedBox(width: Space.md),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              m.text,
-                              style: MullType.titleMedium.copyWith(
-                                fontSize: 13.5,
-                                color: c.onSurface,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+          // Kuber's body: an icon in the accent, the message, the action, close,
+          // and the timer along the bottom. The shape clips everything in it.
+          child: Semantics(
+            liveRegion: true,
+            child: Material(
+              color: bg,
+              shape: RoundedRectangleBorder(
+                borderRadius: Radii.cardR,
+                side: BorderSide(color: c.outline),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 56),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(Space.lg, Space.xs, Space.xs, Space.xs),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(
+                            m.isError ? Icons.error_rounded : Icons.check_circle_rounded,
+                            color: accent,
+                            size: 20,
+                          ),
+                          const SizedBox(width: Space.md),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              child: Text(m.text, style: MullType.label.copyWith(color: fg)),
                             ),
-                            const SizedBox(height: Space.sm),
-                            AnimatedBuilder(
-                              animation: _progressCtrl,
-                              builder: (BuildContext context, _) {
-                                return LinearProgressIndicator(
-                                  value: 1.0 - _progressCtrl.value,
-                                  minHeight: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    c.primary,
+                          ),
+                          if (m.actionLabel != null)
+                            Semantics(
+                              button: true,
+                              label: m.actionLabel,
+                              excludeSemantics: true,
+                              child: Pressable(
+                                kind: PressKind.chip,
+                                morphCorners: false,
+                                onTap: () => _handleAction(m.onAction),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: Space.md),
+                                    child: Align(
+                                      widthFactor: 1,
+                                      heightFactor: 1,
+                                      child: Text(
+                                        m.actionLabel!.toUpperCase(),
+                                        style: MullType.label.copyWith(color: accent, letterSpacing: 0.24).weight(700),
+                                      ),
+                                    ),
                                   ),
-                                  backgroundColor: c.outline,
-                                  borderRadius: BorderRadius.circular(1),
-                                );
-                              },
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
+                          AppIconButton(
+                            icon: Icons.close_rounded,
+                            filled: false,
+                            tint: fg,
+                            semanticLabel: 'Dismiss',
+                            onPressed: widget.onRequestClose,
+                          ),
+                        ],
                       ),
                     ),
-                    if (m.actionLabel != null)
-                      AppButton(
-                        label: m.actionLabel!,
-                        type: AppButtonType.secondary,
-                        compact: true,
-                        onPressed: () => _handleAction(m.onAction),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(Space.lg, 0, Space.lg, 10),
+                    child: SizedBox(
+                      height: 4,
+                      width: double.infinity,
+                      child: CustomPaint(
+                        painter: _TimerPainter(_progressCtrl, indicator: accent, track: fg.withValues(alpha: 0.16)),
                       ),
-                    AppIconButton(
-                      icon: Icons.close_rounded,
-                      glyphSize: 18,
-                      filled: false,
-                      tint: c.onSurfaceVariant,
-                      semanticLabel: 'Dismiss',
-                      onPressed: widget.onRequestClose,
                     ),
-                    const SizedBox(width: Space.xs),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -362,4 +349,31 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget>
       ),
     );
   }
+}
+
+/// Kuber's snackbar timer: a flat 4dp indicator and track with a 4dp gap and
+/// round ends, running down.
+class _TimerPainter extends CustomPainter {
+  _TimerPainter(this.elapsed, {required this.indicator, required this.track}) : super(repaint: elapsed);
+
+  final Animation<double> elapsed;
+  final Color indicator;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double h = size.height;
+    final Radius r = Radius.circular(h / 2);
+    final double v = (1 - elapsed.value).clamp(0.0, 1.0);
+    final double w = v * size.width - (v < 1 ? 2 : 0);
+    void bar(double from, double to, Color color) {
+      if (to > from) canvas.drawRRect(RRect.fromLTRBR(from, 0, to, h, r), Paint()..color = color);
+    }
+
+    bar(0, w, indicator);
+    bar(w > 0 ? w + 4 : 0, size.width, track);
+  }
+
+  @override
+  bool shouldRepaint(_TimerPainter old) => old.indicator != indicator || old.track != track || old.elapsed != elapsed;
 }

@@ -169,6 +169,21 @@ void main() {
     }
   });
 
+  testWidgets('the pill clears a three-button system bar and floats over the gesture handle', (WidgetTester tester) async {
+    addTearDown(tester.view.reset);
+    final double dpr = tester.view.devicePixelRatio;
+    Future<double> gapWith(double inset) async {
+      tester.view.padding = FakeViewPadding(bottom: inset * dpr);
+      tester.view.viewPadding = FakeViewPadding(bottom: inset * dpr);
+      await tester.pumpAndSettle();
+      return tester.getBottomLeft(find.byType(NavShell)).dy - tester.getBottomLeft(find.byType(MullNavPill)).dy;
+    }
+
+    await pump(tester);
+    expect(await gapWith(24), 22);
+    expect(await gapWith(48), 56);
+  });
+
   testWidgets("a tab change slides both pages (Kuber's pager); a far tab comes from next door", (WidgetTester tester) async {
     final SemanticsHandle h = tester.ensureSemantics();
     await pump(tester);

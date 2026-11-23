@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/nav_bar.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/motion/pressable.dart';
 import '../../core/providers.dart';
@@ -154,7 +155,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
       body: HeaderPage(
         header: const AppHeader(title: 'More'),
         body: ListView(
-          padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, Space.bottomSafe),
+          padding: EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, Space.bottomSafe + MullNavPill.liftOf(context)),
           children: <Widget>[
             HeaderPage.gap(),
             SettingsGroup(

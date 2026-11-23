@@ -92,7 +92,7 @@ void main() {
   });
 
   testWidgets(
-    'AppSnackbar shows timed top snackbar with linear progress indicator and close button',
+    'AppSnackbar shows timed top snackbar with a countdown and close button',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -116,7 +116,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('Test snackbar message'), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((Widget w) => w is CustomPaint && '${w.painter.runtimeType}' == '_TimerPainter'),
+        findsOneWidget,
+      );
       expect(find.byIcon(Icons.close_rounded), findsOneWidget);
 
       // Dismiss by tapping close
