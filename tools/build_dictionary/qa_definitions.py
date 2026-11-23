@@ -294,10 +294,11 @@ class QAChecker:
         t = token.lower()
         if t.endswith("'s") and len(t) > 2:
             t = t[:-2]
-        if t in self.hw_ranks:
-            return self.hw_ranks[t]
-        if t in self.alias_ranks:
-            return self.alias_ranks[t]
+        r1 = self.hw_ranks.get(t, 999999)
+        r2 = self.alias_ranks.get(t, 999999)
+        best = min(r1, r2)
+        if best < 999999:
+            return best
         # Suffix stripping fallback for inflections not explicitly in aliases
         for suf in ("s", "es", "ed", "ing", "ly"):
             if t.endswith(suf) and len(t) - len(suf) >= 3:

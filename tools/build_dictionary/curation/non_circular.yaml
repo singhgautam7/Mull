@@ -16,6 +16,15 @@ bilingualism|noun|1:
   synonyms:
   - fluency
   - multilingualism
+brimming|adj|1:
+  definition_full: Completely full to the upper edge, with no extra room left for
+    anything else.
+  definition_short: Filled to the very top edge.
+  example: She carried a glass brimming with cool water across the room.
+  synonyms:
+  - overflowing
+  - packed
+  - full
 candidacy|noun|1:
   definition_full: The period during which someone seeks election or appointment to
     a political office or official role.
@@ -61,6 +70,15 @@ chaplaincy|noun|1:
   synonyms:
   - ministry
   - pastoral care
+conciliatory|adj|1:
+  definition_full: Intended to end conflict or regain goodwill by showing willingness
+    to compromise.
+  definition_short: Intended to end conflict or regain goodwill.
+  example: The ambassador offered a conciliatory gesture to ease cross-border tensions.
+  synonyms:
+  - peaceable
+  - appeasing
+  - pacifying
 cottager|noun|1:
   definition_full: Someone who resides in a small country home, traditionally working
     on nearby land.
@@ -115,6 +133,25 @@ dualism|noun|1:
   - division
   - dichotomy
   - polarity
+educative|adj|1:
+  definition_full: Providing useful instruction or giving learners valuable practical
+    knowledge.
+  definition_short: Helping to provide useful instruction or learning.
+  example: The visit to the science museum proved to be an educative trip for the
+    children.
+  synonyms:
+  - instructive
+  - informative
+  - enlightening
+enlightening|adj|1:
+  definition_full: Giving greater insight, clarity, and understanding about a complex
+    subject.
+  definition_short: Giving greater insight, clarity, and understanding.
+  example: Their discussion offered an enlightening view on modern city planning.
+  synonyms:
+  - informative
+  - revealing
+  - instructive
 falconry|noun|1:
   definition_full: The traditional sport or practice of hunting wild quarry using
     trained hawks and birds of prey.
@@ -123,6 +160,15 @@ falconry|noun|1:
   synonyms:
   - hawking
   - hunting
+footed|adj|1:
+  definition_full: Having lower limbs or base supports of a specified shape, number,
+    or style.
+  definition_short: Having lower limbs or base supports of a particular kind.
+  example: The antique desk stood on four claw-footed wooden legs.
+  synonyms:
+  - supported
+  - legged
+  - based
 futurist|noun|1:
   definition_full: A person who studies modern trends and technologies to anticipate
     coming developments in society.
@@ -162,6 +208,46 @@ idealist|noun|2:
   - dreamer
   - visionary
   - romantic
+incalculable|adj|2:
+  definition_full: Far too vast or numerous to ever be determined accurately, or impossible
+    to forecast.
+  definition_short: Far too vast or numerous to ever be determined accurately.
+  example: The storm caused incalculable damage to roads and farm buildings along
+    the coast.
+  synonyms:
+  - immeasurable
+  - countless
+  - untold
+  - infinite
+inconspicuous|adj|1:
+  definition_full: Blending easily into the background so that others do not notice
+    or pay attention.
+  definition_short: Not easily noticed or drawing attention.
+  example: The security camera was hidden in an inconspicuous spot beneath the roof.
+  synonyms:
+  - unobtrusive
+  - subtle
+  - unremarkable
+  - discreet
+incriminating|adj|1:
+  definition_full: Showing clear signs that someone participated in an unlawful act
+    or serious wrongdoing.
+  definition_short: Indicating that someone is guilty of a wrongdoing.
+  example: Police discovered an incriminating message sent from the suspect's phone.
+  synonyms:
+  - damaging
+  - implicating
+  - condemning
+indisputable|adj|1:
+  definition_full: Completely certain, proven beyond doubt, and impossible to argue
+    against reasonably.
+  definition_short: Completely certain and impossible to argue against.
+  example: The video recording provided indisputable proof of what had happened.
+  synonyms:
+  - undeniable
+  - certain
+  - unquestionable
+  - proven
 knacker|noun|1:
   definition_full: A person who buys old horses for slaughter, or someone who takes
     apart old vehicles and ships for scrap.
@@ -191,6 +277,15 @@ lineage|noun|1:
   - descent
   - pedigree
   - heritage
+longish|adj|1:
+  definition_full: Moderately extended in size, distance, or time, stretching out
+    somewhat.
+  definition_short: Rather extended in size, distance, or time.
+  example: They took a longish break before resuming their walk along the coast path.
+  synonyms:
+  - extended
+  - prolonged
+  - drawn-out
 manhood|noun|1:
   definition_full: The condition or period of life of being an adult male, or qualities
     traditionally associated with that stage.
@@ -241,6 +336,15 @@ personage|noun|1:
   - notable
   - celebrity
   - figure
+populous|adj|1:
+  definition_full: Containing a very large number of residents living within a shared
+    territory.
+  definition_short: Inhabited by a great number of residents.
+  example: Tokyo remains one of the most populous urban centres anywhere in the world.
+  synonyms:
+  - crowded
+  - densely-inhabited
+  - teeming
 predation|noun|1:
   definition_full: The biological interaction in which one creature captures, kills,
     and feeds on another animal.
@@ -250,6 +354,15 @@ predation|noun|1:
   synonyms:
   - hunting
   - carnivory
+riskless|adj|1:
+  definition_full: Carrying no chance of loss, financial failure, or personal danger.
+  definition_short: Involving no chance of loss, failure, or danger.
+  example: No financial investment is ever completely riskless, even with government
+    backing.
+  synonyms:
+  - safe
+  - secure
+  - certain
 saddler|noun|1:
   definition_full: A skilled craftsperson who works with leather to design, make,
     and mend equipment for riding horses.

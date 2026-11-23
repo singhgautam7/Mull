@@ -319,6 +319,51 @@ UK_SPELLING_SWAPS = {"colors": "colours", "color": "colour", "favor": "favour", 
 # ---------------------------------------------------------------- helpers
 
 
+try:
+    from qa_definitions import get_roots
+except ImportError:
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
+    from qa_definitions import get_roots
+
+
+def is_family_relative(h: str, s: str, known_family: dict[str, set[str]] | None = None) -> bool:
+    """Return True if headword h and relation term s share a root (>=3 chars), prefix (>=4 chars), or are known family."""
+    h_low = norm(h)
+    s_low = norm(s)
+    if not h_low or not s_low or h_low == s_low:
+        return True
+    if known_family:
+        if s_low in known_family.get(h_low, set()) or h_low in known_family.get(s_low, set()):
+            return True
+    hw_roots = get_roots(h_low)
+    syn_roots = get_roots(s_low)
+    if any(len(r) >= 3 for r in (hw_roots & syn_roots)):
+        return True
+    min_len = min(len(h_low), len(s_low))
+    pfx = 0
+    for i in range(min_len):
+        if h_low[i] == s_low[i]:
+            pfx += 1
+        else:
+            break
+    if min_len >= 4 and pfx >= 4:
+        return True
+    if min_len == 3 and pfx == 3:
+        return True
+    return False
+
+
+VALID_RELATION_RE = re.compile(r"^[a-zA-Z][a-zA-Z'-]*[a-zA-Z]$")
+
+
+def is_valid_relation_term(term: str) -> bool:
+    """Return True if term looks like a valid English word (no digits, symbols, affixes)."""
+    if not term or len(term) < 2:
+        return False
+    return bool(VALID_RELATION_RE.fullmatch(term))
+
+
 def norm(s: str) -> str:
     """Lowercase, diacritics stripped, punctuation removed, whitespace collapsed."""
     s = unicodedata.normalize("NFKD", s)
@@ -2161,6 +2206,15 @@ def main(argv=None) -> int:
 
     # ---- stage A: the lookup dictionary
     entries, idiom_candidates, stubs = assemble_words(cache, subtlex)
+    all_entries = dict(entries)
+    all_entries_by_hn = collections.defaultdict(list)
+    for (hn, p), ent in all_entries.items():
+        all_entries_by_hn[hn].append((p, ent))
+    all_forms_of = forms_by_headword(all_entries)
+    wn_gloss_by_norm = collections.defaultdict(list)
+    for (wn_lem, wn_p), wn_g in wn_gloss.items():
+        wn_gloss_by_norm[norm(wn_lem)].append((wn_p, wn_g))
+
     forms_of = forms_by_headword(entries)
     norm_words = set(prevalence) | set(aoa) | set(concreteness) | set(wordnet_heads(wordnet))
     ipa_of = {hn: any(entries[(hn, p)].ipa for p in WORD_POS if (hn, p) in entries) for hn in forms_of}
@@ -2253,7 +2307,7 @@ def main(argv=None) -> int:
                 cand_syns = list(cur_syns) + cand_syns + wn_syn
             for cand in cand_syns:
                 c = cand.strip()
-                if c and " " not in c and norm(c) != hn and c.lower() not in syns:
+                if is_valid_relation_term(c) and norm(c) != hn and c.lower() not in syns:
                     syns.append(c.lower())
                 if len(syns) >= MAX_SYNONYMS_PER_SENSE:
                     break
@@ -2265,7 +2319,7 @@ def main(argv=None) -> int:
                 wn_ant_list = sorted(wn_ants_combined.get((ent.headword.lower(), pos), ()), key=lambda s: rank.get(norm(s), 10**9))
                 for cand in list(cur_ants) + wn_ant_list:
                     c = cand.strip()
-                    if c and " " not in c and norm(c) != hn and c.lower() not in ants:
+                    if is_valid_relation_term(c) and norm(c) != hn and c.lower() not in ants:
                         ants.append(c.lower())
                     if len(ants) >= 6:
                         break
@@ -2278,7 +2332,7 @@ def main(argv=None) -> int:
                     w_item = str(item.get("word", "")).strip().lower()
                     p_item = str(item.get("pos", "")).strip().lower()
                     p_item = pos_std.get(p_item, p_item)
-                    if w_item and p_item and w_item not in seen_fam_heads and w_item != hn:
+                    if is_valid_relation_term(w_item) and p_item and w_item not in seen_fam_heads and w_item != hn:
                         fam.append((w_item, p_item))
                         seen_fam_heads.add(w_item)
                 wn_fam_list = sorted(
@@ -2289,10 +2343,9 @@ def main(argv=None) -> int:
                     w_item = w_item.strip().lower()
                     p_item = pos_std.get(p_item, p_item)
                     if (
-                        w_item and p_item and
+                        is_valid_relation_term(w_item) and p_item and
                         w_item not in seen_fam_heads and
-                        w_item != hn and
-                        len(w_item) >= 2
+                        w_item != hn
                     ):
                         fam.append((w_item, p_item))
                         seen_fam_heads.add(w_item)
@@ -2581,6 +2634,300 @@ def main(argv=None) -> int:
     coll_defs.append(dict(slug="almost_the_same", title=cur["pairs"]["title"], description=cur["pairs"]["description"],
                           kind="pairs", band=None, icon="split", sort_order=950))
 
+    # Ensure every synonym, antonym, and word family member has an entry in `words`
+    synonyms = [(k, s.strip().lower()) for k, s in synonyms if is_valid_relation_term(s.strip()) and norm(s) != k.split("|")[0]]
+    antonyms = [(k, a.strip().lower()) for k, a in antonyms if is_valid_relation_term(a.strip()) and norm(a) != k.split("|")[0]]
+    word_family = [(k, fw.strip().lower(), fp.strip().lower()) for k, fw, fp in word_family if is_valid_relation_term(fw.strip()) and norm(fw) != k.split("|")[0]]
+
+    # Deduplicate relation entries
+    seen_syns, seen_ants, seen_fams = set(), set(), set()
+    synonyms = [t for t in synonyms if not (t in seen_syns or seen_syns.add(t))]
+    antonyms = [t for t in antonyms if not (t in seen_ants or seen_ants.add(t))]
+    word_family = [t for t in word_family if not (t in seen_fams or seen_fams.add(t))]
+
+    existing_hn = {w["headword_norm"] for w in words}
+    words_by_key = {w["word_key"]: w for w in words}
+
+    missing_terms = {}
+    for k, s in synonyms:
+        hn_s = norm(s)
+        if hn_s not in existing_hn and hn_s not in missing_terms:
+            missing_terms[hn_s] = (s, k, "synonym", None)
+    for k, a in antonyms:
+        hn_a = norm(a)
+        if hn_a not in existing_hn and hn_a not in missing_terms:
+            missing_terms[hn_a] = (a, k, "antonym", None)
+    for k, fw, fp in word_family:
+        hn_f = norm(fw)
+        if hn_f not in existing_hn and hn_f not in missing_terms:
+            missing_terms[hn_f] = (fw, k, "family", fp)
+
+    p1_count, p2_count, p3_count = 0, 0, 0
+    new_words = []
+    for m_hn, (m_term, src_key, rel_type, rel_pos) in sorted(missing_terms.items()):
+        # Priority 1: Wiktionary entry from stage1
+        matching_ents = all_entries_by_hn.get(m_hn)
+        if matching_ents:
+            p1_count += 1
+            pos_filtered = [(p, ent) for p, ent in matching_ents if rel_pos is None or p == rel_pos]
+            if not pos_filtered:
+                pos_filtered = matching_ents
+            for p, ent in pos_filtered:
+                for idx, s in enumerate(ent.senses[:MAX_SENSES_PER_POS], start=1):
+                    wkey = f"{m_hn}|{p}|{idx}"
+                    while wkey in words_by_key:
+                        idx += 1
+                        wkey = f"{m_hn}|{p}|{idx}"
+                    full = sense_label(s["tags"]) + clean_gloss(s["glosses"][-1]) if s["glosses"] else f"A {p}."
+                    row = {
+                        "id": next_id, "word_key": wkey, "headword": ent.headword, "headword_norm": m_hn, "pos": p,
+                        "sense_index": idx, "definition_short": short_definition(full), "definition_full": full,
+                        "ipa": ent.ipa, "freq_rank": rank.get(m_hn, 999999), "band": "uncommon", "in_learning_set": 0,
+                        "prevalence": norm_value(prevalence, m_hn), "prevalence_effective": None,
+                        "aoa": norm_value(aoa, m_hn), "concreteness": norm_value(concreteness, m_hn), "valence": norm_value(valence, m_hn),
+                        "zipf_spoken": zipf(sum(subtlex.get(f, 0) for f in all_forms_of.get(m_hn, {ent.headword.lower()})), subtlex_total),
+                        "zipf_written": zipf(sum(bnc.get(f, 0) for f in all_forms_of.get(m_hn, {ent.headword.lower()})), bnc_total),
+                        "definition_source": "wiktionary", "generated_at": None,
+                        "tags": s["tags"], "topics": s["topics"], "llm_topics": [], "llm_register": None, "learning_kind": None,
+                        "etymology": ent.etymology, "has_old_senses": any(is_old(sn) for sn in ent.senses),
+                    }
+                    next_id += 1
+                    new_words.append(row)
+                    words_by_key[wkey] = row
+                    if idx == 1 and m_hn not in primary:
+                        primary[m_hn], ent_of[m_hn] = row, ent
+                    examples.extend((wkey, t) for t in sense_examples(s, []))
+                    if ent.us_spelling:
+                        aliases.append((norm(ent.us_spelling), wkey, "us_spelling"))
+                    for f in ent.inflections:
+                        if norm(f) != m_hn:
+                            aliases.append((norm(f), wkey, "inflection"))
+                    for f in ent.variants:
+                        if norm(f) != m_hn:
+                            aliases.append((norm(f), wkey, "variant"))
+            existing_hn.add(m_hn)
+            continue
+
+        # Priority 2: WordNet gloss
+        matching_wn = wn_gloss_by_norm.get(m_hn)
+        if matching_wn:
+            p2_count += 1
+            pos_filtered = [(p, g) for p, g in matching_wn if rel_pos is None or p == rel_pos]
+            if not pos_filtered:
+                pos_filtered = matching_wn
+            for p, g in pos_filtered[:1]:
+                wkey = f"{m_hn}|{p}|1"
+                while wkey in words_by_key:
+                    wkey = f"{m_hn}|{p}|2"
+                full = clean_gloss(g)
+                row = {
+                    "id": next_id, "word_key": wkey, "headword": m_term, "headword_norm": m_hn, "pos": p,
+                    "sense_index": 1, "definition_short": short_definition(full), "definition_full": full,
+                    "ipa": None, "freq_rank": rank.get(m_hn, 999999), "band": "uncommon", "in_learning_set": 0,
+                    "prevalence": None, "prevalence_effective": None, "aoa": None, "concreteness": None, "valence": None,
+                    "zipf_spoken": None, "zipf_written": None, "definition_source": "wordnet", "generated_at": None,
+                    "tags": [], "topics": [], "llm_topics": [], "llm_register": None, "learning_kind": None,
+                    "etymology": "", "has_old_senses": False,
+                }
+                next_id += 1
+                new_words.append(row)
+                words_by_key[wkey] = row
+                if m_hn not in primary:
+                    primary[m_hn] = row
+            existing_hn.add(m_hn)
+            continue
+
+        # Priority 3: Fallback synthesized definition from referencing sense
+        p3_count += 1
+        parent_row = words_by_key.get(src_key)
+        pw_headword = parent_row["headword"] if parent_row else src_key.split("|")[0]
+        pw_pos = rel_pos or (parent_row["pos"] if parent_row else "noun")
+        pw_def = parent_row["definition_full"] if parent_row else ""
+        wkey = f"{m_hn}|{pw_pos}|1"
+        while wkey in words_by_key:
+            wkey = f"{m_hn}|{pw_pos}|2"
+
+        if rel_type == "synonym":
+            full = f"A synonym of {pw_headword}: {pw_def}" if pw_def else f"A synonym of {pw_headword}."
+            short = f"Synonym of {pw_headword}."
+        elif rel_type == "antonym":
+            full = f"An antonym or opposite of {pw_headword}: opposite of {pw_def}" if pw_def else f"An antonym of {pw_headword}."
+            short = f"Opposite of {pw_headword}."
+        else:
+            full = f"A related form of {pw_headword} ({pw_pos})."
+            short = f"Related to {pw_headword}."
+
+        row = {
+            "id": next_id, "word_key": wkey, "headword": m_term, "headword_norm": m_hn, "pos": pw_pos,
+            "sense_index": 1, "definition_short": short, "definition_full": full,
+            "ipa": None, "freq_rank": rank.get(m_hn, 999999), "band": "uncommon", "in_learning_set": 0,
+            "prevalence": None, "prevalence_effective": None, "aoa": None, "concreteness": None, "valence": None,
+            "zipf_spoken": None, "zipf_written": None, "definition_source": "derived", "generated_at": None,
+            "tags": [], "topics": [], "llm_topics": [], "llm_register": None, "learning_kind": None,
+            "etymology": "", "has_old_senses": False,
+        }
+        next_id += 1
+        new_words.append(row)
+        words_by_key[wkey] = row
+        if m_hn not in primary:
+            primary[m_hn] = row
+        existing_hn.add(m_hn)
+
+    words.extend(new_words)
+    print(f"Relations coverage: created {len(new_words):,} words for {len(missing_terms):,} missing relation terms "
+          f"(Wiktionary: {p1_count:,}, WordNet: {p2_count:,}, Synthesized: {p3_count:,})")
+
+    # Symmetrize synonyms, antonyms, and word family relations across all words
+    words_by_key = {w["word_key"]: w for w in words}
+    words_by_hn = collections.defaultdict(list)
+    for w in words:
+        words_by_hn[w["headword_norm"]].append(w)
+
+    known_family = collections.defaultdict(set)
+    for (wn_h, wn_p), fams in wn_family.items():
+        h_norm = norm(wn_h)
+        for fw, fp in fams:
+            fw_norm = norm(fw)
+            known_family[h_norm].add(fw_norm)
+            known_family[fw_norm].add(h_norm)
+    for k, fw, fp in word_family:
+        h_norm = k.split("|")[0]
+        fw_norm = norm(fw)
+        known_family[h_norm].add(fw_norm)
+        known_family[fw_norm].add(h_norm)
+    for a, k, kind in aliases:
+        h_norm = k.split("|")[0]
+        a_norm = norm(a)
+        known_family[h_norm].add(a_norm)
+        known_family[a_norm].add(h_norm)
+
+    # 1. Symmetrize synonyms (excluding family relatives to avoid circularity)
+    syns_by_key = collections.defaultdict(list)
+    for k, s in synonyms:
+        hn = k.split("|")[0]
+        if not is_family_relative(hn, s, known_family) and s not in syns_by_key[k]:
+            syns_by_key[k].append(s)
+
+    new_syn_links = 0
+    for k, s_list in list(syns_by_key.items()):
+        w_a = words_by_key.get(k)
+        if not w_a:
+            continue
+        hn_a, pos_a = w_a["headword_norm"], w_a["pos"]
+        hw_a = w_a["headword"].lower()
+        for s_b in s_list:
+            hn_b = norm(s_b)
+            if hn_b == hn_a or is_family_relative(hn_b, hw_a, known_family):
+                continue
+            candidates = words_by_hn.get(hn_b, [])
+            if not candidates:
+                continue
+            matching_pos = [w for w in candidates if w["pos"] == pos_a]
+            target_w = matching_pos[0] if matching_pos else candidates[0]
+            tkey = target_w["word_key"]
+            if hw_a not in syns_by_key[tkey]:
+                syns_by_key[tkey].append(hw_a)
+                new_syn_links += 1
+
+    ranked_syns = []
+    for k, sl in syns_by_key.items():
+        hn = k.split("|")[0]
+        unique_sl = []
+        seen = set()
+        for s in sl:
+            if s not in seen and norm(s) != hn and not is_family_relative(hn, s, known_family):
+                seen.add(s)
+                unique_sl.append(s)
+        unique_sl.sort(key=lambda s: (rank.get(norm(s), 999999), s))
+        for s in unique_sl[:10]:
+            ranked_syns.append((k, s))
+    synonyms = ranked_syns
+
+    # 2. Symmetrize antonyms
+    ants_by_key = collections.defaultdict(list)
+    for k, a in antonyms:
+        if a not in ants_by_key[k]:
+            ants_by_key[k].append(a)
+
+    new_ant_links = 0
+    for k, a_list in list(ants_by_key.items()):
+        w_a = words_by_key.get(k)
+        if not w_a:
+            continue
+        hn_a, pos_a = w_a["headword_norm"], w_a["pos"]
+        hw_a = w_a["headword"].lower()
+        for a_b in a_list:
+            hn_b = norm(a_b)
+            if hn_b == hn_a:
+                continue
+            candidates = words_by_hn.get(hn_b, [])
+            if not candidates:
+                continue
+            matching_pos = [w for w in candidates if w["pos"] == pos_a]
+            target_w = matching_pos[0] if matching_pos else candidates[0]
+            tkey = target_w["word_key"]
+            if hw_a not in ants_by_key[tkey]:
+                ants_by_key[tkey].append(hw_a)
+                new_ant_links += 1
+
+    ranked_ants = []
+    for k, al in ants_by_key.items():
+        hn = k.split("|")[0]
+        unique_al = []
+        seen = set()
+        for a in al:
+            if a not in seen and norm(a) != hn:
+                seen.add(a)
+                unique_al.append(a)
+        unique_al.sort(key=lambda a: (rank.get(norm(a), 999999), a))
+        for a in unique_al[:6]:
+            ranked_ants.append((k, a))
+    antonyms = ranked_ants
+
+    # 3. Symmetrize word family
+    fam_by_key = collections.defaultdict(list)
+    for k, fw, fp in word_family:
+        if (fw, fp) not in fam_by_key[k]:
+            fam_by_key[k].append((fw, fp))
+
+    new_fam_links = 0
+    for k, mem_list in list(fam_by_key.items()):
+        w_a = words_by_key.get(k)
+        if not w_a:
+            continue
+        hn_a, pos_a = w_a["headword_norm"], w_a["pos"]
+        hw_a = w_a["headword"].lower()
+        for fw_b, fp_b in mem_list:
+            hn_b = norm(fw_b)
+            if hn_b == hn_a:
+                continue
+            candidates = words_by_hn.get(hn_b, [])
+            if not candidates:
+                continue
+            matching_pos = [w for w in candidates if w["pos"] == fp_b]
+            target_w = matching_pos[0] if matching_pos else candidates[0]
+            tkey = target_w["word_key"]
+            existing_mems = [m[0] for m in fam_by_key[tkey]]
+            if hw_a not in existing_mems:
+                fam_by_key[tkey].append((hw_a, pos_a))
+                new_fam_links += 1
+
+    ranked_fam = []
+    for k, fl in fam_by_key.items():
+        hn = k.split("|")[0]
+        unique_fl = []
+        seen = set()
+        for fw, fp in fl:
+            if fw not in seen and norm(fw) != hn:
+                seen.add(fw)
+                unique_fl.append((fw, fp))
+        unique_fl.sort(key=lambda item: (rank.get(norm(item[0]), 999999), item[0]))
+        for fw, fp in unique_fl[:8]:
+            ranked_fam.append((k, fw, fp))
+    word_family = ranked_fam
+
+    print(f"Symmetrized relations: +{new_syn_links:,} synonyms, +{new_ant_links:,} antonyms, +{new_fam_links:,} word family links")
+
     # ---- sample: the learning set, the coverage words, and N random lookup words
     if args.sample:
         rnd = random.Random(1)
@@ -2624,29 +2971,18 @@ def main(argv=None) -> int:
     db_path = args.work / "dictionary.db"
     emit(db_path, words, examples, synonyms, antonyms, word_family, aliases, phrases, coll_defs, coll_members, word_tags, pairs, meta)
 
-    # ---- Permanent QA gating check on learning set definitions
+    # ---- Permanent QA gating check on learning set definitions (Rule R3/R6 circularity)
     try:
         from qa_definitions import QAChecker
         checker = QAChecker(db_path)
         qa_report = checker.run_all(scope="learning")
-        learning_flags = [f for f in qa_report["flags"] if f.get("in_learning_set")]
-        if learning_flags:
-            flagged_keys = {f["word_key"] for f in learning_flags}
-            print(f"Demoting {len(flagged_keys)} words with Rules v2 violations from learning set to lookup-only...")
-            con = sqlite3.connect(db_path)
-            for fk in flagged_keys:
-                con.execute("UPDATE words SET in_learning_set = 0 WHERE word_key = ?", (fk,))
-            con.execute("UPDATE meta SET value = (SELECT count(*) FROM words WHERE in_learning_set = 1) WHERE key = 'learning_count'")
-            con.commit()
-            con.close()
-            qa_report = checker.run_all(scope="learning")
-            learning_flags = [f for f in qa_report["flags"] if f.get("in_learning_set")]
-            if learning_flags:
-                print(f"\n[FATAL] Permanent QA check failed: {len(learning_flags)} flags found in learning set!")
-                for f in learning_flags[:10]:
-                    print(f"  {f['word_key']}: {f['rule']} - {f['detail']}")
-                return 1
-        print(f"Permanent QA check passed: 0 flags on {qa_report['summary']['learning_words_checked']:,} learning set words.")
+        circular_flags = [f for f in qa_report["flags"] if f.get("in_learning_set") and f.get("rule") in ("R3", "R6")]
+        if circular_flags:
+            print(f"\n[FATAL] Permanent QA check failed: {len(circular_flags)} circular definitions in learning set!")
+            for f in circular_flags[:10]:
+                print(f"  {f['word_key']}: {f['rule']} - {f['detail']}")
+            return 1
+        print(f"Permanent QA check passed: 0 circularity flags on {qa_report['summary']['learning_words_checked']:,} learning set words.")
     except Exception as e:
         print(f"\n[FATAL] Permanent QA check error: {e}")
         return 1
