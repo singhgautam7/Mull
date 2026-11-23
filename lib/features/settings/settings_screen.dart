@@ -15,7 +15,6 @@ import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
 import '../../core/motion/motion.dart';
 import 'floating_header_sheet.dart';
-import 'motion_sheet.dart';
 import 'settings_controller.dart';
 import 'settings_widgets.dart';
 
@@ -274,7 +273,7 @@ Future<void> _open(BuildContext context, Widget page) =>
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (BuildContext _) => page));
 
-/// Theme, floating header, text size, search results, motion and haptics.
+/// Theme, floating header, text size, search results and haptics.
 class LookSettingsScreen extends ConsumerWidget {
   const LookSettingsScreen({super.key});
 
@@ -326,16 +325,6 @@ class LookSettingsScreen extends ConsumerWidget {
         SettingsGroup(
           label: 'Feel',
           children: <Widget>[
-            SettingsRow(
-              icon: Icons.animation_rounded,
-              label: 'Motion',
-              value: motionRowValue(
-                s.motionPreference,
-                s.deviceClass,
-                systemOff: systemMotionOff(context),
-              ),
-              onTap: () => unawaited(showMotionSheet(context)),
-            ),
             SettingsSwitch(
               icon: Icons.vibration_rounded,
               label: 'Haptics',

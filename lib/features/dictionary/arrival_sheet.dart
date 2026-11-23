@@ -277,7 +277,7 @@ class _MultipleWordsArrivalSheet extends ConsumerWidget {
           const SizedBox(height: Space.md),
           Wrap(
             spacing: Space.sm,
-            runSpacing: Space.sm,
+            runSpacing: PillChip.runSpacing,
             children: <Widget>[
               for (final WordMatch m in matches)
                 PillChip(

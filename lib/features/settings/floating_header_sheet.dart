@@ -46,7 +46,7 @@ class _FloatingHeaderBodyState extends ConsumerState<_FloatingHeaderBody> with S
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Still under the phone's Remove animations and under Mull's Motion Off.
+    // Still under the phone's Remove animations.
     _still = MediaQuery.disableAnimationsOf(context) || Motion.levelOf(context) == MotionLevel.off;
     if (_still) {
       _loop.stop();

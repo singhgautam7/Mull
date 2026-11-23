@@ -125,6 +125,12 @@ holds one row per headword: no phrase or NEAR queries, ever, only AND-ed `"token
   shipped: the app never reads it and it cost 3.5 MB installed.
 - Four presets (Anything, Quick wins, Stretch me, Review) are created on first run, not
   editable, duplicable. Their sources are refreshed on every dictionary install.
+- Pre-made shelves (`!collection.isUsers`) are read-only: no + in the header, the overflow has
+  no add or import, `AddToShelfScreen` and the import target refuse them. Words added to one before
+  November 2026 stay and still show.
+- The word sheet's actions are Add to shelf, note, share. Bookmarking is the Bookmarks row of the
+  add-to-shelf sheet, whose rows are switches (a word may be on several shelves). Every note is
+  listed on More > Notes (`NotesScreen`, `/more/notes`).
 - There is no saved mixes page (removed November 2026). Saved mixes are listed and created in the
   mix sheet only; `Routes.playMix` / `?mix=` stay because the Mull tab uses them. The mix tables
   and their export are unchanged, so old exports with saved mixes still import.
@@ -141,7 +147,7 @@ implementation:
 | Anchored menu / long-press menu | `showAppMenu` + `AppMenuEntry` (icon required); the text selection menu renders the same `AppMenuPanel` + `AppMenuRow` |
 | Bottom sheet | `showAppBottomSheet`; destructive confirm `confirmDialog` |
 | Button | `AppButton` (primary, secondary, outlined, dotted, danger well) |
-| Segmented control (Cards/Table, Words/Idioms, Light/Dark/System) | `SegmentedToggle` |
+| Segmented control (Cards/Table, Words/Idioms, Light/Dark/System) | `SegmentedToggle` (selected is `primary` / `onPrimary`, never a surface fill: that read as disabled) |
 | Band / register chip, filter and synonym chips | `BandChip`, `PillChip` |
 | 3dp progress track, 46dp ring | `ProgressTrack`, `ProgressRing` |
 | Section header | `SectionHeader` (+ `SectionNote`, `SectionHeaderAction` for "See all") |
@@ -157,7 +163,8 @@ implementation:
 | The Mull tab ground | `LingerBackground` |
 | Settings rows | `SettingsGroup`, `SettingsRow`, `SettingsSwitch`, `SettingsScaffold` |
 | Word detail, idiom detail, note, add to list, mix | `showWordSheet`, `showIdiomSheet`, `showNoteSheet`, `showAddToListSheet`, `showMixSheet` |
-| Pill search field | `SearchField` |
+| Pill search field | `SearchField`; as a screen's sticky header `HeaderSearchBar` (same pill, scrim and "Show the pill" as `AppHeader`; off with Floating header) |
+| A wrap of tappable chips | `runSpacing: PillChip.runSpacing` (the 32 dp chip sits in a 48 dp hit region) |
 | One of a few choices as cards (CSV/PDF, Merge/Replace) | `SelectableCard` |
 | Search result as a row or card, with an optional trailing control | `SearchResultRow`, `SearchResultCard` |
 | The `Back to {app} · IN MULL` row on a sheet opened from outside | `ArrivalTopRow` |
@@ -210,9 +217,9 @@ specs/                   design handoff (gitignored)
   Azure in dark, light and true black, which here are tones. The welcome flow is Kuber's
   pattern: one pager of four intro pages (define from any app, ready-made shelves, your own
   shelves, the Mull tab and quizzes) with Kuber's dots, Skip and Next, then one setup page
-  (word of the day on/off through `SettingsController.setWotd`, its time, theme mode and the
-  `FamilyCard` picker shared with the theme screen). There is no "where to start" page and no
-  first-run scoped play.
+  (word of the day on/off through `SettingsController.setWotd`, its time, and Light / Dark /
+  System; no theme colours there). There is no "where to start" page and no first-run scoped
+  play. Every control that changes the theme goes through `ThemeRipple.of(context).run`.
 - Dynamic colour takes one wallpaper seed and derives the family at Mull's chroma (0.11).
   Fixed hues (list swatches) are stored as an index into `MullColors.tagHues` and
   re-derived per theme.
@@ -276,7 +283,7 @@ Flutter's release build. No signing config yet.
   activity in the caller's task (`excludeFromRecents`, standard launch) that runs the
   `defineMain` entrypoint (`lib/define_main.dart`): a see-through host that pulls the arrival
   once the dictionary is open, shows the sheet, and calls `finish` when the last sheet is gone
-  (`_FinishWhenEmpty`). It never opens the app. "See in Mull" and "Search Mull for it" go
+  (`_FinishWhenEmpty`). It never opens the app. "Search Mull for it" goes
   through `PlatformSurfaces.go`, which is the router inside the app and `openInApp` (start
   `MainActivity` on a route in its own task, finish the sheet) inside the define host. Both
   activities take their engine from the process's `FlutterEngineGroup` and destroy it with
@@ -496,3 +503,32 @@ Measured with `integration_test/perf_test.dart` (profile, full dictionary, a see
   translation, so "frames over 16 ms" there is raster noise; the API 30 AVD (`Kuber_LowEnd`, 2 cores) showed 0
   frames over 16 ms on tab switches and scrolls with the same build. Judge build times on the emulator and raster
   on a device.
+
+### Round 3 of pass 2 (23 November 2026)
+
+Measured with `integration_test/perf_feel_test.dart` (the two paths users feel first; the older harness
+never opened a shelf's own menu and never tapped a tab it had not warmed).
+
+- **`showMenu` is not used.** It fades every row in by itself (a shelf's 17 rows were 17 offscreen layers on
+  every frame, the last row legible only at the end of the spring) and lays the rows out twice. `showAppMenu`
+  is its own `PopupRoute`: one panel, one 150 ms fade, an 8 dp drop. Rule: never animate menu rows one by one.
+- **Shelves, Search and More are built before their first visit** (`StatefulShellBranch.preload` + `WarmTab`,
+  which waits for idle and paints the tab once unseen). A tab built offstage must not depend on `TickerMode` through `valuesOf` in its build
+  (use `getValuesNotifier`), or the first visit rebuilds all of it.
+- **Tabs slide as Kuber's pager does** (`BranchStack`: 300 ms ease in and out, both pages side by side, a drag
+  follows the finger, the same at Subtle). Not a `PageView`: it lays out a third page on a far jump and cannot
+  prepare a page ahead of its visit. This replaces the 6% slide and fade above.
+- **An animation's clock starts after the frame that builds its content.** Started on push or on the index change, a
+  heavy first frame (the word sheet's was 28 to 126 ms) eats the fastest part, so it pops. `_SheetRoute` and
+  `BranchStack` wait for `endOfFrame`. A long word entry builds only what fits until the sheet has opened.
+- **There is no Motion setting** (removed November 2026; a stored `motion.preference` is ignored). The level is the
+  phone's: Off under Remove animations, Subtle under 3.5 GB of RAM, else Expressive. The API 36 AVD has 2 GB, so it
+  is Subtle unless `motion.deviceClass` is set to `normal`.
+- **Never tween a fill from `Colors.transparent`**: it is black at alpha 0, so the fade goes through dark grey
+  (the filter pills' flicker). Use the target colour at alpha 0. A filter change keeps what stays (keyed by its
+  slug or word key) and eases in only what appears (`StaggeredEntrance`); it never blanks the list.
+- **No ink sparkle on anything whose own fill changes** (chips, segmented toggle): it lay over the new fill for
+  about a second and read as a flicker. `pressedLayer` is the state layer.
+- **Nothing in a chip row pops its width.** The count badge grows and shrinks with the selection.
+- **Read `HeaderPage.insetOf` below `HeaderPage`.** Read above it, it is 0: that hid the whole Search field,
+  and tests with no status bar could not see it.

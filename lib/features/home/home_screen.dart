@@ -117,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
             SectionHeader(label: 'Shelves', trailing: seeAll('See all $shelfCount')),
             const _ShelfGrid(),
             const SizedBox(height: Space.section),
-            SectionHeader(label: 'Your shelves', trailing: seeAll('See all')),
+            SectionHeader(label: 'My Shelf', trailing: seeAll('See all')),
             const _YourShelves(),
           ],
         ),

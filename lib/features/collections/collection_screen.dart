@@ -324,32 +324,34 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
           const AppMenuEntry<String>.divider(),
         ],
 
-        // Segment 2: Add words, Add phrases
-        const AppMenuEntry<String>(
-          value: 'add_words',
-          label: 'Add words',
-          icon: Icons.add_rounded,
-        ),
-        const AppMenuEntry<String>(
-          value: 'add_phrases',
-          label: 'Add phrases',
-          icon: Icons.add_rounded,
-        ),
-        if (own)
+        // Segment 2: Add words, Add phrases, Select, Import words (own shelves
+        // only: pre-made shelves are read-only).
+        if (own) ...<AppMenuEntry<String>>[
+          const AppMenuEntry<String>(
+            value: 'add_words',
+            label: 'Add words',
+            icon: Icons.add_rounded,
+          ),
+          const AppMenuEntry<String>(
+            value: 'add_phrases',
+            label: 'Add phrases',
+            icon: Icons.add_rounded,
+          ),
           const AppMenuEntry<String>(
             value: 'select',
             label: 'Select words',
             icon: Icons.checklist_rounded,
           ),
+          const AppMenuEntry<String>.divider(),
+          const AppMenuEntry<String>(
+            value: 'import_words',
+            label: 'Import words',
+            subtitle: 'paste a table or pick a CSV',
+            icon: Icons.file_upload_outlined,
+          ),
+        ],
 
-        // Segment 3: Import words, Export this shelf
-        const AppMenuEntry<String>.divider(),
-        const AppMenuEntry<String>(
-          value: 'import_words',
-          label: 'Import words',
-          subtitle: 'paste a table or pick a CSV',
-          icon: Icons.file_upload_outlined,
-        ),
+        // Segment 3: Export this shelf
         const AppMenuEntry<String>(
           value: 'export_shelf',
           label: 'Export this shelf',
@@ -672,13 +674,15 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                         title: title,
                         onBack: () => context.pop(),
                         actions: <Widget>[
-                          Builder(
-                            builder: (BuildContext anchor) => AppIconButton(
-                              icon: Icons.add_rounded,
-                              semanticLabel: 'Add',
-                              onPressed: () => unawaited(_showAddMenu(anchor)),
+                          // Pre-made shelves are read-only: no + at all.
+                          if (own)
+                            Builder(
+                              builder: (BuildContext anchor) => AppIconButton(
+                                icon: Icons.add_rounded,
+                                semanticLabel: 'Add',
+                                onPressed: () => unawaited(_showAddMenu(anchor)),
+                              ),
                             ),
-                          ),
                           Builder(
                             builder: (BuildContext anchor) => AppIconButton(
                               icon: Icons.more_horiz_rounded,
@@ -837,10 +841,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               child: rawEntries.isEmpty
                                   ? EmptyState(
                                       title: 'No items on this shelf yet',
-                                      message: 'Add words or phrases from the overflow, or paste a table.',
-                                      actionLabel: 'Add words to it',
-                                      onAction: () =>
-                                          _openAdd(),
+                                      message: own
+                                          ? 'Add words or phrases from the overflow, or paste a table.'
+                                          : 'Nothing here yet.',
+                                      actionLabel: own ? 'Add words to it' : null,
+                                      onAction: own ? () => _openAdd() : null,
                                     )
                                   : Center(
                                       child: Padding(

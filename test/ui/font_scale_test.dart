@@ -34,6 +34,7 @@ import 'package:mull/features/settings/settings_screen.dart';
 import 'package:mull/features/settings/theme_screen.dart';
 import 'package:mull/features/settings/welcome_screen.dart';
 import 'package:mull/features/onboarding/onboarding_setup_page.dart';
+import 'package:mull/features/notes/notes_screen.dart';
 import 'package:mull/features/stats/stats_screen.dart';
 import 'package:mull/shared/widgets/icon_color_picker_sheet.dart';
 import 'package:mull/shared/widgets/two_column_grid.dart';
@@ -205,6 +206,8 @@ void main() {
       await user.addBookmark(longest.key);
       await user.recordLookup(longest.key);
       await user.markSeen(abate.key);
+      await user.putNote(longest.key, 'A note that runs on for a while so the card has to wrap its text across several lines at the largest font scale.');
+      await user.putNote('gone|noun|1', 'A note on a word that is no longer in the dictionary.');
 
       for (final Widget screen in <Widget>[
         const HomeScreen(),
@@ -216,6 +219,7 @@ void main() {
         const SettingsScreen(),
         const ThemeScreen(),
         const StatsScreen(),
+        const NotesScreen(),
         const WelcomeScreen(),
         const SearchScreen(),
         const ExportScreen(),

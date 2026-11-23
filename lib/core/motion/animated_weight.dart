@@ -17,6 +17,7 @@ class AnimatedWeight extends StatelessWidget {
     this.style,
     this.rest = 500,
     this.active = 700,
+    this.restColor,
     this.textAlign,
     this.maxLines = 1,
     this.overflow = TextOverflow.ellipsis,
@@ -27,6 +28,10 @@ class AnimatedWeight extends StatelessWidget {
   final TextStyle? style;
   final double rest;
   final double active;
+
+  /// Colour at rest: it eases to the style's own with the weight. Null: the
+  /// style's colour in both states.
+  final Color? restColor;
   final TextAlign? textAlign;
   final int? maxLines;
   final TextOverflow? overflow;
@@ -54,7 +59,11 @@ class AnimatedWeight extends StatelessWidget {
       builder: (context, w, _) => ConstrainedBox(
         constraints: BoxConstraints(minWidth: reserve),
         child: Text(text,
-            style: Motion.weightStyle(base, w),
+            style: Motion.weightStyle(
+                restColor == null
+                    ? base
+                    : base.copyWith(color: Color.lerp(restColor, base.color, (w - rest) / (active - rest))),
+                w),
             textAlign: textAlign ?? TextAlign.start,
             maxLines: maxLines,
             overflow: overflow),

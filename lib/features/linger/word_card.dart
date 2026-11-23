@@ -294,7 +294,7 @@ class _WordCardState extends State<WordCard> {
       spacing: Space.md,
       children: <Widget>[
         AppIconButton(
-          icon: Icons.menu_book_rounded,
+          icon: Icons.open_in_full_rounded,
           size: 52,
           semanticLabel: 'Open full entry',
           onPressed: widget.onOpenEntry,

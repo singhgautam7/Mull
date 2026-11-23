@@ -231,6 +231,9 @@ class AppHeader extends StatelessWidget {
 /// floating flag or the metrics change; per-frame values are animations.
 class _HeaderScope extends InheritedWidget {
   const _HeaderScope({
+    required this.hide,
+    required this.hidden,
+    required this.pins,
     required this.progress,
     required this.restAlpha,
     required this.pillAlpha,
@@ -242,6 +245,13 @@ class _HeaderScope extends InheritedWidget {
     required this.restHeight,
     required super.child,
   });
+
+  /// The pill leaving and back, for a [HeaderSearchBar].
+  final Animation<double> hide;
+  final ValueListenable<bool> hidden;
+
+  /// The Floating header setting: whether a [HeaderSearchBar] sticks.
+  final bool pins;
 
   /// 0 at rest, 1 in the pill. Unbounded: the spring may overshoot.
   final Animation<double> progress;
@@ -264,7 +274,7 @@ class _HeaderScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_HeaderScope old) =>
-      level != old.level || floating != old.floating || statusBar != old.statusBar || restHeight != old.restHeight;
+      level != old.level || floating != old.floating || pins != old.pins || statusBar != old.statusBar || restHeight != old.restHeight;
 }
 
 /// Header + scrollable body, as one unit: the header floats over the body,
@@ -279,8 +289,7 @@ class _HeaderScope extends InheritedWidget {
 /// ```
 /// The body fills the screen and keeps its own bottom padding; it starts with
 /// [gap] (or [sliverGap]) so the first row sits under the header. Only the
-/// header is sticky: anything that must stay put under it (the Search field)
-/// uses `floating: false`.
+/// header is sticky, or, with `scrollAway`, a [HeaderSearchBar].
 class HeaderPage extends ConsumerStatefulWidget {
   const HeaderPage({
     required this.header,
@@ -299,9 +308,8 @@ class HeaderPage extends ConsumerStatefulWidget {
   /// contextual (selection) headers.
   final bool floating;
 
-  /// True: the header always scrolls away with the content, whatever the
-  /// Floating header setting, so a control below it can be the sticky one
-  /// (the Search tab pins its search bar).
+  /// True: the header scrolls away with the content and a [HeaderSearchBar]
+  /// below it becomes the pill instead (the Search tab).
   final bool scrollAway;
 
   /// Settings sheet previews only.
@@ -355,6 +363,9 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
   Timer? _showTimer;
   MotionLevel _level = MotionLevel.expressive;
   bool _on = true;
+
+  /// The Floating header setting itself ([_on] also needs `scrollAway` off).
+  bool _setting = true;
   PillMode _mode = PillMode.always;
   double _headerExtent = 0;
 
@@ -468,6 +479,17 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
       final double a = px.clamp(0.0, _headerExtent);
       if (a != _away.value) _away.value = a;
       _setScrolled(px > 0);
+      // A search pill takes over once the header has gone, and follows the
+      // same "Show the pill" setting.
+      if (widget.scrollAway && _setting) {
+        if (px > _headerExtent + Motion.headerAt) {
+          _hideByMode(n);
+        } else {
+          _setHidden(false);
+          _showTimer?.cancel();
+          _down = _up = _moved = 0;
+        }
+      }
       return false;
     }
     if (!_floats) return false;
@@ -479,7 +501,12 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
       _showTimer?.cancel();
       _down = _up = _moved = 0;
     }
-    if (!_pill) return false;
+    if (_pill) _hideByMode(n);
+    return false;
+  }
+
+  /// "Show the pill": hides and shows whatever is the pill as the list moves.
+  void _hideByMode(ScrollNotification n) {
     final double delta = n is ScrollUpdateNotification ? (n.scrollDelta ?? 0) : 0.0;
     switch (_mode) {
       case PillMode.scrollUp:
@@ -507,13 +534,13 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
       case PillMode.always:
         break;
     }
-    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     final HeaderPreview? preview = widget.preview;
     final bool setting = preview?.floating ?? ref.watch(settingsProvider.select((AppSettings s) => s.floatingHeader));
+    _setting = setting;
     final bool on = !widget.scrollAway && setting;
     final PillMode mode = preview?.pill ?? ref.watch(settingsProvider.select((AppSettings s) => s.pillMode));
     final MotionLevel level = Motion.levelOf(context);
@@ -527,7 +554,6 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
       _level = level;
       _snap();
     }
-    final MullColors c = context.colors;
     final bool scrollsAway = !on && widget.floating;
 
     final Widget scrim = Positioned(
@@ -539,20 +565,7 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
       child: IgnorePointer(
         child: FadeTransition(
           opacity: on && level == MotionLevel.expressive ? _ClampedAnimation(_p) : _scrim,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: <double>[0, sb * 0.5 / (sb + 16), 1],
-                colors: <Color>[
-                  c.surface.withValues(alpha: 0.94),
-                  c.surface.withValues(alpha: 0.94),
-                  c.surface.withValues(alpha: 0),
-                ],
-              ),
-            ),
-          ),
+          child: HeaderScrim(statusBar: sb),
         ),
       ),
     );
@@ -577,6 +590,9 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
     );
 
     return _HeaderScope(
+      hide: _h,
+      hidden: _hiddenN,
+      pins: setting,
       progress: _p,
       restAlpha: _a0,
       pillAlpha: _a1,
@@ -883,6 +899,186 @@ class _TitleSlot extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// A search field that is a screen's sticky header (the Search tab): a bar
+/// under the title at rest, and the same floating pill as every other header
+/// once it reaches the top (margins, height, radius, fill, hairline, scrim and
+/// "Show the pill" included). Floating header off: it scrolls away.
+///
+/// A sliver, inside a [HeaderPage] with `scrollAway: true`. [child] is the
+/// bare field; it keeps its element (and focus) through the morph.
+class HeaderSearchBar extends StatelessWidget {
+  const HeaderSearchBar({required this.child, super.key});
+
+  final Widget child;
+
+  /// The field's height at rest.
+  static const double restHeight = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    final _HeaderScope scope = _HeaderScope.maybeOf(context)!;
+    return SliverPersistentHeader(
+      pinned: scope.pins,
+      delegate: _SearchBarDelegate(
+        extent: scope.statusBar + HeaderSpec.top + restHeight + Space.md,
+        pins: scope.pins,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _SearchBarDelegate extends SliverPersistentHeaderDelegate {
+  const _SearchBarDelegate({required this.extent, required this.pins, required this.child});
+
+  final double extent;
+  final bool pins;
+  final Widget child;
+
+  @override
+  double get minExtent => extent;
+  @override
+  double get maxExtent => extent;
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      _SearchPill(under: pins ? shrinkOffset : 0, child: child);
+  @override
+  bool shouldRebuild(_SearchBarDelegate old) => extent != old.extent || pins != old.pins || child != old.child;
+}
+
+class _SearchPill extends StatefulWidget {
+  const _SearchPill({required this.under, required this.child});
+
+  /// How far the content has gone under the bar.
+  final double under;
+  final Widget child;
+
+  @override
+  State<_SearchPill> createState() => _SearchPillState();
+}
+
+class _SearchPillState extends State<_SearchPill> with SingleTickerProviderStateMixin {
+  late final AnimationController _p = AnimationController.unbounded(vsync: this, value: _pill ? 1 : 0);
+  late bool _pill = widget.under >= Motion.headerAt;
+
+  @override
+  void didUpdateWidget(_SearchPill old) {
+    super.didUpdateWidget(old);
+    // A gap between on and off, so it never flickers.
+    final bool pill = _pill ? widget.under > 1 : widget.under >= Motion.headerAt;
+    if (pill == _pill) return;
+    _pill = pill;
+    final double to = pill ? 1 : 0;
+    switch (Motion.levelOf(context)) {
+      case MotionLevel.expressive:
+        _p.springTo(to, pill ? Motion.springDefault : Motion.springStandard);
+      case MotionLevel.subtle:
+        _p.animateTo(to, duration: Motion.fxFast, curve: Motion.curveEffects);
+      case MotionLevel.off:
+        _p.value = to;
+    }
+  }
+
+  @override
+  void dispose() {
+    _p.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    final _HeaderScope scope = _HeaderScope.maybeOf(context)!;
+    final double sb = scope.statusBar;
+    final Widget bar = AnimatedBuilder(
+      animation: _p,
+      child: widget.child,
+      builder: (BuildContext _, Widget? child) {
+        final double p = _p.value;
+        final double q = p.clamp(0.0, 1.0);
+        final double side = Space.screen + (HeaderSpec.margin - Space.screen) * p;
+        final double height = HeaderSearchBar.restHeight + (HeaderSpec.pillHeight - HeaderSearchBar.restHeight) * q;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(side, sb + HeaderSpec.top, side, 0),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              height: height,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Color.lerp(c.surfaceContainerHigh, c.surfaceContainer, q),
+                borderRadius: BorderRadius.circular(height / 2),
+              ),
+              // In front, so the hairline takes no room from the field.
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(height / 2),
+                border: Border.all(color: c.outline.withValues(alpha: c.outline.a * q)),
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+    return Stack(
+      children: <Widget>[
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: sb + 16,
+          child: IgnorePointer(
+            child: FadeTransition(opacity: _ClampedAnimation(_p), child: HeaderScrim(statusBar: sb)),
+          ),
+        ),
+        Positioned.fill(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: scope.hidden,
+            builder: (BuildContext _, bool hidden, Widget? child) => IgnorePointer(
+              ignoring: hidden,
+              child: ExcludeSemantics(excluding: hidden, child: child),
+            ),
+            child: _HideTransform(
+              hide: scope.hide,
+              shift: kAlwaysDismissedAnimation,
+              away: null,
+              awayMax: 0,
+              level: scope.level,
+              child: bar,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The status bar's fade, behind a pill.
+class HeaderScrim extends StatelessWidget {
+  const HeaderScrim({required this.statusBar, super.key});
+
+  final double statusBar;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color surface = context.colors.surface;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: <double>[0, statusBar * 0.5 / (statusBar + 16), 1],
+          colors: <Color>[
+            surface.withValues(alpha: 0.94),
+            surface.withValues(alpha: 0.94),
+            surface.withValues(alpha: 0),
+          ],
+        ),
       ),
     );
   }

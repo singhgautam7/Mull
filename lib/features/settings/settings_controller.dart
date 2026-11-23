@@ -35,7 +35,6 @@ class AppSettings {
     this.wotdEnabled = false,
     this.wotdMinutes = 8 * 60 + 30,
     this.onboarded = false,
-    this.motionPreference = MotionPreference.auto,
     this.deviceClass = DeviceClass.unknown,
     this.floatingHeader = true,
     this.pillMode = PillMode.always,
@@ -65,10 +64,6 @@ class AppSettings {
   final int wotdMinutes;
   final bool onboarded;
 
-  /// The Motion setting. Auto resolves from [deviceClass] (and the phone's
-  /// Remove animations, applied per build by the MotionScope in app.dart).
-  final MotionPreference motionPreference;
-
   /// Cached result of the one-off RAM check; [DeviceClass.unknown] until it
   /// has run once, off the startup path.
   final DeviceClass deviceClass;
@@ -84,7 +79,7 @@ class AppSettings {
   final bool expressiveColors;
 
   /// Effective level before the phone's Remove animations is applied.
-  MotionLevel get motionLevel => resolveMotionLevel(motionPreference, deviceClass);
+  MotionLevel get motionLevel => resolveMotionLevel(deviceClass);
 
   ThemeFamily get family => ThemeFamily.byId(familyId);
 
@@ -113,7 +108,6 @@ class AppSettings {
     bool? wotdEnabled,
     int? wotdMinutes,
     bool? onboarded,
-    MotionPreference? motionPreference,
     DeviceClass? deviceClass,
     bool? floatingHeader,
     PillMode? pillMode,
@@ -132,7 +126,6 @@ class AppSettings {
     wotdEnabled: wotdEnabled ?? this.wotdEnabled,
     wotdMinutes: wotdMinutes ?? this.wotdMinutes,
     onboarded: onboarded ?? this.onboarded,
-    motionPreference: motionPreference ?? this.motionPreference,
     deviceClass: deviceClass ?? this.deviceClass,
     floatingHeader: floatingHeader ?? this.floatingHeader,
     pillMode: pillMode ?? this.pillMode,
@@ -152,7 +145,6 @@ class AppSettings {
   static const String kWotd = 'wotd.enabled';
   static const String kWotdMinutes = 'wotd.minutes';
   static const String kOnboarded = 'app.onboarded';
-  static const String kMotion = 'motion.preference';
   static const String kDeviceClass = 'motion.deviceClass';
   static const String kFloatingHeader = 'header.floating';
   static const String kPillMode = 'header.pill';
@@ -180,7 +172,6 @@ class AppSettings {
     wotdEnabled: prefs.getBool(kWotd) ?? false,
     wotdMinutes: prefs.getInt(kWotdMinutes) ?? 8 * 60 + 30,
     onboarded: prefs.getBool(kOnboarded) ?? false,
-    motionPreference: _named(MotionPreference.values, prefs.getString(kMotion), MotionPreference.auto),
     deviceClass: _named(DeviceClass.values, prefs.getString(kDeviceClass), DeviceClass.unknown),
     floatingHeader: prefs.getBool(kFloatingHeader) ?? true,
     pillMode: _named(PillMode.values, prefs.getString(kPillMode), PillMode.always),
@@ -265,11 +256,6 @@ class SettingsController extends Notifier<AppSettings> {
     await _prefs.setBool(AppSettings.kWotd, on);
     if (minutes != null) await _prefs.setInt(AppSettings.kWotdMinutes, minutes);
     await PlatformSurfaces.scheduleReminder();
-  }
-
-  Future<void> setMotionPreference(MotionPreference value) async {
-    state = state.copyWith(motionPreference: value);
-    await _prefs.setString(AppSettings.kMotion, value.name);
   }
 
   /// Runs once per install, after the first frame: [probe] returns (total RAM

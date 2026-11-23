@@ -39,6 +39,11 @@ class BandChip extends StatelessWidget {
 /// Selected squircle radius of a single-choice group (Kuber button group).
 const double kSelectedRadius = 12;
 
+/// Kuber's `kuberPressedLayer`: a 10% state layer while pressed, nothing else.
+WidgetStateProperty<Color?> pressedLayer(MullColors c) => WidgetStateProperty.resolveWith(
+  (Set<WidgetState> s) => s.contains(WidgetState.pressed) ? c.onSurface.withValues(alpha: 0.1) : null,
+);
+
 /// Duration of the fill and shape of a selection change at [level].
 Duration _selectDuration(MotionLevel level) =>
     level == MotionLevel.off ? Duration.zero : Motion.fxFast;
@@ -71,6 +76,11 @@ class PillChip extends StatelessWidget {
   final bool showCountWhenSelectedOnly;
   final Widget? trailing;
 
+  /// `runSpacing` for a wrap of tappable chips. Each is 32dp drawn in a 48dp
+  /// tall hit region, so this is what leaves `Space.sm` between the pills, the
+  /// same as beside them.
+  static const double runSpacing = Space.sm - (IconSpec.tapTarget - 32);
+
   /// A check that grows 0 to 18dp on the selected chip (springStandard).
   final bool showCheck;
 
@@ -81,7 +91,6 @@ class PillChip extends StatelessWidget {
     final bool sel = selected ?? false;
     final bool off = level == MotionLevel.off;
     final bool showCount = count != null && (!showCountWhenSelectedOnly || sel);
-    final Color fg = sel ? c.onPrimaryContainer : c.onSurfaceVariant;
     final SpringCurve shapeC = Motion.spatialCurve(level, Motion.fastCurve);
     final SpringCurve checkC = Motion.spatialCurve(level, Motion.standardCurve);
     final Duration fade = off ? Motion.fxInstant : Motion.fxFast;
@@ -107,10 +116,29 @@ class PillChip extends StatelessWidget {
                 ),
               ),
             ),
-          AnimatedWeight(label, isActive: sel, rest: 500, active: 650, style: MullType.label.copyWith(fontSize: 13, color: fg)),
-          if (showCount) ...<Widget>[
-            const SizedBox(width: 6),
-            Container(
+          AnimatedWeight(
+            label,
+            isActive: sel,
+            rest: 500,
+            active: 650,
+            restColor: c.onSurfaceVariant,
+            style: MullType.label.copyWith(fontSize: 13, color: c.onPrimaryContainer),
+          ),
+          if (count != null)
+            // Grows and shrinks with the selection: popping it in and out
+            // moved every chip after this one in a single frame.
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: showCount ? 1 : 0),
+              duration: off ? Duration.zero : Motion.standardCurve.settle,
+              curve: Motion.standardCurve.clamped,
+              builder: (BuildContext context, double k, Widget? child) => k == 0
+                  ? const SizedBox.shrink()
+                  : ClipRect(
+                      child: Align(alignment: Alignment.centerLeft, widthFactor: k, child: Opacity(opacity: k, child: child)),
+                    ),
+              child: Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
               decoration: BoxDecoration(
                 color: sel ? c.surface : c.surfaceContainerHigh,
@@ -124,8 +152,9 @@ class PillChip extends StatelessWidget {
                   color: sel ? c.onPrimaryContainer : c.onSurfaceVariant,
                 ),
               ),
+              ),
+              ),
             ),
-          ],
           if (trailing != null) ...<Widget>[const SizedBox(width: 6), trailing!],
         ],
       ),
@@ -141,7 +170,9 @@ class PillChip extends StatelessWidget {
         duration: off ? Duration.zero : shapeC.settle,
         curve: shapeC.clamped,
         builder: (BuildContext context, double sq, Widget? child) => TweenAnimationBuilder<Color?>(
-          tween: ColorTween(end: sel ? c.primaryContainer : Colors.transparent),
+          // Not Colors.transparent: that is black at alpha 0, and the fade from it
+          // went through dark grey.
+          tween: ColorTween(end: c.primaryContainer.withValues(alpha: sel ? 1 : 0)),
           duration: fade,
           curve: Motion.curveEffects,
           builder: (BuildContext context, Color? fill, Widget? child) => Material(
@@ -150,6 +181,11 @@ class PillChip extends StatelessWidget {
             shape: _chipShape(sq, c.outline, sel),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
+              // The scale and the fill fade are the feedback. The theme's ink
+              // sparkle stayed over the new fill for about a second and read
+              // as a flicker.
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: pressedLayer(c),
               onTap: tappable
                   ? () {
                       if (!sel) MullHaptics.tick();
@@ -195,7 +231,7 @@ OutlinedBorder _chipShape(double t, Color outline, bool selected) {
   final StadiumBorder pill = StadiumBorder(side: BorderSide(color: outline));
   final RoundedRectangleBorder squircle = RoundedRectangleBorder(
     borderRadius: Radii.mediumR,
-    side: BorderSide(color: selected ? Colors.transparent : outline),
+    side: BorderSide(color: selected ? outline.withValues(alpha: 0) : outline),
   );
   if (t <= 0) return pill;
   if (t >= 1) return squircle;
@@ -204,9 +240,8 @@ OutlinedBorder _chipShape(double t, Color outline, bool selected) {
 
 /// Single-choice button group (Kuber's `KuberButtonGroup`): Cards/Table,
 /// Words/Idioms, Light/Dark/System. Pills with 8dp gaps; the selected one is a
-/// 12dp squircle in the old thumb's colours (`surface` + 1px outline, or
-/// `primary` when [accent]), the others `surfaceContainerHigh`. Counts sit
-/// inside the label in `monoLabel`. Heights: 38, 34 [compact], 48 [accent].
+/// 12dp squircle in `primary` / `onPrimary`, the others `surfaceContainerHigh`.
+/// Counts sit inside the label in `monoLabel`. Heights: 40, 34 [compact].
 ///
 /// Expressive: the shape springs between pill and squircle; the pressed item
 /// widens by [Motion.buttonGroupWiden] and squeezes its neighbours, corners go
@@ -221,7 +256,6 @@ class SegmentedToggle<T> extends StatefulWidget {
     required this.onChanged,
     this.counts = const <Object?, int>{},
     this.compact = false,
-    this.accent = false,
     this.showCheck = false,
     super.key,
   });
@@ -231,7 +265,6 @@ class SegmentedToggle<T> extends StatefulWidget {
   final ValueChanged<T> onChanged;
   final Map<Object?, int> counts;
   final bool compact;
-  final bool accent;
   final bool showCheck;
 
   @override
@@ -285,7 +318,7 @@ class _SegmentedToggleState<T> extends State<SegmentedToggle<T>> with SingleTick
     final MotionLevel level = Motion.levelOf(context);
     final bool expressive = level == MotionLevel.expressive;
     final int n = widget.options.length;
-    final double height = widget.accent ? 48 : (widget.compact ? 34 : 38);
+    final double height = widget.compact ? 34 : 40;
     final Curve checkCurve = Motion.spatialCurve(level, Motion.standardCurve).clamped;
     final Duration checkTime = level == MotionLevel.off ? Duration.zero : Motion.spatialCurve(level, Motion.standardCurve).settle;
 
@@ -293,9 +326,7 @@ class _SegmentedToggleState<T> extends State<SegmentedToggle<T>> with SingleTick
       final (T value, String label) = widget.options[i];
       final bool sel = value == widget.selected;
       final bool pressed = _down && _pressed == i;
-      final Color selFill = widget.accent ? c.primary : c.surface;
-      final Color selFg = widget.accent ? c.onPrimary : c.onSurface;
-      final Color fg = sel ? selFg : c.onSurfaceVariant;
+      final Color fg = sel ? c.onPrimary : c.onSurface;
       final int? count = widget.counts[value];
       return Flexible(
         flex: (flex * 1000).round().clamp(1, 1 << 30),
@@ -326,15 +357,14 @@ class _SegmentedToggleState<T> extends State<SegmentedToggle<T>> with SingleTick
                   final double pr = expressive && _pressed == i ? _v.value : 0;
                   final double r = (rest + (8 - rest) * pr).clamp(0.0, 999.0);
                   final BorderRadius br = BorderRadius.circular(r);
-                  final Color border = widget.accent
-                      ? Colors.transparent
-                      : Color.lerp(Colors.transparent, c.outline, t)!;
                   return Material(
-                    color: Color.lerp(c.surfaceContainerHigh, selFill, t),
+                    color: Color.lerp(c.surfaceContainerHigh, c.primary, t),
                     animationDuration: Duration.zero,
-                    shape: RoundedRectangleBorder(borderRadius: br, side: BorderSide(color: border)),
+                    shape: RoundedRectangleBorder(borderRadius: br),
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
+                      splashFactory: NoSplash.splashFactory,
+                      overlayColor: pressedLayer(c),
                       onTap: () => _select(value),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(minHeight: height),
@@ -376,7 +406,7 @@ class _SegmentedToggleState<T> extends State<SegmentedToggle<T>> with SingleTick
                                 Text(
                                   '$count',
                                   style: MullType.monoLabel.copyWith(
-                                    color: widget.accent && sel ? c.onPrimary.withValues(alpha: 0.8) : c.onSurfaceVariant,
+                                    color: sel ? c.onPrimary.withValues(alpha: 0.8) : c.onSurfaceVariant,
                                   ),
                                 ),
                               ],

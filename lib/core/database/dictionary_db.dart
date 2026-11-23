@@ -737,16 +737,6 @@ class DictionaryDb {
         return out;
       });
 
-  /// Slugs of the collections a word belongs to.
-  List<String> collectionsOf(String wordKey) => _db
-      .select(
-        'SELECT c.slug FROM collection_words cw JOIN collections c ON c.id = cw.collection_id '
-        'WHERE cw.word_key = ? ORDER BY c.sort_order',
-        <Object>[wordKey],
-      )
-      .map((Row r) => r['slug'] as String)
-      .toList();
-
   /// The inflections the dictionary knows for a word (plural, past...).
   List<String> inflections(String wordKey) => _db
       .select(

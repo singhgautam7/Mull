@@ -226,6 +226,7 @@ class OnboardingNavBar extends StatelessWidget {
                             icon: Icons.arrow_back_rounded,
                             type: AppButtonType.outlined,
                             fullWidth: true,
+                            padding: const EdgeInsets.symmetric(horizontal: Space.md),
                             onPressed: showBack ? onBack : null,
                           ),
                         ),

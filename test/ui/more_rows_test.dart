@@ -61,7 +61,8 @@ void main() {
       await tester.pump();
 
       final Finder rows = find.byType(MoreEntryRow);
-      expect(rows, findsNWidgets(7));
+      expect(rows, findsNWidgets(8));
+      expect(tester.getTopLeft(find.text('Notes')).dy, lessThan(tester.getTopLeft(find.text('Stats')).dy), reason: 'Notes sits above Stats');
       expect(find.text('TOOLS'), findsOneWidget);
       expect(find.text('MANAGE'), findsOneWidget);
       expect(find.text('ABOUT'), findsOneWidget);

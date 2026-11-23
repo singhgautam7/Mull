@@ -301,7 +301,7 @@ class _LingerScreenState extends ConsumerState<LingerScreen> with WidgetsBinding
       anchorContext: anchor,
       entries: const <AppMenuEntry<String>>[
         AppMenuEntry<String>(value: 'share', label: 'Share', icon: Icons.share_rounded),
-        AppMenuEntry<String>(value: 'collection', label: 'Add to shelf', icon: Icons.playlist_add_rounded),
+        AppMenuEntry<String>(value: 'collection', label: 'Add to shelf', icon: Icons.library_add_outlined),
       ],
     );
     if (!mounted) return;

@@ -30,6 +30,13 @@ void main() {
       final double empty = tester.getSize(find.byType(SearchField)).height;
       expect(find.bySemanticsLabel('Clear'), findsNothing, reason: 'no clear button while empty');
 
+      // The whole pill takes the tap, and the text sits in its middle.
+      final Rect pill = tester.getRect(find.byType(SearchField));
+      await tester.tapAt(Offset(pill.center.dx, pill.bottom - 4));
+      await tester.pump();
+      expect(tester.state<EditableTextState>(find.byType(EditableText)).widget.focusNode.hasFocus, isTrue);
+      expect(tester.getCenter(find.byType(EditableText)).dy, closeTo(pill.center.dy, 1.5));
+
       await tester.enterText(find.byType(TextField), 'mitigate');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300)); // the clear button scales in

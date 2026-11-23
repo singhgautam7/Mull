@@ -109,4 +109,36 @@ void main() {
       await tester.pump();
     });
   });
+
+  testWidgets('Show all is a plain text button and the revealed items continue the same left edge', (WidgetTester tester) async {
+    await open(tester);
+    expect(find.widgetWithText(PillChip, 'Show all (10)'), findsNothing, reason: 'a text button, not a chip');
+    Finder antonyms(String t) => find.text(t);
+    final double edge = tester.getTopLeft(find.widgetWithText(PillChip, 'large')).dx;
+    final double plainEdge = tester.getTopLeft(antonyms('m1')).dx;
+    final double showAll = tester.getTopLeft(find.text('Show all (10)')).dx;
+    expect(showAll, plainEdge - 8, reason: 'label shares the section left edge (plain items carry Space.sm padding)');
+    expect(tester.getSize(find.ancestor(of: find.text('Show all (10)'), matching: find.byType(ConstrainedBox)).first).height,
+        greaterThanOrEqualTo(48));
+    await tester.tap(find.text('Show all (10)'));
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(tester.getTopLeft(find.widgetWithText(PillChip, 'large')).dx, edge);
+    expect(tester.getTopLeft(antonyms('m1')).dx, plainEdge);
+    // Every wrapped row starts at the same dx: the leftmost item of each row.
+    final Map<double, double> rowLeft = <double, double>{};
+    for (final String t in many) {
+      final Offset o = tester.getTopLeft(antonyms(t));
+      rowLeft[o.dy] = rowLeft[o.dy] == null || o.dx < rowLeft[o.dy]! ? o.dx : rowLeft[o.dy]!;
+    }
+    expect(rowLeft.length, greaterThan(1));
+    expect(rowLeft.values.toSet(), <double>{plainEdge});
+    expect(tester.getTopLeft(find.text('Show less')).dx, showAll);
+    await tester.runAsync(() async {
+      await tester.pumpWidget(const SizedBox());
+      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
+    });
+  });
 }

@@ -80,7 +80,7 @@ class _IdiomSheet extends ConsumerWidget {
           label('SEE ALSO'),
           Wrap(
             spacing: Space.sm,
-            runSpacing: Space.sm,
+            runSpacing: PillChip.runSpacing,
             children: <Widget>[
               for (final Idiom r in related)
                 PillChip(

@@ -63,6 +63,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<Idiom> _idioms = const <Idiom>[];
   List<DictionaryWord> _suggestions = const <DictionaryWord>[];
   late SearchSegment _segment = widget.initialSegment;
+
+  /// True for the moments after a filter tap: results that were not on screen
+  /// ease in, the ones that stay do not move (they are keyed). A keystroke
+  /// never animates.
+  bool _swapped = false;
+  Timer? _swapTimer;
+
   bool _slow = false;
   List<String> _recent = const <String>[];
 
@@ -112,6 +119,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void dispose() {
     _recordTimer?.cancel();
     _debounce?.cancel();
+    _swapTimer?.cancel();
     _field.dispose();
     _focus.dispose();
     super.dispose();
@@ -159,6 +167,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  void _select(SearchSegment s) {
+    _swapTimer?.cancel();
+    _swapTimer = Timer(Motion.staggerDelay(6) + Motion.fxDefault, () => _swapped = false);
+    setState(() {
+      _swapped = true;
+      _segment = s;
+    });
+  }
+
   void _set(String q) {
     _field.text = q;
     _field.selection = TextSelection.collapsed(offset: q.length);
@@ -175,75 +192,68 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final bool typing = _query.trim().isNotEmpty;
+    final SearchStyle style = ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle));
+    // HeaderPage removes the top padding inside its body, so the status bar
+    // is read here; the header scope only exists below HeaderPage (Builder).
+    final double statusBar = MediaQuery.paddingOf(context).top;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        // The Shelves tab's header, title and position, but it always scrolls
-        // away: the search bar is the sticky one (pinned at the top once the
-        // title has gone), whatever the Floating header setting. The filters
-        // and section titles scroll with the results.
+        // The Shelves tab's header, title and position; it scrolls away and
+        // the search bar takes its place as the pill (HeaderSearchBar). The
+        // filters and section titles scroll with the results.
         body: HeaderPage(
           scrollAway: true,
           header: AppHeader(
             title: 'Search',
             onBack: Navigator.of(context).canPop() ? () => Navigator.of(context).pop() : null,
           ),
-          body: CustomScrollView(
-            slivers: <Widget>[
-              ..._searchBar(context),
-              SliverToBoxAdapter(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                  child: Row(
-                    spacing: Space.sm,
-                    children: <Widget>[
-                      for (final (SearchSegment s, String l) in const <(SearchSegment, String)>[
-                        (SearchSegment.all, 'All'),
-                        (SearchSegment.words, 'Words'),
-                        (SearchSegment.idioms, 'Phrases'),
-                      ])
-                        PillChip(label: l, selected: _segment == s, onTap: () => setState(() => _segment = s)),
-                    ],
+          body: Builder(
+            builder: (BuildContext inner) => CustomScrollView(
+              slivers: <Widget>[
+                ..._searchBar(inner, statusBar),
+                SliverToBoxAdapter(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                    child: Row(
+                      spacing: Space.sm,
+                      children: <Widget>[
+                        for (final (SearchSegment s, String l) in const <(SearchSegment, String)>[
+                          (SearchSegment.all, 'All'),
+                          (SearchSegment.words, 'Words'),
+                          (SearchSegment.idioms, 'Phrases'),
+                        ])
+                          PillChip(label: l, selected: _segment == s, onTap: () => _select(s)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(child: LoadingHairline(visible: _slow)),
-              if (typing) _results(c) else _recentList(c),
-            ],
+                SliverToBoxAdapter(child: LoadingHairline(visible: _slow)),
+                if (typing) _results(c, style) else _recentList(c),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// The gap under the header, then the pinned search bar. The bar's field
-  /// sits exactly where the Shelves tab's does (top = status bar + rest
-  /// header, Space.screen sides, Space.md below); the sliver's own top
-  /// padding is the status bar, so once pinned the field clears it.
-  List<Widget> _searchBar(BuildContext context) {
-    final double sb = MediaQuery.paddingOf(context).top;
+  /// The gap under the header, then the search bar: its field sits exactly
+  /// where the Shelves tab's does.
+  List<Widget> _searchBar(BuildContext context, double sb) {
     final double inset = HeaderPage.insetOf(context);
     return <Widget>[
       SliverToBoxAdapter(child: SizedBox(height: math.max(0, inset - sb - Space.sm))),
-      SliverPersistentHeader(
-        pinned: true,
-        delegate: _RowDelegate(
-          extent: sb + Space.sm + SearchField.height + Space.md,
-          child: ColoredBox(
-            color: context.colors.surface,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(Space.screen, sb + Space.sm, Space.screen, Space.md),
-              child: SearchField(
-                controller: _field,
-                focusNode: _focus,
-                hint: 'Search words and phrases',
-                onChanged: _run,
-              ),
-            ),
-          ),
+      HeaderSearchBar(
+        child: SearchField(
+          bare: true,
+          controller: _field,
+          focusNode: _focus,
+          hint: 'Search words and phrases',
+          onChanged: _run,
         ),
       ),
     ];
@@ -283,6 +293,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _recentList(MullColors c) {
+    if (_recent.isEmpty) return const SliverToBoxAdapter(child: SizedBox(height: Space.bottomSafe));
     return SliverPadding(
       padding: const EdgeInsets.only(top: Space.lg, bottom: Space.bottomSafe),
       sliver: SliverList(
@@ -316,19 +327,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, 0),
-            child: Text(
-              'Anything you look up is kept here and on Home, so a word you met once is easy to find again.',
-              style: MullType.note.copyWith(color: c.onSurfaceVariant),
-            ),
-          ),
         ]),
       ),
     );
   }
 
-  Widget _results(MullColors c) {
+  Widget _results(MullColors c, SearchStyle style) {
     // All: the words, then the phrases.
     final List<DictionaryWord> words = _segment == SearchSegment.idioms ? const <DictionaryWord>[] : _words;
     final List<Idiom> idioms = _segment == SearchSegment.words ? const <Idiom>[] : _idioms;
@@ -337,17 +341,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     SearchResult at(int i) =>
         i < words.length ? SearchResult.word(words[i]) : SearchResult.idiom(idioms[i - words.length]);
     Widget? add(int i) => i < words.length ? _AddToListButton(word: words[i]) : null;
+    Widget enter(int i, Widget child) => StaggeredEntrance(
+      key: ValueKey<String>(i < words.length ? words[i].wordKey : idioms[i - words.length].idiomKey),
+      index: i,
+      animate: _swapped && i < 6,
+      child: child,
+    );
     void open(int i) => i < words.length
         ? unawaited(_openWord(words[i]))
         : unawaited(showIdiomSheet(context, idiom: idioms[i - words.length]));
 
-    if (ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle)) == SearchStyle.table) {
+    if (style == SearchStyle.table) {
       return SliverPadding(
         padding: const EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe),
         sliver: SliverList.builder(
           itemCount: n,
           itemBuilder: (BuildContext context, int i) =>
-              SearchResultRow(result: at(i), query: _query, onTap: () => open(i), trailing: add(i)),
+              enter(i, SearchResultRow(result: at(i), query: _query, onTap: () => open(i), trailing: add(i))),
         ),
       );
     }
@@ -357,7 +367,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         itemCount: n,
         separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
         itemBuilder: (BuildContext context, int i) =>
-            SearchResultCard(result: at(i), query: _query, onTap: () => open(i)),
+            enter(i, SearchResultCard(result: at(i), query: _query, onTap: () => open(i))),
       ),
     );
   }
@@ -397,22 +407,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
     );
   }
-}
-
-class _RowDelegate extends SliverPersistentHeaderDelegate {
-  _RowDelegate({required this.extent, required this.child});
-
-  final double extent;
-  final Widget child;
-
-  @override
-  double get minExtent => extent;
-  @override
-  double get maxExtent => extent;
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => child;
-  @override
-  bool shouldRebuild(_RowDelegate old) => extent != old.extent || child != old.child;
 }
 
 /// One result, whichever table it came from. The card and the row draw the
@@ -604,7 +598,7 @@ class _AddToListButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppIconButton(
-    icon: Icons.playlist_add_rounded,
+    icon: Icons.library_add_outlined,
     semanticLabel: 'Add ${word.headword} to a list',
     filled: false,
     onPressed: () => unawaited(showAddToListSheet(context, wordKey: word.wordKey, headword: word.headword)),

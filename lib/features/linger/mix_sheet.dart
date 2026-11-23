@@ -192,7 +192,7 @@ class _MixSheetState extends ConsumerState<_MixSheet> {
         sectionLabel('HOW FAMILIAR'),
         Wrap(
           spacing: Space.sm,
-          runSpacing: Space.sm,
+          runSpacing: PillChip.runSpacing,
           children: <Widget>[
             for (final SeenPolicy p in SeenPolicy.values)
               PillChip(
@@ -319,7 +319,7 @@ class _SourceRow extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: checked ? c.primary : Colors.transparent,
+                  color: c.primary.withValues(alpha: checked ? 1 : 0),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: checked ? c.primary : (enabled ? c.outline : c.divider),

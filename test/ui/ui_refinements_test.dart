@@ -587,11 +587,14 @@ void main() {
             ],
             child: MaterialApp(
               theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-              home: const CollectionScreen(slug: 'from-my-reading'),
+              home: const CollectionScreen(slug: UserRepository.readingSlug),
             ),
           ),
         );
 
+        // The user's shelves stream in; until then there is no +.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
         // Verify '+' button is in the header
         final Finder addBtn = find.bySemanticsLabel('Add');
         expect(addBtn, findsOneWidget);
@@ -618,7 +621,7 @@ void main() {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final UserRepository userRepo = UserRepository(userDb);
       await userRepo.ensureSystemCollections();
-      await userRepo.addToCollection('from-my-reading', ephemera.key);
+      await userRepo.addToCollection(UserRepository.readingSlug, ephemera.key);
 
       await tester.runAsync(() async {
         await tester.pumpWidget(
@@ -630,7 +633,7 @@ void main() {
             ],
             child: MaterialApp(
               theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-              home: const CollectionScreen(slug: 'from-my-reading'),
+              home: const CollectionScreen(slug: UserRepository.readingSlug),
             ),
           ),
         );
@@ -765,7 +768,7 @@ void main() {
       expect(find.text('ABOUT'), findsOneWidget);
       expect(
         tester.widgetList<MoreEntryRow>(find.byType(MoreEntryRow)).map((MoreEntryRow r) => r.title),
-        <String>['Stats', 'Data', 'Permissions', 'Settings', 'Privacy', 'Dictionary', 'About Mull'],
+        <String>['Notes', 'Stats', 'Data', 'Permissions', 'Settings', 'Privacy', 'Dictionary', 'About Mull'],
       );
 
       await tester.pumpWidget(const SizedBox());

@@ -18,9 +18,10 @@ import '../../shared/widgets/dashed_border.dart';
 import '../../shared/widgets/shelf_icon.dart';
 import '../collections/shelf_edit_screen.dart';
 
-/// Checkbox rows, 22dp square, radius 6, one per collection of the user's
-/// own: Bookmarks, From my reading, then created lists. A word in no list
-/// opens with nothing ticked. Last row is "New list". Done confirms with a
+/// One row per collection of the user's own (Bookmarks, From my reading, then
+/// created lists), each with a trailing switch: on means the word is on that
+/// shelf, and a word may be on several. A word on no shelf opens with every
+/// switch off. Last row is "New list". Done confirms with a
 /// toast naming what was added while the sheet was open.
 ///
 /// [fromSearch] is kept for callers; it no longer pre-ticks anything.
@@ -160,34 +161,34 @@ class _Row extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    return Semantics(
-      checked: checked,
-      label: label,
-      child: Pressable(
-        kind: PressKind.row,
-        onTap: () => onChanged(!checked),
-        child: SizedBox(
-          height: 48,
-          child: Row(
-            spacing: Space.md,
-            children: <Widget>[
-              AnimatedContainer(
-                duration: Motion.of(context, Motion.instant),
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: checked ? c.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: checked ? c.primary : c.outline, width: 1.5),
+    return MergeSemantics(
+      child: Semantics(
+        toggled: checked,
+        label: label,
+        child: Pressable(
+          kind: PressKind.row,
+          onTap: () => onChanged(!checked),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: Row(
+              spacing: Space.md,
+              children: <Widget>[
+                if (slug != null) ShelfIcon.of(slug: slug!, icon: icon, color: color),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(label, style: MullType.titleMedium.copyWith(color: c.onSurface)),
+                      if (count != null) Text('$count', style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+                    ],
+                  ),
                 ),
-                child: checked ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
-              ),
-              if (slug != null) ShelfIcon.of(slug: slug!, icon: icon, color: color),
-              Expanded(
-                child: Text(label, style: MullType.titleMedium.copyWith(color: c.onSurface)),
-              ),
-              if (count != null) Text('$count', style: MullType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-            ],
+                // The row's tap is the only toggle; the switch only draws it.
+                ExcludeSemantics(
+                  child: IgnorePointer(child: Switch.adaptive(value: checked, onChanged: onChanged)),
+                ),
+              ],
+            ),
           ),
         ),
       ),

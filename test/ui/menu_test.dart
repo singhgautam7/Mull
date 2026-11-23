@@ -59,6 +59,59 @@ void main() {
     expect(find.descendant(of: find.widgetWithText(AppMenuRow, 'Two'), matching: find.byType(Icon)), findsNWidgets(2));
   });
 
+  testWidgets('a menu fades as one panel, returns the value, ignores a disabled row, scrolls when tall', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    String? picked;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topRight,
+            child: Builder(
+              builder: (BuildContext c) => TextButton(
+                onPressed: () async => picked = await showAppMenu<String>(
+                  context: c,
+                  anchorContext: c,
+                  entries: <AppMenuEntry<String>>[
+                    const AppMenuEntry<String>(value: 'off', label: 'Off row', icon: Icons.block_rounded, enabled: false),
+                    for (int i = 0; i < 17; i++) AppMenuEntry<String>(value: '$i', label: 'Row $i', icon: Icons.edit_outlined),
+                  ],
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await settle(tester);
+    // One fade for the panel, none per row (17 rows were 17 layers a frame).
+    expect(find.descendant(of: find.byType(AppMenuPanel), matching: find.byType(FadeTransition)), findsNothing);
+    final Rect panel = tester.getRect(find.byType(AppMenuPanel));
+    expect(panel.bottom, lessThanOrEqualTo(600));
+    expect(panel.right, lessThanOrEqualTo(400));
+    await tester.tap(find.text('Off row'));
+    await settle(tester);
+    expect(find.byType(AppMenuPanel), findsOneWidget);
+    await tester.ensureVisible(find.text('Row 16'));
+    await settle(tester);
+    await tester.tap(find.text('Row 16'));
+    await settle(tester);
+    expect(picked, '16');
+    expect(find.byType(AppMenuPanel), findsNothing);
+    // A tap outside closes with nothing.
+    await tester.tap(find.text('open'));
+    await settle(tester);
+    await tester.tapAt(const Offset(10, 300));
+    await settle(tester);
+    expect(find.byType(AppMenuPanel), findsNothing);
+    expect(picked, isNull);
+  });
+
   testWidgets('the long-press menu renders AppMenuRows with icons', (WidgetTester tester) async {
     final DictionaryDb dict = fakeDictionary(words: const <FakeWord>[
       FakeWord('petulant', 'adjective', 'Silent and sulky.'),

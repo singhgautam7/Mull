@@ -78,13 +78,17 @@ void main() {
     await tester.pumpWidget(_app(MotionLevel.expressive, const _Toggle()));
     await tester.pumpAndSettle();
     expect(_r(_material(tester, toggle, 0)), 12);
-    expect(_r(_material(tester, toggle, 1)), 19);
+    expect(_r(_material(tester, toggle, 1)), 20);
+    // Selected is the accent, as Kuber's group: never a fill that reads as disabled.
+    final MullColors c = tester.element(find.text('A')).colors;
+    expect(_material(tester, toggle, 0).color, c.primary);
+    expect(_material(tester, toggle, 1).color, c.surfaceContainerHigh);
     await tester.tap(find.text('B'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
-    expect(_r(_material(tester, toggle, 1)), inExclusiveRange(12, 19), reason: 'the shape animates');
+    expect(_r(_material(tester, toggle, 1)), inExclusiveRange(12, 20), reason: 'the shape animates');
     await tester.pumpAndSettle();
-    expect(_r(_material(tester, toggle, 0)), 19);
+    expect(_r(_material(tester, toggle, 0)), 20);
     expect(_r(_material(tester, toggle, 1)), 12);
   });
 
@@ -107,7 +111,7 @@ void main() {
     await tester.tap(find.text('B'));
     await tester.pump();
     expect(_r(_material(tester, toggle, 1)), 12);
-    expect(_r(_material(tester, toggle, 0)), 19);
+    expect(_r(_material(tester, toggle, 0)), 20);
   });
 
   testWidgets('SegmentedToggle ticks once per changed selection, not for the selected item', (WidgetTester tester) async {

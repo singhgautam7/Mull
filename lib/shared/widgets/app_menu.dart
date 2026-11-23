@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/motion/motion.dart';
@@ -43,10 +45,14 @@ class AppMenuEntry<T> {
   final bool divider;
 }
 
-/// Kuber's anchored menu (`showKuberMenu`): surface container, card radius,
-/// 1dp outline, no shadow, padding 8, 200 to 320 wide. Opens below the anchor,
-/// or above it when there is no room below. Pass [anchorContext] for a menu
-/// off an icon button, or [globalPosition] for a long-press.
+/// Kuber's anchored menu: surface container, card radius, 1dp outline, no
+/// shadow, padding 8, 200 to 320 wide. Opens below the anchor, or above it
+/// when there is no room below. Pass [anchorContext] for a menu off an icon
+/// button, or [globalPosition] for a long-press.
+///
+/// Its own route, not `showMenu`: that fades every row in by itself, so a
+/// shelf's 17 rows were 17 offscreen layers on each of about 30 frames, and
+/// it laid the rows out twice on open. Here one panel fades and slides.
 Future<T?> showAppMenu<T>({
   required BuildContext context,
   required List<AppMenuEntry<T>> entries,
@@ -54,102 +60,154 @@ Future<T?> showAppMenu<T>({
   Offset? globalPosition,
   double minWidth = 200,
 }) {
-  final MullColors c = context.colors;
-  final RenderBox overlay =
-      Navigator.of(context, rootNavigator: true).overlay!.context.findRenderObject()!
-          as RenderBox;
-
-  late final RelativeRect position;
-  final RenderObject? anchor = anchorContext?.findRenderObject();
-  if (anchor is RenderBox) {
-    final Offset topLeft = anchor.localToGlobal(Offset.zero, ancestor: overlay);
-    final Offset bottomRight = anchor.localToGlobal(anchor.size.bottomRight(Offset.zero), ancestor: overlay);
-    // Below the anchor; above it when that would run off the bottom. The
-    // height is estimated from the row metrics.
-    final double menuHeight = 2 * Space.sm + 2 +
-        entries.fold<double>(
-          0,
-          (double h, AppMenuEntry<T> e) => h + (e.divider ? 17 : (e.subtitle != null ? 60 : IconSpec.tapTarget)),
-        );
-    final double bottomLimit = overlay.size.height - MediaQuery.viewPaddingOf(context).bottom - Space.sm;
-    final bool above = bottomRight.dy + Space.xs + menuHeight > bottomLimit && topLeft.dy - Space.xs - menuHeight > 0;
-    final double top = above ? topLeft.dy - Space.xs - menuHeight : bottomRight.dy + Space.xs;
-    position = RelativeRect.fromLTRB(
-      topLeft.dx,
-      top,
-      overlay.size.width - bottomRight.dx,
-      overlay.size.height - top,
-    );
-  } else {
-    final Offset at = globalPosition ?? Offset.zero;
-    position = RelativeRect.fromLTRB(
-      at.dx,
-      at.dy,
-      overlay.size.width - at.dx,
-      overlay.size.height - at.dy,
-    );
-  }
-
-  return showMenu<T>(
-    context: context,
-    popUpAnimationStyle: AppMenuPanel.animationStyle(Motion.levelOf(context)),
-    position: position,
-    useRootNavigator: true,
-    color: c.surfaceContainer,
-    surfaceTintColor: Colors.transparent,
-    elevation: 0,
-    constraints: BoxConstraints(minWidth: minWidth, maxWidth: AppMenuPanel.maxWidth),
-    shape: AppMenuPanel.shape(c),
-    menuPadding: const EdgeInsets.all(Space.sm),
-    items: <PopupMenuEntry<T>>[
-      for (final AppMenuEntry<T> e in entries)
-        if (e.divider)
-          PopupMenuItem<T>(
-            enabled: false,
-            height: 17,
-            padding: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: Space.sm),
-              child: Divider(color: c.outline, height: 1),
-            ),
-          )
-        else
-          PopupMenuItem<T>(
-            value: e.value,
-            enabled: e.enabled,
-            height: 0,
-            padding: EdgeInsets.zero,
-            // The popup item's own ink is the press feel; no scale.
-            child: AppMenuRow(
-              icon: e.icon!,
-              label: e.label,
-              subtitle: e.subtitle,
-              selected: e.selected,
-              danger: e.danger,
-              enabled: e.enabled,
-            ),
-          ),
-    ],
+  final NavigatorState nav = Navigator.of(context, rootNavigator: true);
+  final RenderBox overlay = nav.overlay!.context.findRenderObject()! as RenderBox;
+  final RenderObject? box = anchorContext?.findRenderObject();
+  final Rect anchor = box is RenderBox
+      ? Rect.fromPoints(
+          box.localToGlobal(Offset.zero, ancestor: overlay),
+          box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+        )
+      : (globalPosition ?? Offset.zero) & Size.zero;
+  return nav.push(
+    _AppMenuRoute<T>(
+      entries: entries,
+      anchor: anchor,
+      minWidth: minWidth,
+      level: Motion.levelOf(context),
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      themes: InheritedTheme.capture(from: context, to: nav.context),
+    ),
   );
 }
 
-/// The menu card: what [showAppMenu] gives its popup, as a widget, for a menu
-/// laid out by hand (the long-press Define / Copy menu). Not animated.
+class _AppMenuRoute<T> extends PopupRoute<T> {
+  _AppMenuRoute({
+    required this.entries,
+    required this.anchor,
+    required this.minWidth,
+    required this.level,
+    required this.barrierLabel,
+    required this.themes,
+  });
+
+  final List<AppMenuEntry<T>> entries;
+  final Rect anchor;
+  final double minWidth;
+  final MotionLevel level;
+  final CapturedThemes themes;
+
+  @override
+  final String barrierLabel;
+  @override
+  Color? get barrierColor => null;
+  @override
+  bool get barrierDismissible => true;
+  @override
+  Duration get transitionDuration => level == MotionLevel.off ? Motion.fxInstant : Motion.fxFast;
+  @override
+  Duration get reverseTransitionDuration => Motion.fxInstant;
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondary) {
+    final EdgeInsets safe = MediaQuery.paddingOf(context);
+    return CustomSingleChildLayout(
+      delegate: _MenuLayout(anchor, safe),
+      child: themes.wrap(
+        Semantics(
+          scopesRoute: true,
+          namesRoute: true,
+          explicitChildNodes: true,
+          label: MaterialLocalizations.of(context).popupMenuLabel,
+          child: RepaintBoundary(
+            child: AppMenuPanel(
+              minWidth: minWidth,
+              children: <Widget>[
+                for (final AppMenuEntry<T> e in entries)
+                  if (e.divider)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: Space.sm),
+                      child: Divider(color: context.colors.outline, height: 1),
+                    )
+                  else
+                    AppMenuRow(
+                      icon: e.icon!,
+                      label: e.label,
+                      subtitle: e.subtitle,
+                      selected: e.selected,
+                      danger: e.danger,
+                      enabled: e.enabled,
+                      onTap: e.enabled ? () => Navigator.of(context).pop(e.value) : null,
+                    ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation, Animation<double> secondary, Widget child) {
+    final Widget faded = FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Motion.curveEffects, reverseCurve: Curves.linear),
+      child: child,
+    );
+    if (level != MotionLevel.expressive) return faded;
+    return AnimatedBuilder(
+      animation: animation,
+      child: faded,
+      // A short drop, no scale: scaled text is re-rasterised every frame.
+      builder: (BuildContext _, Widget? child) => Transform.translate(
+        offset: Offset(0, -Space.sm * (1 - Motion.decelerate.transform(animation.value))),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Below [anchor], or above when it does not fit below; clamped to the safe
+/// area. Aligned to whichever edge of the anchor is nearer its screen edge.
+class _MenuLayout extends SingleChildLayoutDelegate {
+  const _MenuLayout(this.anchor, this.safe);
+
+  final Rect anchor;
+  final EdgeInsets safe;
+
+  static const double _edge = Space.sm;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints.loose(constraints.biggest).deflate(safe + const EdgeInsets.all(_edge));
+
+  @override
+  Offset getPositionForChild(Size size, Size child) {
+    final double maxY = math.max(safe.top + _edge, size.height - safe.bottom - _edge - child.height);
+    final double maxX = math.max(_edge, size.width - _edge - child.width);
+    final double below = anchor.bottom + Space.xs;
+    final double above = anchor.top - Space.xs - child.height;
+    final double y = below > maxY && above >= safe.top + _edge ? above : below;
+    final double x = anchor.center.dx > size.width / 2 && !anchor.isEmpty ? anchor.right - child.width : anchor.left;
+    return Offset(x.clamp(_edge, maxX), y.clamp(safe.top + _edge, maxY));
+  }
+
+  @override
+  bool shouldRelayout(_MenuLayout old) => anchor != old.anchor || safe != old.safe;
+}
+
+/// The menu card, shared by [showAppMenu] and the menu laid out by hand (the
+/// long-press Define / Copy menu). Scrolls when taller than its room. Not
+/// animated.
 class AppMenuPanel extends StatelessWidget {
-  const AppMenuPanel({required this.children, super.key});
+  const AppMenuPanel({required this.children, this.minWidth = 200, super.key});
 
   final List<Widget> children;
+  final double minWidth;
 
-  static const double minWidth = 200;
   static const double maxWidth = 320;
 
-  /// Card radius, 1dp outline.
-  static ShapeBorder shape(MullColors c) => RoundedRectangleBorder(
-    borderRadius: Radii.cardR,
-    side: BorderSide(color: c.outline),
-  );
-
-  /// Spring fast in (subtle spring at Subtle), 90 ms fade out; Off 90 ms.
+  /// The long-press menu's entrance: spring fast in (subtle spring at
+  /// Subtle), 90 ms fade out; Off 90 ms.
   static AnimationStyle animationStyle(MotionLevel level) {
     if (level == MotionLevel.off) {
       return const AnimationStyle(duration: Motion.fxInstant, reverseDuration: Motion.fxInstant);
@@ -165,12 +223,16 @@ class AppMenuPanel extends StatelessWidget {
       color: c.surfaceContainer,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      shape: shape(c),
+      // Card radius, 1dp outline.
+      shape: RoundedRectangleBorder(
+        borderRadius: Radii.cardR,
+        side: BorderSide(color: c.outline),
+      ),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
+        constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
         child: IntrinsicWidth(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(Space.sm),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -185,8 +247,8 @@ class AppMenuPanel extends StatelessWidget {
 }
 
 /// One menu row: min 48, 12dp ink, icon 20, gap 12, label and an optional
-/// subtitle. Selected: selected-container fill and a trailing check. Pass
-/// [onTap] when no popup item supplies the tap and ink.
+/// subtitle. Selected: selected-container fill and a trailing check. No
+/// [onTap] is a disabled row.
 class AppMenuRow extends StatelessWidget {
   const AppMenuRow({
     required this.icon,
@@ -221,13 +283,11 @@ class AppMenuRow extends StatelessWidget {
         ? c.danger
         : (selected ? c.onPrimaryContainer : c.onSurfaceVariant);
 
+    // An unselected row draws no box of its own, so the ink shows.
     final Widget row = Container(
       constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
       padding: const EdgeInsets.symmetric(horizontal: Space.md),
-      decoration: BoxDecoration(
-        color: selected ? c.primaryContainer : Colors.transparent,
-        borderRadius: Radii.mediumR,
-      ),
+      decoration: selected ? BoxDecoration(color: c.primaryContainer, borderRadius: Radii.mediumR) : null,
       child: Row(
         children: <Widget>[
           Icon(icon, size: 20, color: iconColor),
@@ -253,11 +313,11 @@ class AppMenuRow extends StatelessWidget {
         ],
       ),
     );
-    if (onTap == null) return row;
     return Semantics(
       button: true,
+      enabled: onTap != null,
       selected: selected,
-      label: label,
+      label: subtitle == null ? label : '$label, $subtitle',
       onTap: onTap,
       excludeSemantics: true,
       child: InkWell(onTap: onTap, borderRadius: Radii.mediumR, child: row),

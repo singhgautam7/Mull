@@ -177,6 +177,8 @@ abstract final class Motion {
     fontVariations: <FontVariation>[FontVariation('wght', wght)],
   );
   static const Duration navIndicator = Duration(milliseconds: 220);
+  /// Kuber's tab pager.
+  static const Duration tabSlide = Duration(milliseconds: 300);
   static const Duration containerTransform = Duration(milliseconds: 240);
   static const Duration sheet = Duration(milliseconds: 260);
   static const Duration cardSwipe = Duration(milliseconds: 260);

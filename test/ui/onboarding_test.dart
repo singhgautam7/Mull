@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -8,6 +11,7 @@ import 'package:mull/core/router/router.dart';
 import 'package:mull/core/theme/app_theme.dart';
 import 'package:mull/core/theme/palette.dart';
 import 'package:mull/core/utils/platform_surfaces.dart';
+import 'package:mull/shared/widgets/family_card.dart';
 import 'package:mull/features/onboarding/onboarding_intro_page.dart';
 import 'package:mull/features/settings/settings_controller.dart';
 import 'package:mull/features/settings/settings_widgets.dart';
@@ -19,6 +23,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late ProviderContainer container;
+
+  setUpAll(() async {
+    // Real metrics: the bundled typeface, not the test font.
+    final ByteData font = ByteData.sublistView(File('assets/fonts/InstrumentSans-Variable.ttf').readAsBytesSync());
+    await (FontLoader('Instrument Sans')..addFont(Future<ByteData>.value(font))).load();
+  });
 
   void notificationsAnswer(bool granted) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -130,5 +140,25 @@ void main() {
     }
     expect(find.text('Get started'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('setup page: no family cards, the mode toggle sets dark', (WidgetTester tester) async {
+    await pumpFlow(tester);
+    await toSetup(tester);
+    expect(find.byType(FamilyCard), findsNothing);
+    for (final String t in <String>['Light', 'Dark', 'System']) {
+      expect(find.text(t), findsOneWidget);
+    }
+    await tester.tap(find.text('Dark'));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).themeMode, ThemeMode.dark);
+  });
+
+  testWidgets('the Back label is not truncated', (WidgetTester tester) async {
+    await pumpFlow(tester);
+    await next(tester);
+    final RenderParagraph p = tester.renderObject<RenderParagraph>(find.text('Back'));
+    expect(p.didExceedMaxLines, isFalse);
+    expect(p.getMinIntrinsicWidth(double.infinity), lessThanOrEqualTo(p.size.width));
   });
 }

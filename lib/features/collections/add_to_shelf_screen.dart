@@ -107,6 +107,23 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
     final MullColors c = context.colors;
     final DictionaryDb dict = ref.watch(dictProvider);
     final Collection? shelf = ref.watch(collectionBySlugProvider)[widget.slug];
+    // Pre-made shelves are read-only. The user's shelves stream in after a
+    // frame, so an unknown slug shows nothing until they have loaded.
+    if (shelf == null && ref.watch(userCollectionsProvider).isLoading) {
+      return const Scaffold();
+    }
+    if (shelf == null || !shelf.isUsers) {
+      return Scaffold(
+        body: HeaderPage(
+          floating: false,
+          header: AppHeader(title: 'Add words', onBack: () => context.pop()),
+          body: const EmptyState(
+            title: 'This shelf is not yours to change',
+            message: 'Pre-made shelves cannot take new words. Make a shelf of your own to add to.',
+          ),
+        ),
+      );
+    }
     final List<String> userKeys =
         ref.watch(userCollectionKeysProvider).value?[widget.slug] ?? const <String>[];
     final Set<String> onShelf = userKeys.toSet();
@@ -130,7 +147,7 @@ class _AddToShelfScreenState extends ConsumerState<AddToShelfScreen> {
           floating: false,
           header: AppHeader(
             title: widget.phrases ? 'Add phrases' : 'Add words',
-            subtitle: '${shelf?.title ?? widget.slug} · ${plural(total, widget.phrases ? 'phrase' : 'word')}',
+            subtitle: '${shelf.title} · ${plural(total, widget.phrases ? 'phrase' : 'word')}',
             onBack: () => context.pop(),
           ),
           body: SafeArea(
@@ -301,7 +318,7 @@ class _Tick extends StatelessWidget {
       height: 30,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: on ? c.primaryContainer : Colors.transparent,
+        color: c.primaryContainer.withValues(alpha: on ? 1 : 0),
         border: Border.all(color: on ? c.primary : c.outline, width: 1.5),
       ),
       child: Icon(

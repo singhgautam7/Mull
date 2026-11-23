@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -76,6 +78,7 @@ class SearchField extends StatelessWidget {
     this.focusNode,
     this.autofocus = false,
     this.leading,
+    this.bare = false,
     super.key,
   });
 
@@ -88,6 +91,9 @@ class SearchField extends StatelessWidget {
   /// Replaces the search glyph (Kuber puts its back button here).
   final Widget? leading;
 
+  /// No pill of its own: a [HeaderSearchBar] draws it.
+  final bool bare;
+
   /// Kuber's pill height.
   static const double height = 48;
 
@@ -95,9 +101,10 @@ class SearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final TextStyle text = MullType.body.copyWith(fontSize: 16);
+    final double line = MediaQuery.textScalerOf(context).scale(16) * (text.height ?? 1.25);
     return Container(
       height: height,
-      decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
+      decoration: bare ? null : BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
       child: Row(
         children: <Widget>[
           leading ??
@@ -118,8 +125,8 @@ class SearchField extends StatelessWidget {
               style: text.copyWith(color: c.onSurface),
               decoration: InputDecoration(
                 isCollapsed: true,
-                // The theme's input padding would push the text off-centre.
-                contentPadding: EdgeInsets.zero,
+                // Fills the pill, so all of it takes the tap, not just the line.
+                contentPadding: EdgeInsets.symmetric(vertical: math.max(0, (height - line) / 2)),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,

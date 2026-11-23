@@ -308,6 +308,13 @@ class UserRepository {
           .watchSingleOrNull()
           .map((Note? n) => n?.body);
 
+  /// Every note, newest first.
+  Stream<List<Note>> watchAllNotes() => (_db.select(_db.notes)
+        ..orderBy(<OrderingTerm Function(Notes)>[
+          (Notes n) => OrderingTerm.desc(n.updatedAt),
+        ]))
+      .watch();
+
   /// Empty text deletes the note; there is no such thing as an empty note.
   Future<void> putNote(String wordKey, String body, {DateTime? now}) async {
     if (body.trim().isEmpty) {

@@ -162,7 +162,7 @@ class NoteSection extends ConsumerWidget {
       if (!showAdd) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.only(top: Space.xl),
-        child: AppButton(label: 'Add a note', icon: Icons.edit_note_rounded, type: AppButtonType.dotted, fullWidth: true, onPressed: edit),
+        child: AppButton(label: 'Add a note', icon: Icons.sticky_note_2_outlined, type: AppButtonType.dotted, fullWidth: true, onPressed: edit),
       );
     }
     final MullColors c = context.colors;

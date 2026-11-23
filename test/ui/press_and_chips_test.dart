@@ -5,6 +5,7 @@ import 'package:mull/core/theme/app_theme.dart';
 import 'package:mull/core/theme/palette.dart';
 import 'package:mull/shared/widgets/app_button.dart';
 import 'package:mull/shared/widgets/app_icon_button.dart';
+import 'package:mull/core/theme/tokens.dart';
 import 'package:mull/shared/widgets/chips.dart';
 
 /// Press morph (circle to squircle and back) and the filter chip shapes.
@@ -73,12 +74,12 @@ void main() {
     await tester.pumpAndSettle();
     final Material sel = _m(tester, chips.at(0));
     expect(_r(sel), 12);
-    expect((sel.shape! as RoundedRectangleBorder).side.color, Colors.transparent);
+    expect((sel.shape! as RoundedRectangleBorder).side.color.a, 0);
     expect(sel.color, isNot(Colors.transparent));
     final Material un = _m(tester, chips.at(1));
     expect(un.shape, isA<StadiumBorder>());
     expect((un.shape! as StadiumBorder).side.width, 1);
-    expect(un.color, Colors.transparent);
+    expect(un.color!.a, 0);
     await tester.tap(find.text('Chip 1'));
     await tester.pumpAndSettle();
     expect(_m(tester, chips.at(0)).shape, isA<StadiumBorder>());
@@ -89,5 +90,53 @@ void main() {
     await tester.pumpWidget(_app(MotionLevel.expressive, PillChip(label: 'syn', onTap: () {})));
     expect(_m(tester, chips).shape, isA<StadiumBorder>());
     expect(tester.getSize(chips).height, greaterThanOrEqualTo(48));
+  });
+
+  testWidgets('wrapped tappable chips sit as far apart vertically as horizontally', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _app(
+        MotionLevel.expressive,
+        SizedBox(
+          width: 180,
+          child: Wrap(
+            spacing: Space.sm,
+            runSpacing: PillChip.runSpacing,
+            children: <Widget>[for (final String s in <String>['aaaa', 'bbbb', 'cccc', 'dddd']) PillChip(label: s, onTap: () {})],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Rect pill(int i) => tester.getRect(find.descendant(of: find.byType(PillChip).at(i), matching: find.byType(Material)).first);
+    final int next = <int>[1, 2, 3].firstWhere((int i) => pill(i).top > pill(0).top);
+    expect(pill(1).left - pill(0).right, closeTo(Space.sm, 0.5));
+    expect(pill(next).top - pill(0).bottom, closeTo(Space.sm, 0.5));
+  });
+
+  testWidgets('a chip change animates: fill, label colour and shape are between the two states midway; Off is instant', (
+    WidgetTester tester,
+  ) async {
+    for (final MotionLevel level in <MotionLevel>[MotionLevel.expressive, MotionLevel.off]) {
+      await tester.pumpWidget(_app(level, const SizedBox()));
+      await tester.pumpWidget(_app(level, const _Chips()));
+      await tester.pumpAndSettle();
+      final MullColors c = tester.element(chips.at(1)).colors;
+      Color label() => tester.widget<Text>(find.descendant(of: chips.at(1), matching: find.byType(Text)).first).style!.color!;
+      await tester.tap(chips.at(1));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      if (level == MotionLevel.off) {
+        expect(_r(_m(tester, chips.at(1))), 12);
+      } else {
+        expect(_m(tester, chips.at(1)).color!.a, inExclusiveRange(0.05, 0.99));
+        // Towards the accent container all the way: never through grey.
+        expect(_m(tester, chips.at(1)).color!.r, closeTo(c.primaryContainer.r, 0.01));
+        expect(label(), isNot(c.onSurfaceVariant));
+        expect(label(), isNot(c.onPrimaryContainer));
+      }
+      await tester.pumpAndSettle();
+      expect(_m(tester, chips.at(1)).color, c.primaryContainer);
+      expect(label(), c.onPrimaryContainer);
+    }
   });
 }

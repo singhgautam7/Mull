@@ -29,9 +29,9 @@ enum _Filter { all, words, phrases, bands, topics, yours, inProgress }
 
 enum _Sort { kind, progress, size, az }
 
-/// HANDOFF 12, the browse screen. Bands are a ladder (easiest first, fixed
-/// order), topics are a grid (unordered, overlapping), and the user's own
-/// lists sit below in a filled container. Nobody should have to wonder
+/// HANDOFF 12, the browse screen. The user's own shelves come first (My
+/// Shelf), then bands, a ladder (easiest first, fixed order), and topics, a
+/// grid (unordered, overlapping). Nobody should have to wonder
 /// whether Professional Words is harder than Well Read, and a list created
 /// here appears here.
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -46,11 +46,16 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   _Filter _filter = _Filter.all;
   _Sort _sort = _Sort.kind;
 
-  /// True for the first moments after the tab opens: the first six topic
-  /// cards stagger in then, and only then (`StaggeredEntrance` reads it once,
-  /// when a card first builds). A card built later (scrolling, a new filter)
-  /// never animates. Read at build, so it needs no setState.
-  bool _intro = true;
+  /// True for the first moments after the tab opens or a filter or sort
+  /// changes: the first six topic cards that appear stagger in then, and only
+  /// then (`StaggeredEntrance` reads it once, when a card first builds). Cards
+  /// are keyed by shelf, so one that stays put does not move or blink, and a
+  /// card built by scrolling never animates. Read at build, so it needs no
+  /// setState.
+  /// False too when the tab was built ahead of its first visit ([WarmTab]):
+  /// it is complete the moment it shows. The notifier, not `valuesOf`: a
+  /// dependency here rebuilt the whole tab on its first visit.
+  late bool _intro = TickerMode.getValuesNotifier(context).value.enabled;
   Timer? _introTimer;
 
   /// True once the open has taken longer than [Delayed.threshold] with the
@@ -68,10 +73,22 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
           ref.read(collectionKeysSettlingProvider) ||
           ref.read(seenMapProvider).isLoading;
 
+  void _armIntro() {
+    _introTimer?.cancel();
+    _introTimer = Timer(Motion.staggerDelay(6) + Motion.fxDefault, () => _intro = false);
+  }
+
+  /// A filter or sort from the user: what it brings in eases in.
+  void _swap(VoidCallback change) {
+    _intro = true;
+    _armIntro();
+    setState(change);
+  }
+
   @override
   void initState() {
     super.initState();
-    _introTimer = Timer(Motion.staggerDelay(6) + Motion.fxDefault, () => _intro = false);
+    _armIntro();
     _slowTimer = Timer(Delayed.threshold, () {
       if (mounted && _settling(watch: false)) setState(() => _slow = true);
     });
@@ -129,8 +146,6 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         _Filter.inProgress => inProgress.contains(x.slug),
       };
     }
-    bool visible(Collection x) => visibleFor(x, _filter);
-
     int compare(Collection a, Collection b) => switch (_sort) {
       _Sort.kind => a.sortOrder.compareTo(b.sortOrder),
       _Sort.progress => of(b).fraction.compareTo(of(a).fraction),
@@ -138,6 +153,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       _Sort.az => a.title.compareTo(b.title),
     };
 
+    bool visible(Collection x) => visibleFor(x, _filter);
     final List<Collection> bands = all.where((Collection x) => x.kind == 'band' && visible(x)).toList()..sort(compare);
     final List<Collection> topics = all.where((Collection x) => x.kind != 'band' && !x.isUsers && visible(x)).toList()..sort(compare);
     final List<Collection> yours = all.where((Collection x) => x.isUsers && visible(x)).toList()..sort(compare);
@@ -220,7 +236,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                         } else {
                           final String key = action.replaceFirst('sort_', '');
                           final _Sort? s = _Sort.values.where((_Sort x) => x.name == key).firstOrNull;
-                          if (s != null) setState(() => _sort = s);
+                          if (s != null) _swap(() => _sort = s);
                         }
                       },
                     ),
@@ -255,7 +271,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                             (_Filter.phrases, 'Phrases'),
                             (_Filter.bands, 'Bands'),
                             (_Filter.topics, 'Topics'),
-                            (_Filter.yours, 'Yours'),
+                            (_Filter.yours, 'My Shelf'),
                             (_Filter.inProgress, 'In progress'),
                           ])
                             PillChip(
@@ -263,15 +279,48 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                               count: all.where((Collection x) => visibleFor(x, f)).length,
                               showCountWhenSelectedOnly: true,
                               selected: _filter == f,
-                              onTap: () => setState(() => _filter = f),
+                              onTap: () => _swap(() => _filter = f),
                             ),
                         ],
                       ),
                     ),
                     const SizedBox(height: Space.section),
                     ]),
+                    SliverList.list(key: const ValueKey<String>('yours'), children: <Widget>[
+                    if (settling && yours.isEmpty && _filter == _Filter.all && q.isEmpty)
+                      // Bookmarks and From my reading always exist, so two
+                      // rows is the least the section will be. Nothing is
+                      // drawn until the read has actually taken a moment.
+                      Delayed(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            const SectionHeader(label: 'My Shelf', trailing: SectionNote('yours to fill')),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                              child: Container(
+                                decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
+                                clipBehavior: Clip.antiAlias,
+                                child: Column(
+                                  children: <Widget>[
+                                    const SkeletonRow(),
+                                    Divider(color: c.divider, height: 1),
+                                    const SkeletonRow(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (yours.isNotEmpty) ...<Widget>[
+                      const SectionHeader(label: 'My Shelf', trailing: SectionNote('yours to fill')),
+                      YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
+                    ],
+                    if (yours.isNotEmpty) const SizedBox(height: Space.section),
+                    ]),
                     if (bands.isNotEmpty)
-                      SliverList.list(children: <Widget>[
+                      SliverList.list(key: const ValueKey<String>('bands'), children: <Widget>[
                       const SectionHeader(label: 'Bands', trailing: SectionNote('easiest first')),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
@@ -285,6 +334,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                                 settle(
                                   const SkeletonRow(),
                                   Consumer(
+                                    // Per shelf: a reused bar would ease from
+                                    // the old shelf's progress to this one's.
+                                    key: ValueKey<String>(bands[i].slug),
                                     builder: (BuildContext context, WidgetRef ref, Widget? _) => BandRow(
                                       collection: bands[i],
                                       progress: ref.watch(progressOfProvider(bands[i].slug)),
@@ -301,9 +353,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                       ]),
                     if (topics.isNotEmpty) ...<Widget>[
                       SliverToBoxAdapter(
+                        key: const ValueKey<String>('topics-label'),
                         child: SectionHeader(label: 'Topics · ${topics.length}', trailing: const SectionNote('pick by interest')),
                       ),
                       SliverPadding(
+                        key: const ValueKey<String>('topics'),
                         padding: const EdgeInsets.symmetric(horizontal: Space.screen),
                         sliver: SliverList.separated(
                           itemCount: TwoColumnGrid.rowsFor(topics.length),
@@ -311,6 +365,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           itemBuilder: (BuildContext context, int r) {
                             final int i = r * 2;
                             Widget card(int n) => StaggeredEntrance(
+                              key: ValueKey<String>(topics[n].slug),
                               index: n,
                               animate: _intro && n < 6,
                               child: settle(
@@ -331,39 +386,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           },
                         ),
                       ),
-                      const SliverToBoxAdapter(child: SizedBox(height: Space.section)),
+                      const SliverToBoxAdapter(key: ValueKey<String>('topics-gap'), child: SizedBox(height: Space.section)),
                     ],
-                    SliverList.list(children: <Widget>[
-                    if (settling && yours.isEmpty && _filter == _Filter.all && q.isEmpty)
-                      // Bookmarks and From my reading always exist, so two
-                      // rows is the least the section will be. Nothing is
-                      // drawn until the read has actually taken a moment.
-                      Delayed(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                              child: Container(
-                                decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR, border: Border.all(color: c.outline)),
-                                clipBehavior: Clip.antiAlias,
-                                child: Column(
-                                  children: <Widget>[
-                                    const SkeletonRow(),
-                                    Divider(color: c.divider, height: 1),
-                                    const SkeletonRow(),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else if (yours.isNotEmpty) ...<Widget>[
-                      const SectionHeader(label: 'Your shelves', trailing: SectionNote('yours to fill')),
-                      YourLists(collections: yours, onOpen: (Collection x) => context.push(Routes.collection(x.slug))),
-                    ],
+                    SliverList.list(key: const ValueKey<String>('end'), children: <Widget>[
                     if (!settling && bands.isEmpty && topics.isEmpty && yours.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(Space.xl),

@@ -15,8 +15,6 @@ import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
 import 'info_screens.dart';
-import 'settings_controller.dart';
-import 'settings_screen.dart';
 import 'settings_widgets.dart';
 
 /// The distinct headword count, read once per open dictionary on the worker.
@@ -149,7 +147,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final String theme = ref.watch(settingsProvider.select(SettingsScreen.themeSummary));
     final int? entries = ref.watch(_headwordCountProvider).value;
     final String? version = ref.watch(appVersionProvider).value;
 
@@ -164,6 +161,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               label: 'Tools',
               gap: Space.section,
               children: <Widget>[
+                MoreEntryRow(icon: Icons.sticky_note_2_outlined, title: 'Notes', subtitle: 'Everything you wrote on a word', onTap: () => unawaited(context.push(Routes.notes))),
                 MoreEntryRow(icon: Icons.bar_chart_rounded, title: 'Stats', subtitle: 'Words seen and revisited', onTap: () => unawaited(context.push(Routes.stats))),
               ],
             ),
@@ -179,7 +177,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               label: 'About',
               gap: Space.section,
               children: <Widget>[
-                MoreEntryRow(icon: Icons.tune_rounded, title: 'Settings', subtitle: theme, onTap: () => unawaited(context.push(Routes.settings))),
+                MoreEntryRow(icon: Icons.tune_rounded, title: 'Settings', subtitle: 'Look, haptics, words, reminders', onTap: () => unawaited(context.push(Routes.settings))),
                 MoreEntryRow(icon: Icons.shield_outlined, title: 'Privacy', subtitle: 'Offline only', onTap: () => unawaited(context.push(Routes.privacy))),
                 MoreEntryRow(icon: Icons.menu_book_outlined, title: 'Dictionary', subtitle: entries == null ? 'Entries' : '${grouped(entries)} entries', onTap: () => unawaited(context.push(Routes.dictionary))),
                 MoreEntryRow(icon: Icons.info_outline_rounded, title: 'About Mull', subtitle: version ?? 'Version', onTap: () => unawaited(context.push(Routes.about))),
