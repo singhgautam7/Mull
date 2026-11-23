@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mull/core/database/dictionary_db.dart';
 import 'package:mull/core/database/user_db.dart';
-import 'package:mull/core/motion/motion.dart';
 import 'package:mull/core/providers.dart';
 import 'package:mull/core/theme/app_theme.dart';
 import 'package:mull/core/theme/palette.dart';
@@ -63,28 +62,10 @@ void main() {
     expect(
       all,
       containsAll(<String>[
-        'Theme', 'Floating header', 'Text size', 'Search results', 'Motion', 'Haptics',
+        'Theme', 'Floating header', 'Text size', 'Search results', 'Haptics',
         'Show synonyms', 'Spelling', 'Pronunciation speed', 'Word of the day', 'Arrives at',
       ]),
     );
-  });
-
-  testWidgets('Motion shows what Auto uses, and Off applies at once', (WidgetTester tester) async {
-    await pump(tester, const LookSettingsScreen());
-    expect(find.text('Auto (Expressive)'), findsOneWidget);
-
-    await pump(tester, const LookSettingsScreen(), <String, Object>{'motion.deviceClass': 'low'});
-    expect(find.text('Auto (Subtle)'), findsOneWidget);
-
-    await tester.tap(find.text('Motion'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Off').last);
-    await tester.pumpAndSettle();
-    expect(AppSettings.read(await SharedPreferences.getInstance()).motionPreference, MotionPreference.off);
-    // The page behind the sheet updated without a restart.
-    Finder onPage(String t) => find.descendant(of: find.byType(LookSettingsScreen), matching: find.text(t));
-    expect(onPage('Off'), findsOneWidget);
-    expect(onPage('Auto (Subtle)'), findsNothing);
   });
 
   testWidgets('Floating header opens its sheet', (WidgetTester tester) async {

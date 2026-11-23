@@ -46,7 +46,8 @@ class _FloatingHeaderBodyState extends ConsumerState<_FloatingHeaderBody> with S
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _still = MediaQuery.disableAnimationsOf(context);
+    // Still under the phone's Remove animations.
+    _still = MediaQuery.disableAnimationsOf(context) || Motion.levelOf(context) == MotionLevel.off;
     if (_still) {
       _loop.stop();
     } else if (!_loop.isAnimating) {
@@ -141,9 +142,10 @@ class _OptionCard extends StatelessWidget {
         inMutuallyExclusiveGroup: true,
         label: '$label, preview',
         onTap: enabled ? onTap : null,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: Radii.cardR,
+        child: Pressable(
+          kind: PressKind.card,
+          enabled: enabled,
+          onTap: onTap,
           child: AnimatedContainer(
             duration: Motion.of(context, Motion.instant),
             padding: const EdgeInsets.all(Space.md),

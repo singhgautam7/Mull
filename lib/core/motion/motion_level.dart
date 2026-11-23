@@ -3,12 +3,8 @@ import 'package:flutter/widgets.dart';
 /// How much Mull moves (Kuber v7.0.0 motion levels).
 enum MotionLevel { expressive, subtle, off }
 
-/// What the user picked in Settings. Auto resolves from the phone
-/// ([resolveMotionLevel]).
-enum MotionPreference { auto, expressive, subtle, off }
-
 /// Result of the one-off device check, cached in prefs. [unknown] until the
-/// check has run (Auto then behaves as Expressive).
+/// check has run (it then counts as normal).
 enum DeviceClass { unknown, normal, low }
 
 /// Total RAM under this (MB, as Android reports it) is a low-end phone
@@ -19,18 +15,14 @@ const int kLowRamMb = 3584;
 DeviceClass classifyDevice({required int? ramMb, bool lowRamFlag = false}) =>
     lowRamFlag || (ramMb != null && ramMb < kLowRamMb) ? DeviceClass.low : DeviceClass.normal;
 
-/// Level for [pref] on a phone of class [device]. The phone wins: with
-/// [systemOff] (Remove animations, or an accessibility navigation service) the
-/// answer is always Off.
-MotionLevel resolveMotionLevel(MotionPreference pref, DeviceClass device, {bool systemOff = false}) {
-  if (systemOff) return MotionLevel.off;
-  return switch (pref) {
-    MotionPreference.expressive => MotionLevel.expressive,
-    MotionPreference.subtle => MotionLevel.subtle,
-    MotionPreference.off => MotionLevel.off,
-    MotionPreference.auto => device == DeviceClass.low ? MotionLevel.subtle : MotionLevel.expressive,
-  };
-}
+/// The level on a phone of class [device]. There is no setting: a low-RAM
+/// phone is Subtle, the rest Expressive, and with [systemOff] (the phone's
+/// Remove animations, or an accessibility navigation service) it is Off.
+MotionLevel resolveMotionLevel(DeviceClass device, {bool systemOff = false}) => systemOff
+    ? MotionLevel.off
+    : device == DeviceClass.low
+    ? MotionLevel.subtle
+    : MotionLevel.expressive;
 
 /// True when the phone asks for no animation: Remove animations
 /// (`disableAnimations`) or an accessibility navigation service.

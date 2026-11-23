@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
@@ -14,8 +15,8 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
-import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_header.dart';
+import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_icon_button.dart';
 import '../../shared/widgets/did_you_mean.dart';
 import '../../shared/widgets/fields.dart';
@@ -27,7 +28,7 @@ import 'add_to_list_sheet.dart';
 import 'idiom_sheet.dart';
 import 'word_sheet.dart';
 
-enum SearchSegment { words, idioms }
+enum SearchSegment { all, words, idioms }
 
 /// HANDOFF 3.4. Field focused on entry, real-time results, Words/Phrases
 /// carrying counts. Before typing: RECENT searches. Results are cards or
@@ -62,6 +63,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<Idiom> _idioms = const <Idiom>[];
   List<DictionaryWord> _suggestions = const <DictionaryWord>[];
   late SearchSegment _segment = widget.initialSegment;
+
+  /// True for the moments after a filter tap: results that were not on screen
+  /// ease in, the ones that stay do not move (they are keyed). A keystroke
+  /// never animates.
+  bool _swapped = false;
+  Timer? _swapTimer;
+
   bool _slow = false;
   List<String> _recent = const <String>[];
 
@@ -111,6 +119,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void dispose() {
     _recordTimer?.cancel();
     _debounce?.cancel();
+    _swapTimer?.cancel();
     _field.dispose();
     _focus.dispose();
     super.dispose();
@@ -149,13 +158,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _suggestions = r.suggestions;
       // A 2dp hairline, only if a query exceeds 120 ms.
       _slow = sw.elapsedMilliseconds > 120;
-      if (r.words.isEmpty && r.idioms.isNotEmpty) _segment = SearchSegment.idioms;
+      if (_segment == SearchSegment.words && r.words.isEmpty && r.idioms.isNotEmpty) _segment = SearchSegment.idioms;
     });
     if (q.trim().length >= 2) {
       _recordTimer = Timer(const Duration(seconds: 2), () {
         unawaited(ref.read(userRepositoryProvider).recordSearch(q.trim()).then((_) => _loadRecent()));
       });
     }
+  }
+
+  void _select(SearchSegment s) {
+    _swapTimer?.cancel();
+    _swapTimer = Timer(Motion.staggerDelay(6) + Motion.fxDefault, () => _swapped = false);
+    setState(() {
+      _swapped = true;
+      _segment = s;
+    });
   }
 
   void _set(String q) {
@@ -174,54 +192,71 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
     final bool typing = _query.trim().isNotEmpty;
+    final SearchStyle style = ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle));
+    // HeaderPage removes the top padding inside its body, so the status bar
+    // is read here; the header scope only exists below HeaderPage (Builder).
+    final double statusBar = MediaQuery.paddingOf(context).top;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        // Fixed header: the field and the toggle are this page's primary
-        // control, and nothing docks under a floating one.
+        // The Shelves tab's header, title and position; it scrolls away and
+        // the search bar takes its place as the pill (HeaderSearchBar). The
+        // filters and section titles scroll with the results.
         body: HeaderPage(
-          floating: false,
+          scrollAway: true,
           header: AppHeader(
             title: 'Search',
             onBack: Navigator.of(context).canPop() ? () => Navigator.of(context).pop() : null,
           ),
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              HeaderPage.gap(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
-                child: SearchField(
-                  controller: _field,
-                  focusNode: _focus,
-                  hint: 'Search words and phrases',
-                  onChanged: _run,
+          body: Builder(
+            builder: (BuildContext inner) => CustomScrollView(
+              slivers: <Widget>[
+                ..._searchBar(inner, statusBar),
+                SliverToBoxAdapter(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                    child: Row(
+                      spacing: Space.sm,
+                      children: <Widget>[
+                        for (final (SearchSegment s, String l) in const <(SearchSegment, String)>[
+                          (SearchSegment.all, 'All'),
+                          (SearchSegment.words, 'Words'),
+                          (SearchSegment.idioms, 'Phrases'),
+                        ])
+                          PillChip(label: l, selected: _segment == s, onTap: () => _select(s)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                child: SegmentedToggle<SearchSegment>(
-                  options: const <(SearchSegment, String)>[
-                    (SearchSegment.words, 'Words'),
-                    (SearchSegment.idioms, 'Phrases'),
-                  ],
-                  selected: _segment,
-                  counts: typing
-                      ? <Object?, int>{SearchSegment.words: _words.length, SearchSegment.idioms: _idioms.length}
-                      : const <Object?, int>{},
-                  onChanged: (SearchSegment s) => setState(() => _segment = s),
-                  accent: true,
-                ),
-              ),
-              LoadingHairline(visible: _slow),
-              Expanded(child: typing ? _results(c) : _recentList(c)),
-            ],
+                SliverToBoxAdapter(child: LoadingHairline(visible: _slow)),
+                if (typing) _results(c, style) else _recentList(c),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  /// The gap under the header, then the search bar: its field sits exactly
+  /// where the Shelves tab's does.
+  List<Widget> _searchBar(BuildContext context, double sb) {
+    final double inset = HeaderPage.insetOf(context);
+    return <Widget>[
+      SliverToBoxAdapter(child: SizedBox(height: math.max(0, inset - sb - Space.sm))),
+      HeaderSearchBar(
+        child: SearchField(
+          bare: true,
+          controller: _field,
+          focusNode: _focus,
+          hint: 'Search words and phrases',
+          onChanged: _run,
+        ),
+      ),
+    ];
   }
 
   /// "Remove from history?" with the term itself; Remove deletes that entry
@@ -258,101 +293,118 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _recentList(MullColors c) {
-    return ListView(
+    if (_recent.isEmpty) return const SliverToBoxAdapter(child: SizedBox(height: Space.bottomSafe));
+    return SliverPadding(
       padding: const EdgeInsets.only(top: Space.lg, bottom: Space.bottomSafe),
-      children: <Widget>[
-        const SectionHeader(label: 'Recent'),
-        for (final String q in _recent)
-          MotionListItem(
-            key: ValueKey<String>(q),
-            present: !_leaving.contains(q),
-            onRemoved: () => setState(() {
-              _recent = <String>[
-                for (final String r in _recent)
-                  if (r != q) r,
-              ];
-              _leaving.remove(q);
-            }),
-            child: Semantics(
-              customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
-                const CustomSemanticsAction(label: 'Remove from history'): () => unawaited(_confirmRemove(q)),
-              },
-              child: Pressable(
-                kind: PressKind.row,
-                onTap: () => _set(q),
-                onLongPress: () => unawaited(_confirmRemove(q)),
-                child: Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-                  alignment: Alignment.centerLeft,
-                  child: Text(q, style: MullType.titleMedium.copyWith(color: c.onSurface)),
+      sliver: SliverList(
+        delegate: SliverChildListDelegate(<Widget>[
+          const SectionHeader(label: 'Recent'),
+          for (final String q in _recent)
+            MotionListItem(
+              key: ValueKey<String>(q),
+              present: !_leaving.contains(q),
+              onRemoved: () => setState(() {
+                _recent = <String>[
+                  for (final String r in _recent)
+                    if (r != q) r,
+                ];
+                _leaving.remove(q);
+              }),
+              child: Semantics(
+                customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
+                  const CustomSemanticsAction(label: 'Remove from history'): () => unawaited(_confirmRemove(q)),
+                },
+                child: Pressable(
+                  kind: PressKind.row,
+                  onTap: () => _set(q),
+                  onLongPress: () => unawaited(_confirmRemove(q)),
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: Space.screen),
+                    alignment: Alignment.centerLeft,
+                    child: Text(q, style: MullType.titleMedium.copyWith(color: c.onSurface)),
+                  ),
                 ),
               ),
             ),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, 0),
-          child: Text(
-            'Anything you look up is kept here and on Home, so a word you met once is easy to find again.',
-            style: MullType.note.copyWith(color: c.onSurfaceVariant),
-          ),
-        ),
-      ],
+        ]),
+      ),
     );
   }
 
-  Widget _results(MullColors c) {
-    final bool words = _segment == SearchSegment.words;
-    if (words ? _words.isEmpty : _idioms.isEmpty) return _noResults(c);
-    final int n = words ? _words.length : _idioms.length;
-    SearchResult at(int i) => words ? SearchResult.word(_words[i]) : SearchResult.idiom(_idioms[i]);
-    Widget? add(int i) => words ? _AddToListButton(word: _words[i]) : null;
-    void open(int i) => words ? unawaited(_openWord(_words[i])) : unawaited(showIdiomSheet(context, idiom: _idioms[i]));
+  Widget _results(MullColors c, SearchStyle style) {
+    // All: the words, then the phrases.
+    final List<DictionaryWord> words = _segment == SearchSegment.idioms ? const <DictionaryWord>[] : _words;
+    final List<Idiom> idioms = _segment == SearchSegment.words ? const <Idiom>[] : _idioms;
+    final int n = words.length + idioms.length;
+    if (n == 0) return _noResults(c);
+    SearchResult at(int i) =>
+        i < words.length ? SearchResult.word(words[i]) : SearchResult.idiom(idioms[i - words.length]);
+    Widget? add(int i) => i < words.length ? _AddToListButton(word: words[i]) : null;
+    Widget enter(int i, Widget child) => StaggeredEntrance(
+      key: ValueKey<String>(i < words.length ? words[i].wordKey : idioms[i - words.length].idiomKey),
+      index: i,
+      animate: _swapped && i < 6,
+      child: child,
+    );
+    void open(int i) => i < words.length
+        ? unawaited(_openWord(words[i]))
+        : unawaited(showIdiomSheet(context, idiom: idioms[i - words.length]));
 
-    if (ref.watch(settingsProvider.select((AppSettings s) => s.searchStyle)) == SearchStyle.table) {
-      return ListView.builder(
+    if (style == SearchStyle.table) {
+      return SliverPadding(
         padding: const EdgeInsets.only(top: Space.sm, bottom: Space.bottomSafe),
-        itemCount: n,
-        itemBuilder: (BuildContext context, int i) =>
-            SearchResultRow(result: at(i), query: _query, onTap: () => open(i), trailing: add(i)),
+        sliver: SliverList.builder(
+          itemCount: n,
+          itemBuilder: (BuildContext context, int i) =>
+              enter(i, SearchResultRow(result: at(i), query: _query, onTap: () => open(i), trailing: add(i))),
+        ),
       );
     }
-    return ListView.separated(
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.bottomSafe),
-      itemCount: n,
-      separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
-      itemBuilder: (BuildContext context, int i) =>
-          SearchResultCard(result: at(i), query: _query, onTap: () => open(i)),
+      sliver: SliverList.separated(
+        itemCount: n,
+        separatorBuilder: (BuildContext _, int _) => const SizedBox(height: Space.row),
+        itemBuilder: (BuildContext context, int i) =>
+            enter(i, SearchResultCard(result: at(i), query: _query, onTap: () => open(i))),
+      ),
     );
   }
 
   Widget _noResults(MullColors c) {
-    final bool otherHas = _segment == SearchSegment.words ? _idioms.isNotEmpty : _words.isNotEmpty;
-    return ListView(
+    final bool otherHas = switch (_segment) {
+      SearchSegment.all => false,
+      SearchSegment.words => _idioms.isNotEmpty,
+      SearchSegment.idioms => _words.isNotEmpty,
+    };
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(Space.screen, 48, Space.screen, Space.bottomSafe),
-      children: <Widget>[
-        Text('No entry for ${_query.trim()}', style: MullType.display.copyWith(fontSize: 28, color: c.onSurface)),
-        const SizedBox(height: Space.row),
-        Text(
-          'The spelling may differ, or this edition may not carry it.',
-          style: MullType.body.copyWith(color: c.onSurfaceVariant),
-        ),
-        if (_suggestions.isNotEmpty) ...<Widget>[
-          const SizedBox(height: Space.lg),
-          DidYouMean(words: _suggestions, onPick: (DictionaryWord w) => _set(w.headword)),
-        ],
-        const SizedBox(height: Space.lg),
-        Pressable(
-          onTap: () =>
-              setState(() => _segment = _segment == SearchSegment.words ? SearchSegment.idioms : SearchSegment.words),
-          child: Text(
-            otherHas
-                ? (_segment == SearchSegment.words ? 'Or search the idioms instead.' : 'Or search the words instead.')
-                : 'Or search the idioms instead.',
-            style: MullType.body.copyWith(color: c.accent),
+      sliver: SliverList(
+        delegate: SliverChildListDelegate(<Widget>[
+          Text('No entry for ${_query.trim()}', style: MullType.display.copyWith(fontSize: 28, color: c.onSurface)),
+          const SizedBox(height: Space.row),
+          Text(
+            'The spelling may differ, or this edition may not carry it.',
+            style: MullType.body.copyWith(color: c.onSurfaceVariant),
           ),
-        ),
-      ],
+          if (_suggestions.isNotEmpty) ...<Widget>[
+            const SizedBox(height: Space.lg),
+            DidYouMean(words: _suggestions, onPick: (DictionaryWord w) => _set(w.headword)),
+          ],
+          const SizedBox(height: Space.lg),
+          Pressable(
+            onTap: () =>
+                setState(() => _segment = _segment == SearchSegment.words ? SearchSegment.idioms : SearchSegment.words),
+            child: Text(
+              otherHas
+                  ? (_segment == SearchSegment.words ? 'Or search the idioms instead.' : 'Or search the words instead.')
+                  : 'Or search the idioms instead.',
+              style: MullType.body.copyWith(color: c.accent),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -546,7 +598,7 @@ class _AddToListButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppIconButton(
-    icon: Icons.playlist_add_rounded,
+    icon: Icons.library_add_outlined,
     semanticLabel: 'Add ${word.headword} to a list',
     filled: false,
     onPressed: () => unawaited(showAddToListSheet(context, wordKey: word.wordKey, headword: word.headword)),

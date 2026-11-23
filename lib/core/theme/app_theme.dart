@@ -104,19 +104,23 @@ abstract final class AppTheme {
         selectionHandleColor: c.primary,
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: c.primary),
+      // Kuber's switch: Material 3 with a check in the thumb when on. Its
+      // `outline` role (the off thumb and the 2dp border) is onSurfaceMuted
+      // here; Mull's own `outline` is a hairline and read as disabled.
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith(
-          (Set<WidgetState> s) =>
-              s.contains(WidgetState.selected) ? c.onPrimary : c.surface,
-        ),
-        trackColor: WidgetStateProperty.resolveWith(
+        thumbColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) => s.contains(WidgetState.disabled)
+            ? null
+            : s.contains(WidgetState.selected) ? c.onPrimary : c.onSurfaceMuted),
+        trackColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) => s.contains(WidgetState.disabled)
+            ? null
+            : s.contains(WidgetState.selected) ? c.primary : c.surfaceContainerHigh),
+        trackOutlineColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) => s.contains(WidgetState.disabled)
+            ? null
+            : s.contains(WidgetState.selected) ? c.primary : c.onSurfaceMuted),
+        thumbIcon: WidgetStateProperty.resolveWith(
           (Set<WidgetState> s) => s.contains(WidgetState.selected)
-              ? c.primary
-              : c.surfaceContainerHigh,
-        ),
-        trackOutlineColor: WidgetStateProperty.resolveWith(
-          (Set<WidgetState> s) =>
-              s.contains(WidgetState.selected) ? c.primary : c.outline,
+              ? Icon(Icons.check_rounded, size: 16, color: c.primary)
+              : null,
         ),
       ),
     );

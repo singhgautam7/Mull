@@ -85,7 +85,7 @@ void main() {
 
   bool ticked(WidgetTester tester, String label) {
     final Semantics s = tester.widget<Semantics>(find.widgetWithText(Semantics, label).first);
-    return s.properties.checked ?? false;
+    return s.properties.toggled ?? false;
   }
 
   Future<void> finish(WidgetTester tester) async {

@@ -17,13 +17,11 @@ import 'package:mull/features/collections/collection_cards.dart';
 import 'package:mull/features/collections/add_to_shelf_screen.dart';
 import 'package:mull/features/collections/collection_screen.dart';
 import 'package:mull/features/collections/collections_screen.dart';
-import 'package:mull/features/linger/saved_mixes_screen.dart';
 import 'package:mull/features/linger/word_card.dart';
 import 'package:mull/features/settings/data_screen.dart';
 import 'package:mull/features/settings/more_screen.dart';
 import 'package:mull/features/settings/settings_controller.dart';
 import 'package:mull/features/settings/settings_screen.dart';
-import 'package:mull/features/settings/settings_widgets.dart';
 import 'package:mull/shared/widgets/app_button.dart';
 import 'package:mull/shared/widgets/app_icon_button.dart';
 import 'package:mull/shared/widgets/app_snackbar.dart';
@@ -227,7 +225,7 @@ void main() {
   );
 
   testWidgets(
-    'AppButton of type outlined has surface background and accent border',
+    "AppButton of type outlined is Kuber's: transparent with the outline border",
     (WidgetTester tester) async {
       final ThemeData theme = AppTheme.of(ThemeFamily.byId('mull'), Tone.light);
       final MullColors colors = ThemeFamily.byId('mull').colors(Tone.light);
@@ -254,9 +252,10 @@ void main() {
             )
             .first,
       );
-      expect(material.color, colors.surface);
-      final StadiumBorder shape = material.shape! as StadiumBorder;
-      expect(shape.side.color, colors.accent);
+      expect(material.color, Colors.transparent);
+      final RoundedRectangleBorder shape = material.shape! as RoundedRectangleBorder;
+      expect(shape.side.color, colors.outline);
+      expect(tester.getSize(find.byType(AppButton)).height, 56, reason: "Kuber's large button");
     },
   );
 
@@ -319,7 +318,7 @@ void main() {
   );
 
   testWidgets(
-    'MoreScreen shows Data and Permissions under Yours, without Export',
+    'MoreScreen shows Data and Permissions under Manage, without Export',
     (WidgetTester tester) async {
       await tester.runAsync(() async {
         SharedPreferences.setMockInitialValues(<String, Object>{
@@ -342,9 +341,9 @@ void main() {
         );
         await tester.pump();
 
-        // Settings, Data and Permissions sit under Yours, Stats under Browse;
-        // Export is not a More row.
-        expect(find.text('YOURS'), findsOneWidget);
+        // Data and Permissions sit under Manage, Stats under Tools; Export is
+        // not a More row.
+        expect(find.text('MANAGE'), findsOneWidget);
         expect(find.text('Stats'), findsOneWidget);
         expect(find.text('Permissions'), findsOneWidget);
         expect(find.text('Data'), findsOneWidget);
@@ -588,11 +587,14 @@ void main() {
             ],
             child: MaterialApp(
               theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-              home: const CollectionScreen(slug: 'from-my-reading'),
+              home: const CollectionScreen(slug: UserRepository.readingSlug),
             ),
           ),
         );
 
+        // The user's shelves stream in; until then there is no +.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
         // Verify '+' button is in the header
         final Finder addBtn = find.bySemanticsLabel('Add');
         expect(addBtn, findsOneWidget);
@@ -619,7 +621,7 @@ void main() {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final UserRepository userRepo = UserRepository(userDb);
       await userRepo.ensureSystemCollections();
-      await userRepo.addToCollection('from-my-reading', ephemera.key);
+      await userRepo.addToCollection(UserRepository.readingSlug, ephemera.key);
 
       await tester.runAsync(() async {
         await tester.pumpWidget(
@@ -631,7 +633,7 @@ void main() {
             ],
             child: MaterialApp(
               theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-              home: const CollectionScreen(slug: 'from-my-reading'),
+              home: const CollectionScreen(slug: UserRepository.readingSlug),
             ),
           ),
         );
@@ -727,7 +729,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Segment 6: Rename and Delete should appear for user-created shelf
-        expect(find.text('Rename'), findsOneWidget);
+        expect(find.text('Edit shelf'), findsOneWidget);
         expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
         expect(find.text('Delete'), findsOneWidget);
         expect(find.byIcon(Icons.delete_outline_rounded), findsOneWidget);
@@ -737,7 +739,7 @@ void main() {
     },
   );
 
-  testWidgets('MoreScreen Browse section order is Shelves, Mixes, Stats', (
+  testWidgets('MoreScreen sections are Tools, Manage, About', (
     WidgetTester tester,
   ) async {
     await tester.runAsync(() async {
@@ -761,16 +763,13 @@ void main() {
       );
       await tester.pump();
 
-      // Browse comes first: Shelves, Mixes, Stats (Settings moved to Yours).
-      expect(find.text('BROWSE'), findsOneWidget);
-      final List<SettingsRow> rows = tester
-          .widgetList<SettingsRow>(find.byType(SettingsRow))
-          .take(3)
-          .toList();
-      expect(rows.length, 3);
-      expect(rows[0].label, 'Shelves');
-      expect(rows[1].label, 'Mixes');
-      expect(rows[2].label, 'Stats');
+      expect(find.text('TOOLS'), findsOneWidget);
+      expect(find.text('MANAGE'), findsOneWidget);
+      expect(find.text('ABOUT'), findsOneWidget);
+      expect(
+        tester.widgetList<MoreEntryRow>(find.byType(MoreEntryRow)).map((MoreEntryRow r) => r.title),
+        <String>['Notes', 'Stats', 'Data', 'Permissions', 'Settings', 'Privacy', 'Dictionary', 'About Mull'],
+      );
 
       await tester.pumpWidget(const SizedBox());
       await Future<void>.delayed(Duration.zero);
@@ -824,48 +823,4 @@ void main() {
       });
     },
   );
-
-  testWidgets('SavedMixesScreen overflow menu has How to use and opens sheet', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{'onboarded': true});
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-
-    await tester.runAsync(() async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: <Override>[
-            prefsProvider.overrideWithValue(prefs),
-            userDatabaseProvider.overrideWithValue(userDb),
-            dictProvider.overrideWithValue(dict),
-          ],
-          child: MaterialApp(
-            theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-            home: const SavedMixesScreen(),
-          ),
-        ),
-      );
-
-      // Open overflow menu
-      final Finder moreBtn = find.bySemanticsLabel('More');
-      expect(moreBtn, findsOneWidget);
-      await tester.tap(moreBtn);
-      await tester.pumpAndSettle();
-
-      // Verify 'How to use' option exists
-      final Finder howToUseFinder = find.text('How to use');
-      expect(howToUseFinder, findsOneWidget);
-      await tester.tap(howToUseFinder);
-      await tester.pumpAndSettle();
-
-      // Verify bottom sheet opened
-      expect(find.text('How to use mixes'), findsOneWidget);
-      expect(find.text('Done'), findsOneWidget);
-
-      await tester.tap(find.text('Done'));
-      await tester.pumpAndSettle();
-
-      await tester.pumpWidget(const SizedBox());
-    });
-  });
 }

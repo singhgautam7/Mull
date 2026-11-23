@@ -33,7 +33,14 @@ abstract final class Space {
 /// 8 · chip, 14 · thumb, 20 · card, 28 · sheet and the word card, full · pill.
 abstract final class Radii {
   static const double chip = 8;
+
+  /// Kuber's `KuberShape.medium`: icon discs, a selected chip's squircle,
+  /// menu rows.
+  static const double medium = 12;
   static const double thumb = 14;
+
+  /// Kuber's `KuberShape.large`: the ink of a list row.
+  static const double large = 16;
   static const double card = 20;
   static const double sheet = 28;
 
@@ -42,7 +49,9 @@ abstract final class Radii {
   static const double full = 999;
 
   static const BorderRadius chipR = BorderRadius.all(Radius.circular(chip));
+  static const BorderRadius mediumR = BorderRadius.all(Radius.circular(medium));
   static const BorderRadius thumbR = BorderRadius.all(Radius.circular(thumb));
+  static const BorderRadius largeR = BorderRadius.all(Radius.circular(large));
   static const BorderRadius cardR = BorderRadius.all(Radius.circular(card));
   static const BorderRadius wordCardR = BorderRadius.all(
     Radius.circular(wordCard),
@@ -168,6 +177,8 @@ abstract final class Motion {
     fontVariations: <FontVariation>[FontVariation('wght', wght)],
   );
   static const Duration navIndicator = Duration(milliseconds: 220);
+  /// Kuber's tab pager.
+  static const Duration tabSlide = Duration(milliseconds: 300);
   static const Duration containerTransform = Duration(milliseconds: 240);
   static const Duration sheet = Duration(milliseconds: 260);
   static const Duration cardSwipe = Duration(milliseconds: 260);

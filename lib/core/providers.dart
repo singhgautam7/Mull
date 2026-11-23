@@ -122,7 +122,8 @@ final Provider<List<Collection>> collectionsProvider =
             },
             kind: c.kind,
             band: null,
-            icon: null,
+            icon: c.icon,
+            note: c.note,
             sortOrder: base + i,
             wordCount: keys[c.slug]?.length ?? 0,
             color: c.color,
@@ -241,23 +242,72 @@ final StreamProvider<String?> lastOpenedCollectionProvider =
     );
 
 /// Home's shortlist: last opened, then in progress, then a couple of
-/// built-ins, five in all.
+/// built-ins, five in all. Watches only the in-progress set, never the
+/// progress numbers, so a swipe on the Mull tab does not rebuild it.
 final Provider<List<Collection>> homeCollectionsProvider =
     Provider<List<Collection>>((Ref ref) {
       final List<Collection> all = ref.watch(collectionsProvider);
-      final Map<String, Progress> progress = ref.watch(
-        collectionProgressProvider,
-      );
+      final SlugSet inProgress = ref.watch(inProgressSlugsProvider);
       final String? last = ref.watch(lastOpenedCollectionProvider).value;
-      Progress of(Collection c) => progress[c.slug] ?? const Progress(0, 0);
       final List<Collection> out = <Collection>[
         ...all.where((Collection c) => c.slug == last),
-        ...all.where((Collection c) => of(c).started && !of(c).complete),
+        ...all.where((Collection c) => inProgress.contains(c.slug)),
         ...all.where((Collection c) => c.kind == 'topic' || c.kind == 'band'),
       ];
       final Set<String> seen = <String>{};
       return out.where((Collection c) => seen.add(c.slug)).take(5).toList();
     });
+
+/// A set of slugs with value equality, so a provider that returns one only
+/// notifies when the membership changes.
+@immutable
+class SlugSet {
+  const SlugSet(this.slugs);
+
+  final Set<String> slugs;
+
+  bool contains(String slug) => slugs.contains(slug);
+
+  @override
+  bool operator ==(Object other) => other is SlugSet && setEquals(other.slugs, slugs);
+
+  @override
+  int get hashCode => Object.hashAllUnordered(slugs);
+}
+
+/// Shelves started and not finished. Recomputed on every seen write, but
+/// its watchers rebuild only when a shelf starts or finishes.
+final Provider<SlugSet> inProgressSlugsProvider = Provider<SlugSet>((Ref ref) {
+  final Map<String, Progress> progress = ref.watch(collectionProgressProvider);
+  return SlugSet(<String>{
+    for (final MapEntry<String, Progress> e in progress.entries)
+      if (e.value.started && !e.value.complete) e.key,
+  });
+});
+
+/// Home's "Continue": the started, unfinished shelf whose words were seen
+/// most recently. A slug, so Home's section rebuilds only when it changes;
+/// the ring under it watches its own shelf's progress.
+final Provider<String?> continueSlugProvider = Provider<String?>((Ref ref) {
+  final SlugSet inProgress = ref.watch(inProgressSlugsProvider);
+  if (inProgress.slugs.isEmpty) return null;
+  final Map<String, SeenWord> seen =
+      ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
+  final Map<String, List<String>> keys = ref.watch(collectionKeysProvider);
+  String? cont;
+  DateTime? latest;
+  for (final Collection col in ref.watch(collectionsProvider)) {
+    if (!inProgress.contains(col.slug)) continue;
+    for (final String k in keys[col.slug] ?? const <String>[]) {
+      final DateTime? at = seen[k]?.lastSeenAt;
+      if (at != null && (latest == null || at.isAfter(latest))) {
+        latest = at;
+        cont = col.slug;
+      }
+    }
+  }
+  return cont;
+});
 
 final StreamProvider<Map<String, SeenWord>> seenMapProvider =
     StreamProvider<Map<String, SeenWord>>(
@@ -279,7 +329,21 @@ class Progress {
   double get fraction => total == 0 ? 0 : seen / total;
   bool get started => seen > 0;
   bool get complete => total > 0 && seen >= total;
+
+  @override
+  bool operator ==(Object other) => other is Progress && other.seen == seen && other.total == total;
+
+  @override
+  int get hashCode => Object.hash(seen, total);
 }
+
+/// One shelf's progress. Watch this (or `select` the map) in the widget that
+/// draws the number, never the whole map in a screen's build.
+final progressOfProvider = Provider.autoDispose.family<Progress, String>(
+  (Ref ref, String slug) => ref.watch(
+    collectionProgressProvider.select((Map<String, Progress> m) => m[slug] ?? const Progress(0, 0)),
+  ),
+);
 
 /// Seen count per collection, live.
 final Provider<Map<String, Progress>> collectionProgressProvider =
@@ -298,10 +362,20 @@ final Provider<Map<String, Progress>> collectionProgressProvider =
 
 /// One word a day, the same for everyone on the same day: picked from the
 /// banded words by the day number, so it never needs storing.
-final Provider<DictionaryWord?> wordOfTheDayProvider =
-    Provider<DictionaryWord?>(
-      (Ref ref) => ref.watch(dictProvider).wordOfTheDay(DateTime.now()),
+///
+/// On the worker: the first pick builds the pool (a DISTINCT join over three
+/// shelves, 31 ms on a laptop, so about 100 ms on the emulator and more on a
+/// phone), which used to run inside Home's first build.
+final FutureProvider<DictionaryWord?> wordOfTheDayProvider =
+    FutureProvider<DictionaryWord?>(
+      (Ref ref) => ref.watch(dictProvider).compute(wordOfTheDayWork(DateTime.now())),
     );
+
+/// Built synchronously so the closure captures only [day] (CLAUDE.md:
+/// a closure made inside an async body cannot be sent). Public for
+/// `off_main_isolate_test.dart`.
+DictionaryWord? Function(DictionaryDb) wordOfTheDayWork(DateTime day) =>
+    (DictionaryDb db) => db.wordOfTheDay(day);
 
 final StreamProvider<List<String>> recentLookupsProvider =
     StreamProvider<List<String>>(

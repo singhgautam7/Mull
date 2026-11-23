@@ -33,10 +33,11 @@ void main() {
     router = GoRouter(
       initialLocation: '/home',
       routes: <RouteBase>[
-        StatefulShellRoute.indexedStack(
+        StatefulShellRoute(
+          navigatorContainerBuilder: (BuildContext _, StatefulNavigationShell shell, List<Widget> children) =>
+              BranchStack(index: shell.currentIndex, onSelect: shell.goBranch, children: children),
           builder: (BuildContext context, GoRouterState state, StatefulNavigationShell shell) => NavShell(
             index: shell.currentIndex,
-            tabCount: shell.route.branches.length,
             onSelect: (int i) => onTabSelected(context, shell, i, searchPath: '/search'),
             child: shell,
           ),
@@ -166,5 +167,49 @@ void main() {
       expect(size.width, greaterThanOrEqualTo(48));
       expect(size.height, greaterThanOrEqualTo(48));
     }
+  });
+
+  testWidgets("a tab change slides both pages (Kuber's pager); a far tab comes from next door", (WidgetTester tester) async {
+    final SemanticsHandle h = tester.ensureSemantics();
+    await pump(tester);
+    final double w = tester.getSize(find.byType(NavShell)).width;
+    await tester.tap(find.bySemanticsLabel(RegExp('^More')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 134));
+    final double home = tester.getTopLeft(find.text('home')).dx;
+    final double more = tester.getTopLeft(find.text('more')).dx;
+    expect(home, inExclusiveRange(-w, 0), reason: 'the old page leaves with it');
+    expect(more, inExclusiveRange(0, w));
+    expect(more - home, closeTo(w, 1), reason: 'side by side');
+    // A new tap mid-slide carries on: nothing jumps in that frame.
+    await tester.tap(find.bySemanticsLabel(RegExp('^Home')));
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('home')).dx, closeTo(home, 40));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('home')).dx, 0);
+    expect(find.text('more'), findsNothing, reason: 'offstage at rest');
+    h.dispose();
+  });
+
+  testWidgets('a sideways drag follows the finger, returns when short, switches when far', (WidgetTester tester) async {
+    await pump(tester);
+    final double w = tester.getSize(find.byType(NavShell)).width;
+    final TestGesture g = await tester.startGesture(Offset(w * .8, 300));
+    await g.moveBy(const Offset(-30, 0));
+    await g.moveBy(Offset(-w * .2, 0));
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('home')).dx, inExclusiveRange(-w * .4, -w * .1));
+    // Held still, so no fling.
+    await tester.pump(const Duration(milliseconds: 300));
+    await g.moveBy(const Offset(-1, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('home')).dx, 0);
+    await tester.fling(find.text('home 3'), Offset(-w * .6, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('mull').hitTestable(), findsOneWidget);
+    expect(find.text('home'), findsNothing);
   });
 }

@@ -155,39 +155,3 @@ Future<void> showHowToUseShelvesSheet(BuildContext context) {
     tip: 'Tip: You can select multiple items on your own shelves to quickly bookmark or clean them up.',
   );
 }
-
-/// Explains how mixes work and how to configure sources, familiarity, and save them.
-Future<void> showHowToUseMixesSheet(BuildContext context) {
-  return showHowToUseSheet(
-    context,
-    title: 'How to use mixes',
-    description: 'Mixes decide which cards appear on the Mull tab.',
-    steps: const <HowToItem>[
-      HowToItem(
-        icon: Icons.tune_rounded,
-        title: 'Choose your sources',
-        description:
-            'Combine topics, vocabulary bands, and your own shelves into a single deck.',
-      ),
-      HowToItem(
-        icon: Icons.history_rounded,
-        title: 'Set familiarity',
-        description:
-            'Pick whether you want to see brand new words, review words you have seen before, or keep a balanced mix.',
-      ),
-      HowToItem(
-        icon: Icons.play_arrow_rounded,
-        title: 'Play anytime',
-        description:
-            'Tap any saved mix here to immediately start practicing those cards on the Mull tab.',
-      ),
-      HowToItem(
-        icon: Icons.bookmark_border_rounded,
-        title: 'Save favorites',
-        description:
-            'Tune your sources on the Mull tab and tap Save as mix to keep combinations you visit often.',
-      ),
-    ],
-    tip: 'Tip: If your mix has few words left, add another source topic or change the familiarity setting.',
-  );
-}

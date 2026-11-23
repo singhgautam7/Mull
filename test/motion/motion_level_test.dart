@@ -9,29 +9,20 @@ import 'package:mull/core/theme/tokens.dart';
 import 'package:mull/features/settings/settings_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The Motion setting (B2): Auto follows the phone, the phone's Remove
+/// There is no Motion setting: the level follows the phone, its Remove
 /// animations always wins, and the device check runs once and is cached.
 void main() {
   group('resolveMotionLevel', () {
-    test('Auto is Expressive on a normal phone and before the check', () {
-      expect(resolveMotionLevel(MotionPreference.auto, DeviceClass.normal), MotionLevel.expressive);
-      expect(resolveMotionLevel(MotionPreference.auto, DeviceClass.unknown), MotionLevel.expressive);
+    test('Expressive on a normal phone and before the check, Subtle on a low-RAM one', () {
+      expect(resolveMotionLevel(DeviceClass.normal), MotionLevel.expressive);
+      expect(resolveMotionLevel(DeviceClass.unknown), MotionLevel.expressive);
+      expect(resolveMotionLevel(DeviceClass.low), MotionLevel.subtle);
     });
 
-    test('Auto is Subtle on a low-RAM phone', () {
-      expect(resolveMotionLevel(MotionPreference.auto, DeviceClass.low), MotionLevel.subtle);
-    });
-
-    test('Remove animations makes every preference Off', () {
-      for (final MotionPreference p in MotionPreference.values) {
-        expect(resolveMotionLevel(p, DeviceClass.normal, systemOff: true), MotionLevel.off);
+    test('Remove animations is always Off', () {
+      for (final DeviceClass d in DeviceClass.values) {
+        expect(resolveMotionLevel(d, systemOff: true), MotionLevel.off);
       }
-    });
-
-    test('an explicit choice ignores the device', () {
-      expect(resolveMotionLevel(MotionPreference.expressive, DeviceClass.low), MotionLevel.expressive);
-      expect(resolveMotionLevel(MotionPreference.subtle, DeviceClass.normal), MotionLevel.subtle);
-      expect(resolveMotionLevel(MotionPreference.off, DeviceClass.normal), MotionLevel.off);
     });
   });
 
@@ -68,13 +59,6 @@ void main() {
     expect(AppSettings.read(prefs).deviceClass, DeviceClass.low);
   });
 
-  test('the Motion setting persists', () async {
-    final (ProviderContainer c, SharedPreferences prefs) = await boot(<String, Object>{});
-    await c.read(settingsProvider.notifier).setMotionPreference(MotionPreference.off);
-    expect(AppSettings.read(prefs).motionPreference, MotionPreference.off);
-    expect(c.read(settingsProvider).motionLevel, MotionLevel.off);
-  });
-
   Future<MotionLevel> levelUnder(WidgetTester tester, Map<String, Object> values, {bool disable = false}) async {
     SharedPreferences.setMockInitialValues(values);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -98,19 +82,16 @@ void main() {
     return seen;
   }
 
-  testWidgets('Auto picks Off with Remove animations on', (WidgetTester tester) async {
+  testWidgets('Off with Remove animations on', (WidgetTester tester) async {
     expect(await levelUnder(tester, <String, Object>{}, disable: true), MotionLevel.off);
   });
 
-  testWidgets('Auto picks Subtle on a low-RAM phone', (WidgetTester tester) async {
+  testWidgets('Subtle on a low-RAM phone', (WidgetTester tester) async {
     expect(await levelUnder(tester, <String, Object>{AppSettings.kDeviceClass: 'low'}), MotionLevel.subtle);
   });
 
-  testWidgets('Expressive chosen, Remove animations still wins', (WidgetTester tester) async {
-    expect(
-      await levelUnder(tester, <String, Object>{AppSettings.kMotion: 'expressive'}, disable: true),
-      MotionLevel.off,
-    );
+  testWidgets('a level stored by the old Motion setting is ignored', (WidgetTester tester) async {
+    expect(await levelUnder(tester, <String, Object>{'motion.preference': 'off'}), MotionLevel.expressive);
   });
 
   group('MullHaptics', () {

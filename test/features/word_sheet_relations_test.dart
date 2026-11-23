@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -11,10 +8,9 @@ import 'package:mull/core/database/user_db.dart';
 import 'package:mull/core/providers.dart';
 import 'package:mull/core/theme/app_theme.dart';
 import 'package:mull/core/theme/palette.dart';
-import 'package:mull/core/utils/platform_surfaces.dart';
 import 'package:mull/features/dictionary/word_sheet.dart';
-import 'package:mull/features/settings/settings_controller.dart';
 import 'package:mull/shared/widgets/chips.dart';
+import 'package:mull/features/settings/settings_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/fake_dictionary.dart';
@@ -22,58 +18,34 @@ import '../database/fake_dictionary.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const List<FakeWord> words = <FakeWord>[
-    FakeWord(
-      'cognitive',
-      'adj',
-      'Relating to mental processes such as thinking and reasoning.',
-      synonyms: <String>['mental', 'intellectual', 'cerebral', 'rational'],
-      antonyms: <String>['emotional', 'physical'],
-      wordFamily: <WordFamilyMember>[
-        WordFamilyMember('cognition', 'noun'),
-        WordFamilyMember('cognitively', 'adv'),
-        WordFamilyMember('cognizant', 'adj'),
-      ],
-    ),
-    FakeWord(
-      'cognition',
-      'noun',
-      'The mental action or process of acquiring knowledge.',
-      inLearningSet: false,
-    ),
-  ];
-
   late DictionaryDb dict;
   late UserDatabase userDb;
 
-  setUpAll(() async {
-    final ByteData font = ByteData.sublistView(File('assets/fonts/InstrumentSans-Variable.ttf').readAsBytesSync());
-    await (FontLoader('Instrument Sans')..addFont(Future<ByteData>.value(font))).load();
-  });
+  final List<String> many = <String>['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10'];
+  final FakeWord big = FakeWord(
+    'big',
+    'adjective',
+    'Of great size.',
+    synonyms: <String>['large', 'gargantuan'],
+    antonyms: many,
+    wordFamily: const <WordFamilyMember>[WordFamilyMember('bigness', 'noun')],
+  );
+  const FakeWord large = FakeWord('large', 'adjective', 'Of considerable size.');
+  const FakeWord bigness = FakeWord('bigness', 'noun', 'The state of being big.');
 
   setUp(() {
-    dict = fakeDictionary(words: words);
-    userDb = UserDatabase.forTesting(NativeDatabase.memory());
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    final TestDefaultBinaryMessengerBinding b = TestDefaultBinaryMessengerBinding.instance;
-    b.defaultBinaryMessenger.setMockMethodCallHandler(PlatformSurfaces.channel, (MethodCall call) async => null);
+    dict = fakeDictionary(words: <FakeWord>[big, large, bigness]);
+    userDb = UserDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {
-    final TestDefaultBinaryMessengerBinding b = TestDefaultBinaryMessengerBinding.instance;
-    b.defaultBinaryMessenger.setMockMethodCallHandler(PlatformSurfaces.channel, null);
     await userDb.close();
     dict.close();
   });
 
-  Future<void> settle(WidgetTester tester) async {
-    for (int i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 60));
-    }
-  }
-
-  Future<void> pumpApp(WidgetTester tester, Widget home) async {
-    tester.view.physicalSize = const Size(400, 800);
+  Future<void> open(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -86,61 +58,87 @@ void main() {
         ],
         child: MaterialApp(
           theme: AppTheme.of(ThemeFamily.byId('mull'), Tone.light),
-          home: home,
-        ),
-      ),
-    );
-    await settle(tester);
-  }
-
-  testWidgets('renders SYNONYMS, ANTONYMS, and WORD FAMILY sections without PillChip', (WidgetTester tester) async {
-    await pumpApp(
-      tester,
-      Scaffold(
-        body: Builder(
-          builder: (BuildContext c) => TextButton(
-            onPressed: () => showWordSheet(c, wordKey: words.first.key),
-            child: const Text('open'),
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: TextButton(onPressed: () => showWordSheet(context, wordKey: big.key), child: const Text('open')),
+            ),
           ),
         ),
       ),
     );
-
     await tester.tap(find.text('open'));
-    await settle(tester);
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
 
-    // Section headers
-    expect(find.text('ADJECTIVE'), findsOneWidget);
-    expect(find.text('SYNONYMS'), findsOneWidget);
-    expect(find.text('ANTONYMS'), findsOneWidget);
-    expect(find.text('WORD FAMILY'), findsOneWidget);
+  testWidgets('an existing related word is a chip that opens its sheet; a missing one is plain text', (WidgetTester tester) async {
+    await open(tester);
+    expect(find.widgetWithText(PillChip, 'large'), findsOneWidget);
+    expect(find.text('gargantuan'), findsOneWidget);
+    expect(find.widgetWithText(PillChip, 'gargantuan'), findsNothing);
+    expect(find.widgetWithText(PillChip, 'bigness'), findsOneWidget);
 
-    // No PillChip should exist in the sheet
-    expect(find.byType(PillChip), findsNothing);
+    await tester.tap(find.widgetWithText(PillChip, 'large'));
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Of considerable size.', skipOffstage: false), findsOneWidget);
+    expect(find.text('Of great size.', skipOffstage: false), findsOneWidget, reason: 'the first sheet is still under it');
+    await tester.runAsync(() async {
+      await tester.pumpWidget(const SizedBox());
+      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
+    });
+  });
 
-    // Synonyms and Antonyms content
-    expect(find.text('mental'), findsOneWidget);
-    expect(find.text('intellectual'), findsOneWidget);
-    expect(find.text('cerebral'), findsOneWidget);
-    expect(find.text('rational'), findsOneWidget);
-    expect(find.text('emotional'), findsOneWidget);
-    expect(find.text('physical'), findsOneWidget);
+  testWidgets('a long list shows eight chips and Show all expands the rest', (WidgetTester tester) async {
+    await open(tester);
+    expect(find.text('Show all (10)'), findsOneWidget);
+    expect(find.text('m9'), findsNothing);
+    await tester.tap(find.text('Show all (10)'));
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('m9'), findsOneWidget);
+    expect(find.text('m10'), findsOneWidget);
+    expect(find.text('Show less'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.pumpWidget(const SizedBox());
+      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
+    });
+  });
 
-    // Word family member with pos label
-    expect(find.textContaining('cognition'), findsOneWidget);
-    expect(find.textContaining('(noun)'), findsOneWidget);
-    expect(find.textContaining('cognitively'), findsOneWidget);
-    expect(find.textContaining('(adverb)'), findsOneWidget);
-    expect(find.textContaining('cognizant'), findsOneWidget);
-    expect(find.textContaining('(adjective)'), findsOneWidget);
-
-    // Tapping a word family member opens its sheet
-    await tester.tap(find.textContaining('cognition'));
-    await settle(tester);
-
-    expect(find.text('The mental action or process of acquiring knowledge.'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(milliseconds: 50));
+  testWidgets('Show all is a plain text button and the revealed items continue the same left edge', (WidgetTester tester) async {
+    await open(tester);
+    expect(find.widgetWithText(PillChip, 'Show all (10)'), findsNothing, reason: 'a text button, not a chip');
+    Finder antonyms(String t) => find.text(t);
+    final double edge = tester.getTopLeft(find.widgetWithText(PillChip, 'large')).dx;
+    final double plainEdge = tester.getTopLeft(antonyms('m1')).dx;
+    final double showAll = tester.getTopLeft(find.text('Show all (10)')).dx;
+    expect(showAll, plainEdge - 8, reason: 'label shares the section left edge (plain items carry Space.sm padding)');
+    expect(tester.getSize(find.ancestor(of: find.text('Show all (10)'), matching: find.byType(ConstrainedBox)).first).height,
+        greaterThanOrEqualTo(48));
+    await tester.tap(find.text('Show all (10)'));
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(tester.getTopLeft(find.widgetWithText(PillChip, 'large')).dx, edge);
+    expect(tester.getTopLeft(antonyms('m1')).dx, plainEdge);
+    // Every wrapped row starts at the same dx: the leftmost item of each row.
+    final Map<double, double> rowLeft = <double, double>{};
+    for (final String t in many) {
+      final Offset o = tester.getTopLeft(antonyms(t));
+      rowLeft[o.dy] = rowLeft[o.dy] == null || o.dx < rowLeft[o.dy]! ? o.dx : rowLeft[o.dy]!;
+    }
+    expect(rowLeft.length, greaterThan(1));
+    expect(rowLeft.values.toSet(), <double>{plainEdge});
+    expect(tester.getTopLeft(find.text('Show less')).dx, showAll);
+    await tester.runAsync(() async {
+      await tester.pumpWidget(const SizedBox());
+      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
+    });
   });
 }

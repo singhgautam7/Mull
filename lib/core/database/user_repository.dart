@@ -78,6 +78,8 @@ class UserRepository {
   Future<String> createCollection(
     String name, {
     int? color,
+    String? icon,
+    String? note,
     DateTime? now,
   }) async {
     final DateTime at = now ?? DateTime.now();
@@ -90,11 +92,31 @@ class UserRepository {
             kind: 'user',
             name: name,
             color: Value<int?>(color),
+            icon: Value<String?>(icon),
+            note: Value<String?>(note),
             createdAt: at,
           ),
         );
     return slug;
   }
+
+  /// Name, colour, icon and note together (the shelf editor's save).
+  Future<void> updateCollection(
+    String slug, {
+    required String name,
+    int? color,
+    String? icon,
+    String? note,
+  }) => (_db.update(_db.userCollections)
+        ..where((UserCollections c) => c.slug.equals(slug)))
+      .write(
+        UserCollectionsCompanion(
+          name: Value<String>(name),
+          color: Value<int?>(color),
+          icon: Value<String?>(icon),
+          note: Value<String?>(note),
+        ),
+      );
 
   Future<void> renameCollection(String slug, String name) =>
       (_db.update(_db.userCollections)
@@ -285,6 +307,13 @@ class UserRepository {
       (_db.select(_db.notes)..where((Notes n) => n.wordKey.equals(wordKey)))
           .watchSingleOrNull()
           .map((Note? n) => n?.body);
+
+  /// Every note, newest first.
+  Stream<List<Note>> watchAllNotes() => (_db.select(_db.notes)
+        ..orderBy(<OrderingTerm Function(Notes)>[
+          (Notes n) => OrderingTerm.desc(n.updatedAt),
+        ]))
+      .watch();
 
   /// Empty text deletes the note; there is no such thing as an empty note.
   Future<void> putNote(String wordKey, String body, {DateTime? now}) async {

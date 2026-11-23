@@ -10,6 +10,7 @@ import '../../core/theme/typography.dart';
 import '../../shared/widgets/app_bottom_sheet.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/definable_text.dart';
+import 'note_sheet.dart';
 
 /// HANDOFF 3.6. IDIOM label, the phrase at 36, register chip, then WHAT IT
 /// MEANS and IN CONTEXT. No IPA, no sense numbering, no POS: the field set is
@@ -79,7 +80,7 @@ class _IdiomSheet extends ConsumerWidget {
           label('SEE ALSO'),
           Wrap(
             spacing: Space.sm,
-            runSpacing: Space.sm,
+            runSpacing: PillChip.runSpacing,
             children: <Widget>[
               for (final Idiom r in related)
                 PillChip(
@@ -92,6 +93,7 @@ class _IdiomSheet extends ConsumerWidget {
             ],
           ),
         ],
+        NoteSection(noteKey: idiom.idiomKey, title: idiom.phrase),
         const SizedBox(height: Space.lg),
       ],
     );

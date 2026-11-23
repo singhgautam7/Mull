@@ -6,11 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/dictionary_db.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
-import '../../core/theme/typography.dart';
 import '../../core/utils/platform_surfaces.dart';
+import 'app_menu.dart';
 import 'app_snackbar.dart';
 
 /// A definition's text, selectable: a long press selects the word (handles
@@ -116,9 +114,9 @@ class _DefinableTextState extends ConsumerState<DefinableText> {
   );
 }
 
-/// The selection menu: a surface card above the selection (below it when
-/// there is no room), 48dp rows. Opens on springFast scale and fade at
-/// Expressive, a fade at Subtle, at once at Off.
+/// The selection menu: an [AppMenuPanel] of [AppMenuRow]s above the selection
+/// (below it when there is no room). Opens as [showAppMenu] does: the fast
+/// spring scale and fade (subtle spring at Subtle), a 90 ms fade at Off.
 class _DefineMenu extends StatelessWidget {
   const _DefineMenu({
     required this.anchors,
@@ -133,61 +131,31 @@ class _DefineMenu extends StatelessWidget {
   final VoidCallback onCopy;
 
   static const double _kScaleFrom = 0.9;
-  static const double _kMaxWidth = 260;
 
   @override
   Widget build(BuildContext context) {
-    final MullColors c = context.colors;
     final MotionLevel level = Motion.levelOf(context);
-    final Widget card = Material(
-      color: c.surface,
-      elevation: 8,
-      shadowColor: c.shadow,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: Radii.cardR,
-        side: BorderSide(color: c.outline),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 140, maxWidth: _kMaxWidth),
-        child: IntrinsicWidth(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (onDefine != null)
-                _MenuItem(label: defineLabel, onTap: onDefine!),
-              _MenuItem(label: 'Copy', onTap: onCopy),
-            ],
-          ),
-        ),
-      ),
+    final AnimationStyle style = AppMenuPanel.animationStyle(level);
+    final Widget card = AppMenuPanel(
+      children: <Widget>[
+        if (onDefine != null)
+          AppMenuRow(icon: Icons.menu_book_rounded, label: defineLabel, onTap: onDefine),
+        AppMenuRow(icon: Icons.content_copy_rounded, label: 'Copy', onTap: onCopy),
+      ],
     );
 
-    final Widget animated = switch (level) {
-      MotionLevel.expressive => TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: 1),
-        duration: Motion.fastCurve.settle,
-        curve: Motion.fastCurve,
-        child: card,
-        builder: (BuildContext _, double v, Widget? child) => Opacity(
-          opacity: v.clamp(0.0, 1.0),
-          child: Transform.scale(
-            scale: _kScaleFrom + (1 - _kScaleFrom) * v,
-            child: child,
-          ),
-        ),
+    final Widget animated = TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: style.duration!,
+      curve: style.curve ?? Curves.linear,
+      child: card,
+      builder: (BuildContext _, double v, Widget? child) => Opacity(
+        opacity: v.clamp(0.0, 1.0),
+        child: level == MotionLevel.off
+            ? child
+            : Transform.scale(scale: _kScaleFrom + (1 - _kScaleFrom) * v, child: child),
       ),
-      MotionLevel.subtle => TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: 1),
-        duration: Motion.fxFast,
-        curve: Motion.curveEffects,
-        child: card,
-        builder: (BuildContext _, double v, Widget? child) =>
-            Opacity(opacity: v, child: child),
-      ),
-      MotionLevel.off => card,
-    };
+    );
 
     return TextFieldTapRegion(
       child: CustomSingleChildLayout(
@@ -197,43 +165,6 @@ class _DefineMenu extends StatelessWidget {
           top: MediaQuery.paddingOf(context).top + Space.sm,
         ),
         child: animated,
-      ),
-    );
-  }
-}
-
-class _MenuItem extends StatelessWidget {
-  const _MenuItem({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final MullColors c = context.colors;
-    return Semantics(
-      button: true,
-      label: label,
-      onTap: onTap,
-      excludeSemantics: true,
-      child: Pressable(
-        kind: PressKind.row,
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 48),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: MullType.label.copyWith(color: c.onSurface).weight(500),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

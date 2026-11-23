@@ -35,7 +35,7 @@ class DidYouMean extends StatelessWidget {
         const SizedBox(height: Space.sm),
         Wrap(
           spacing: Space.sm,
-          runSpacing: Space.sm,
+          runSpacing: PillChip.runSpacing,
           children: <Widget>[
             for (final DictionaryWord w in words)
               PillChip(

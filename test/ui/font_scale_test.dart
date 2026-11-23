@@ -15,7 +15,7 @@ import 'package:mull/core/theme/palette.dart';
 import 'package:mull/features/collections/collection_cards.dart';
 import 'package:mull/features/collections/collection_screen.dart';
 import 'package:mull/features/collections/collections_screen.dart';
-import 'package:mull/features/collections/create_list_sheet.dart';
+import 'package:mull/features/collections/shelf_edit_screen.dart';
 import 'package:mull/features/dictionary/add_to_list_sheet.dart';
 import 'package:mull/features/dictionary/note_sheet.dart';
 import 'package:mull/features/dictionary/search_screen.dart';
@@ -25,7 +25,6 @@ import 'package:mull/core/database/mix_repository.dart';
 import 'package:mull/features/linger/linger_rules.dart';
 import 'package:mull/features/linger/linger_screen.dart';
 import 'package:mull/features/linger/mix_sheet.dart';
-import 'package:mull/features/linger/saved_mixes_screen.dart';
 import 'package:mull/features/linger/word_card.dart';
 import 'package:mull/features/settings/export_screen.dart';
 import 'package:mull/features/settings/info_screens.dart';
@@ -34,7 +33,10 @@ import 'package:mull/features/settings/settings_controller.dart';
 import 'package:mull/features/settings/settings_screen.dart';
 import 'package:mull/features/settings/theme_screen.dart';
 import 'package:mull/features/settings/welcome_screen.dart';
+import 'package:mull/features/onboarding/onboarding_setup_page.dart';
+import 'package:mull/features/notes/notes_screen.dart';
 import 'package:mull/features/stats/stats_screen.dart';
+import 'package:mull/shared/widgets/icon_color_picker_sheet.dart';
 import 'package:mull/shared/widgets/two_column_grid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -59,7 +61,17 @@ void main() {
     examples: <String>[
       'The institutionalisation of the practice, which had once been informal and ad hoc, took the better part of a decade and left almost nobody satisfied with the result.',
     ],
-    synonyms: <String>['formalisation', 'systematisation', 'regularisation', 'standardisation'],
+    synonyms: <String>['formalisation', 'systematisation', 'regularisation', 'standardisation', 'abate', 'colour'],
+    // Enough to wrap and to show the "Show all" chip at the largest scale.
+    antonyms: <String>[
+      'disorganisation', 'informality', 'improvisation', 'spontaneity', 'casualness',
+      'irregularity', 'unpredictability', 'haphazardness', 'looseness', 'abate',
+    ],
+    wordFamily: <WordFamilyMember>[
+      WordFamilyMember('institutionalise', 'verb'),
+      WordFamilyMember('institutional', 'adjective'),
+      WordFamilyMember('institutionally', 'adverb'),
+    ],
   );
   const FakeWord abate = FakeWord('abate', 'verb', 'To lessen in force or intensity.', examples: <String>['The storm abated by morning.']);
   const FakeWord colour = FakeWord('colour', 'noun', 'The spectral composition of light.');
@@ -194,6 +206,8 @@ void main() {
       await user.addBookmark(longest.key);
       await user.recordLookup(longest.key);
       await user.markSeen(abate.key);
+      await user.putNote(longest.key, 'A note that runs on for a while so the card has to wrap its text across several lines at the largest font scale.');
+      await user.putNote('gone|noun|1', 'A note on a word that is no longer in the dictionary.');
 
       for (final Widget screen in <Widget>[
         const HomeScreen(),
@@ -205,6 +219,7 @@ void main() {
         const SettingsScreen(),
         const ThemeScreen(),
         const StatsScreen(),
+        const NotesScreen(),
         const WelcomeScreen(),
         const SearchScreen(),
         const ExportScreen(),
@@ -212,7 +227,9 @@ void main() {
         const PrivacyScreen(),
         const DictionaryInfoScreen(),
         const PermissionsScreen(),
-        const SavedMixesScreen(),
+        const ShelfEditScreen(),
+        ShelfEditScreen(slug: slug),
+        const Scaffold(body: OnboardingSetupPage()),
         const LingerScreen(scope: 'everyday'),
       ]) {
         await pumpAt(tester, screen);
@@ -245,7 +262,8 @@ void main() {
         (BuildContext c) => showWordSheet(c, wordKey: longest.key, fromSearch: true),
         (BuildContext c) => showNoteSheet(c, wordKey: longest.key, headword: longest.headword),
         (BuildContext c) => showAddToListSheet(c, wordKey: longest.key, headword: longest.headword),
-        (BuildContext c) => showCreateListSheet(c),
+        (BuildContext c) => showIconColorPicker(context: c, icon: null, color: null).then((_) {}),
+        (BuildContext c) => showIconColorPicker(context: c, icon: null, color: 2, initialTab: IconColorTab.colour).then((_) {}),
         (BuildContext c) => showMixSheet(c, active: active),
       ]) {
         await pumpAt(

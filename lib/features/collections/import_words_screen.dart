@@ -102,6 +102,14 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
     });
   }
 
+  /// A pre-made shelf is read-only, so it is never an import target.
+  String? get _target {
+    final String? slug = widget.targetShelfSlug;
+    if (slug == null) return null;
+    final Collection? shelf = ref.read(collectionBySlugProvider)[slug];
+    return shelf != null && !shelf.isUsers ? null : slug;
+  }
+
   List<String> get _keysToAdd => <String>[
     for (final (int i, WordMatch m) in _matches.indexed)
       if (m.isMatched || (m.isNearMatch && _accepted.contains(i)))
@@ -117,11 +125,11 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
       final UserRepository user = ref.read(userRepositoryProvider);
       final String name = _shelfName.text.trim();
       final String slug =
-          widget.targetShelfSlug ??
+          _target ??
           await user.createCollection(name.isEmpty ? 'Imported shelf' : name);
       await user.addAllToCollection(slug, keys);
       if (!mounted) return;
-      if (widget.targetShelfSlug != null) {
+      if (_target != null) {
         context.pop();
       } else {
         context.pushReplacement(Routes.collection(slug));
@@ -397,7 +405,7 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
           ),
           const SizedBox(height: Space.lg),
         ],
-        if (widget.targetShelfSlug == null) ...<Widget>[
+        if (_target == null) ...<Widget>[
           LabelledField(
             label: 'SHELF NAME',
             controller: _shelfName,
@@ -406,7 +414,7 @@ class _ImportWordsScreenState extends ConsumerState<ImportWordsScreen> {
           const SizedBox(height: Space.xl),
         ],
         AppButton(
-          label: widget.targetShelfSlug == null
+          label: _target == null
               ? 'Create shelf with ${plural(total, 'word')}'
               : 'Add ${plural(total, 'word')} to the shelf',
           fullWidth: true,
@@ -628,7 +636,7 @@ class _ColumnsStep extends StatelessWidget {
                 SectionHeader(label: 'Column ${col + 1}', inset: false),
                 Wrap(
                   spacing: Space.xs,
-                  runSpacing: Space.xs,
+                  runSpacing: PillChip.runSpacing,
                   children: <Widget>[
                     for (final ColumnRole r in ColumnRole.values)
                       PillChip(

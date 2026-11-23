@@ -1,21 +1,140 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/database/mix_repository.dart';
+import '../../core/database/dictionary_db.dart';
+import '../../core/motion/pressable.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/theme/typography.dart';
 import '../../core/utils/format.dart';
 import '../../shared/widgets/app_header.dart';
 import 'info_screens.dart';
-import 'settings_controller.dart';
-import 'settings_screen.dart';
 import 'settings_widgets.dart';
 
-/// Kuber's structure, Mull's entries. Browse (Shelves, Mixes, Stats), Yours
-/// (Settings, Data, Permissions), About (Privacy, Dictionary, About Mull).
-/// Each destination appears once. The line under it opens debug on seven taps.
+/// The distinct headword count, read once per open dictionary on the worker.
+/// Built in a synchronous function so the closure is sendable.
+Future<int> moreHeadwordCount(DictionaryDb dict) =>
+    dict.compute((DictionaryDb db) => db.headwordCount);
+
+final FutureProvider<int> _headwordCountProvider = FutureProvider<int>(
+  (Ref ref) => moreHeadwordCount(ref.watch(dictProvider)),
+);
+
+/// A More entry's icon: a 40 dp tonal disc, glyph 22. Mull has no secondary
+/// container roles; `primaryContainer` / `onPrimaryContainer` stand in for
+/// Kuber's `secondaryContainer` / `onSecondaryContainer`.
+class MoreIconDisc extends StatelessWidget {
+  const MoreIconDisc({required this.icon, super.key});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    return ExcludeSemantics(
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: c.primaryContainer,
+          borderRadius: Radii.mediumR,
+        ),
+        child: Icon(icon, size: 22, color: c.onPrimaryContainer),
+      ),
+    );
+  }
+}
+
+/// One More row, every row alike: disc, title, a line under it, chevron.
+class MoreEntryRow extends StatelessWidget {
+  const MoreEntryRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  static const double _inset = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final MullColors c = context.colors;
+    final Widget body = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.lg - _inset,
+        vertical: Space.sm - _inset,
+      ),
+      child: Row(
+        children: <Widget>[
+          MoreIconDisc(icon: icon),
+          const SizedBox(width: Space.lg),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MullType.titleMedium.copyWith(color: c.onSurface),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MullType.note.copyWith(
+                    height: 1.3,
+                    color: c.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: Space.md),
+          Icon(Icons.chevron_right_rounded, size: 20, color: c.onSurfaceVariant),
+        ],
+      ),
+    );
+    return Semantics(
+      button: true,
+      label: '$title, $subtitle',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Pressable(
+        kind: PressKind.row,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.all(_inset),
+          alignment: Alignment.center,
+          child: InkWell(
+            borderRadius: Radii.largeR,
+            onTap: onTap,
+            child: body,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Kuber's classic More. Tools (Stats), Manage (Data, Permissions), About
+/// (Settings, Privacy, Dictionary, About Mull). Shelves has its own tab and
+/// mixes live on the Mull tab. The line under the groups opens debug on seven
+/// taps.
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
@@ -28,10 +147,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final AppSettings s = ref.watch(settingsProvider);
-    final int collections = ref.watch(collectionsProvider).length;
-    final int mixes = (ref.watch(mixesProvider).value ?? const <MixSpec>[]).where((MixSpec m) => !m.isPreset).length;
-    final int entries = ref.watch(dictProvider).headwordCount;
+    final int? entries = ref.watch(_headwordCountProvider).value;
     final String? version = ref.watch(appVersionProvider).value;
 
     return Scaffold(
@@ -42,27 +158,29 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           children: <Widget>[
             HeaderPage.gap(),
             SettingsGroup(
-              label: 'Browse',
+              label: 'Tools',
+              gap: Space.section,
               children: <Widget>[
-                SettingsRow(icon: Icons.grid_view_rounded, label: 'Shelves', value: '$collections', onTap: () => context.push(Routes.collections)),
-                SettingsRow(icon: Icons.shuffle_rounded, label: 'Mixes', value: '$mixes', onTap: () => context.push(Routes.mixes)),
-                SettingsRow(icon: Icons.bar_chart_rounded, label: 'Stats', subtitle: 'Words seen and revisited', onTap: () => context.push(Routes.stats)),
+                MoreEntryRow(icon: Icons.sticky_note_2_outlined, title: 'Notes', subtitle: 'Everything you wrote on a word', onTap: () => unawaited(context.push(Routes.notes))),
+                MoreEntryRow(icon: Icons.bar_chart_rounded, title: 'Stats', subtitle: 'Words seen and revisited', onTap: () => unawaited(context.push(Routes.stats))),
               ],
             ),
             SettingsGroup(
-              label: 'Yours',
+              label: 'Manage',
+              gap: Space.section,
               children: <Widget>[
-                SettingsRow(icon: Icons.tune_rounded, label: 'Settings', value: SettingsScreen.themeSummary(s), onTap: () => context.push(Routes.settings)),
-                SettingsRow(icon: Icons.storage_rounded, label: 'Data', subtitle: 'Export, import and reset', onTap: () => context.push(Routes.data)),
-                SettingsRow(icon: Icons.key_outlined, label: 'Permissions', value: 'Notifications', onTap: () => context.push(Routes.permissions)),
+                MoreEntryRow(icon: Icons.storage_rounded, title: 'Data', subtitle: 'Export, import and reset', onTap: () => unawaited(context.push(Routes.data))),
+                MoreEntryRow(icon: Icons.key_outlined, title: 'Permissions', subtitle: 'Notifications', onTap: () => unawaited(context.push(Routes.permissions))),
               ],
             ),
             SettingsGroup(
               label: 'About',
+              gap: Space.section,
               children: <Widget>[
-                SettingsRow(icon: Icons.shield_outlined, label: 'Privacy', value: 'Offline only', onTap: () => context.push(Routes.privacy)),
-                SettingsRow(icon: Icons.menu_book_outlined, label: 'Dictionary', value: '${grouped(entries)} entries', onTap: () => context.push(Routes.dictionary)),
-                SettingsRow(icon: Icons.info_outline_rounded, label: 'About Mull', value: version, onTap: () => context.push(Routes.about)),
+                MoreEntryRow(icon: Icons.tune_rounded, title: 'Settings', subtitle: 'Look, haptics, words, reminders', onTap: () => unawaited(context.push(Routes.settings))),
+                MoreEntryRow(icon: Icons.shield_outlined, title: 'Privacy', subtitle: 'Offline only', onTap: () => unawaited(context.push(Routes.privacy))),
+                MoreEntryRow(icon: Icons.menu_book_outlined, title: 'Dictionary', subtitle: entries == null ? 'Entries' : '${grouped(entries)} entries', onTap: () => unawaited(context.push(Routes.dictionary))),
+                MoreEntryRow(icon: Icons.info_outline_rounded, title: 'About Mull', subtitle: version ?? 'Version', onTap: () => unawaited(context.push(Routes.about))),
               ],
             ),
             // Seven taps on the footer line opens the debug route.

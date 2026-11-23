@@ -7,11 +7,11 @@ import '../../features/collections/add_to_shelf_screen.dart';
 import '../../features/collections/collection_screen.dart';
 import '../../features/collections/collections_screen.dart';
 import '../../features/collections/import_words_screen.dart';
+import '../../features/collections/shelf_edit_screen.dart';
 import '../../features/collections/shelf_stats_screen.dart';
 import '../../features/dictionary/search_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/linger/linger_screen.dart';
-import '../../features/linger/saved_mixes_screen.dart';
 import '../../features/quiz/quiz_screen.dart';
 import '../../features/settings/about_screen.dart';
 import '../../features/settings/data_screen.dart';
@@ -25,6 +25,7 @@ import '../../features/settings/privacy_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/settings/theme_screen.dart';
 import '../../features/settings/welcome_screen.dart';
+import '../../features/notes/notes_screen.dart';
 import '../../features/stats/stats_screen.dart';
 
 /// HANDOFF section 4, the navigation map.
@@ -37,8 +38,9 @@ abstract final class Routes {
 
   static const String collections = '/collections';
   static const String importWords = '/shelves/import';
-  static const String mixes = '/mixes';
+  static const String newShelf = '/shelves/new';
   static const String stats = '/more/stats';
+  static const String notes = '/more/notes';
   static const String settings = '/more/settings';
   static const String theme = '/more/settings/theme';
   static const String data = '/more/data';
@@ -54,6 +56,7 @@ abstract final class Routes {
   static String collection(String slug) => '/collection/$slug';
   static String quiz(String slug) => '/collection/$slug/quiz';
   static String shelfStats(String slug) => '/collection/$slug/stats';
+  static String editShelf(String slug) => '/collection/$slug/edit';
 
   /// Scoped play: the Mull tab plays one collection, mix untouched.
   static String scoped(String slug) => '$mull?scope=$slug';
@@ -62,7 +65,7 @@ abstract final class Routes {
   static String shelfAdd(String slug, {bool phrases = false}) =>
       '/collection/$slug/add?kind=${phrases ? 'phrases' : 'words'}';
 
-  /// Play a saved mix from the saved mixes page.
+  /// Play a saved mix (the mix sheet's saved list, Review the bookmarked).
   static String playMix(int id) => '$mull?mix=$id';
 }
 
@@ -111,9 +114,21 @@ GoRouter buildRouter({required bool onboarded}) {
         ),
       ),
       GoRoute(
-        path: Routes.mixes,
+        path: Routes.newShelf,
         pageBuilder: (BuildContext c, GoRouterState s) =>
-            mullPage<void>(state: s, child: const SavedMixesScreen()),
+            mullPage<String?>(state: s, child: const ShelfEditScreen()),
+      ),
+      GoRoute(
+        path: '/collection/:slug/edit',
+        pageBuilder: (BuildContext c, GoRouterState s) => mullPage<String?>(
+          state: s,
+          child: ShelfEditScreen(slug: s.pathParameters['slug']),
+        ),
+      ),
+      GoRoute(
+        path: Routes.notes,
+        pageBuilder: (BuildContext c, GoRouterState s) =>
+            mullPage<void>(state: s, child: const NotesScreen()),
       ),
       GoRoute(
         path: Routes.stats,
@@ -175,7 +190,9 @@ GoRouter buildRouter({required bool onboarded}) {
           ),
         ),
       ),
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
+        navigatorContainerBuilder: (BuildContext _, StatefulNavigationShell shell, List<Widget> children) =>
+            BranchStack(index: shell.currentIndex, onSelect: shell.goBranch, children: children),
         builder:
             (
               BuildContext context,
@@ -184,7 +201,6 @@ GoRouter buildRouter({required bool onboarded}) {
             ) {
               return NavShell(
                 index: shell.currentIndex,
-                tabCount: shell.route.branches.length,
                 onSelect: (int i) => onTabSelected(context, shell, i, searchPath: Routes.search),
                 child: shell,
               );
@@ -211,31 +227,44 @@ GoRouter buildRouter({required bool onboarded}) {
             ],
           ),
           StatefulShellBranch(
+            preload: true,
             routes: <RouteBase>[
               GoRoute(
                 path: Routes.collections,
-                builder: (BuildContext c, GoRouterState s) =>
-                    const CollectionsScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: Routes.search,
-                builder: (BuildContext c, GoRouterState s) => SearchScreen(
-                  initialQuery: s.uri.queryParameters['q'],
-                  focusToken: s.uri.queryParameters['focus'],
+                builder: (BuildContext c, GoRouterState s) => const WarmTab(
+                  branch: 2,
+                  delay: Duration(milliseconds: 300),
+                  child: CollectionsScreen(),
                 ),
               ),
             ],
           ),
           StatefulShellBranch(
+            preload: true,
+            routes: <RouteBase>[
+              GoRoute(
+                path: Routes.search,
+                builder: (BuildContext c, GoRouterState s) => WarmTab(
+                  branch: 3,
+                  delay: const Duration(milliseconds: 700),
+                  child: SearchScreen(
+                    initialQuery: s.uri.queryParameters['q'],
+                    focusToken: s.uri.queryParameters['focus'],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            preload: true,
             routes: <RouteBase>[
               GoRoute(
                 path: Routes.more,
-                builder: (BuildContext c, GoRouterState s) =>
-                    const MoreScreen(),
+                builder: (BuildContext c, GoRouterState s) => const WarmTab(
+                  branch: 4,
+                  delay: Duration(milliseconds: 1000),
+                  child: MoreScreen(),
+                ),
               ),
             ],
           ),

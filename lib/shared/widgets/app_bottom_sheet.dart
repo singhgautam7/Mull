@@ -6,6 +6,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import 'app_icon_button.dart';
+import 'app_button.dart';
 
 /// The one sheet shell: drag handle, 28dp top radius, safe area, scrollable
 /// body, optional pinned actions. Word detail, idiom detail, notes, add to
@@ -144,29 +145,64 @@ Future<T?> showAppBottomSheet<T>({
   bool expand = false,
   bool scrollable = true,
 }) {
-  return showModalBottomSheet<T>(
-    context: context,
-    // The root navigator, so a sheet covers the floating nav.
-    useRootNavigator: true,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    // Scrim to 40%, HANDOFF `sheet.present`.
-    barrierColor: context.colors.onSurface.withValues(alpha: 0.4),
-    sheetAnimationStyle: sheetStyle(context),
-    builder: (BuildContext context) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: AppBottomSheet(
-        title: title,
-        description: description,
-        headerAction: headerAction,
-        actions: actions,
-        showClose: showClose,
-        expand: expand,
-        scrollable: scrollable,
-        child: Builder(builder: builder),
+  // The root navigator, so a sheet covers the floating nav.
+  final NavigatorState nav = Navigator.of(context, rootNavigator: true);
+  return nav.push(
+    _SheetRoute<T>(
+      capturedThemes: InheritedTheme.capture(from: context, to: nav.context),
+      barrierLabel: MaterialLocalizations.of(context).scrimLabel,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      // Scrim to 40%, HANDOFF `sheet.present`.
+      modalBarrierColor: context.colors.onSurface.withValues(alpha: 0.4),
+      sheetAnimationStyle: sheetStyle(context),
+      // The sheet slides as one layer; its content is not repainted.
+      builder: (BuildContext context) => RepaintBoundary(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+          child: AppBottomSheet(
+            title: title,
+            description: description,
+            headerAction: headerAction,
+            actions: actions,
+            showClose: showClose,
+            expand: expand,
+            scrollable: scrollable,
+            child: Builder(builder: builder),
+          ),
+        ),
       ),
     ),
   );
+}
+
+/// Starts its slide once the sheet's first frame is built. Flutter starts the
+/// clock on push, so a heavy first frame (the word sheet: 28 to 126 ms on the
+/// AVD) spent the fastest part of the slide before anything showed, and the
+/// sheet popped instead of sliding.
+class _SheetRoute<T> extends ModalBottomSheetRoute<T> {
+  _SheetRoute({
+    required super.builder,
+    required super.isScrollControlled,
+    super.capturedThemes,
+    super.barrierLabel,
+    super.backgroundColor,
+    super.modalBarrierColor,
+    super.sheetAnimationStyle,
+  });
+
+  @override
+  TickerFuture didPush() {
+    final TickerFuture future = super.didPush();
+    if (controller case final AnimationController c when c.isAnimating) {
+      c.stop();
+      WidgetsBinding.instance.endOfFrame.then((_) {
+        // Popped or moved meanwhile: leave it.
+        if (isActive && !c.isAnimating && c.value == 0 && c.status == AnimationStatus.forward) c.forward();
+      });
+    }
+    return future;
+  }
 }
 
 /// A confirmation that names what will be lost. Returns true on confirm.
@@ -202,13 +238,15 @@ Future<bool> confirmDialog(
               mainAxisAlignment: MainAxisAlignment.end,
               spacing: Space.sm,
               children: <Widget>[
-                TextButton(
+                AppButton(
+                  label: 'Cancel',
+                  type: AppButtonType.secondary,
                   onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text('Cancel', style: MullType.titleMedium.copyWith(color: c.onSurface)),
                 ),
-                TextButton(
+                AppButton(
+                  label: confirmLabel,
+                  type: AppButtonType.danger,
                   onPressed: () => Navigator.of(ctx).pop(true),
-                  child: Text(confirmLabel, style: MullType.titleMedium.copyWith(color: c.danger)),
                 ),
               ],
             ),

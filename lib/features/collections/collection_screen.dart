@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
-import '../../core/database/user_db.dart';
 import '../../core/database/user_repository.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
@@ -27,7 +26,7 @@ import '../dictionary/idiom_sheet.dart';
 import '../dictionary/search_screen.dart';
 import '../dictionary/word_sheet.dart';
 import '../settings/settings_controller.dart';
-import 'create_list_sheet.dart';
+import 'shelf_edit_screen.dart';
 import '../quiz/quiz_screen.dart';
 import 'shelf_export_sheet.dart';
 
@@ -325,32 +324,34 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
           const AppMenuEntry<String>.divider(),
         ],
 
-        // Segment 2: Add words, Add phrases
-        const AppMenuEntry<String>(
-          value: 'add_words',
-          label: 'Add words',
-          icon: Icons.add_rounded,
-        ),
-        const AppMenuEntry<String>(
-          value: 'add_phrases',
-          label: 'Add phrases',
-          icon: Icons.add_rounded,
-        ),
-        if (own)
+        // Segment 2: Add words, Add phrases, Select, Import words (own shelves
+        // only: pre-made shelves are read-only).
+        if (own) ...<AppMenuEntry<String>>[
+          const AppMenuEntry<String>(
+            value: 'add_words',
+            label: 'Add words',
+            icon: Icons.add_rounded,
+          ),
+          const AppMenuEntry<String>(
+            value: 'add_phrases',
+            label: 'Add phrases',
+            icon: Icons.add_rounded,
+          ),
           const AppMenuEntry<String>(
             value: 'select',
             label: 'Select words',
             icon: Icons.checklist_rounded,
           ),
+          const AppMenuEntry<String>.divider(),
+          const AppMenuEntry<String>(
+            value: 'import_words',
+            label: 'Import words',
+            subtitle: 'paste a table or pick a CSV',
+            icon: Icons.file_upload_outlined,
+          ),
+        ],
 
-        // Segment 3: Import words, Export this shelf
-        const AppMenuEntry<String>.divider(),
-        const AppMenuEntry<String>(
-          value: 'import_words',
-          label: 'Import words',
-          subtitle: 'paste a table or pick a CSV',
-          icon: Icons.file_upload_outlined,
-        ),
+        // Segment 3: Export this shelf
         const AppMenuEntry<String>(
           value: 'export_shelf',
           label: 'Export this shelf',
@@ -421,8 +422,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         if (collection?.kind == 'user') ...<AppMenuEntry<String>>[
           const AppMenuEntry<String>.divider(),
           const AppMenuEntry<String>(
-            value: 'rename',
-            label: 'Rename',
+            value: 'edit',
+            label: 'Edit shelf',
             icon: Icons.edit_outlined,
           ),
           const AppMenuEntry<String>(
@@ -497,13 +498,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         unawaited(
           ref.read(settingsProvider.notifier).setLens(_scopeKey, 'table'),
         );
-      case 'rename':
-        await showCreateListSheet(
-          context,
-          renameSlug: widget.slug,
-          initialName: collection!.title,
-          initialColor: collection.color,
-        );
+      case 'edit':
+        await openShelfEditor(context, slug: widget.slug);
       case 'delete':
         final bool ok = await confirmDialog(
           context,
@@ -571,8 +567,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final DictionaryDb dict = ref.watch(dictProvider);
     final Set<String> bookmarks =
         ref.watch(bookmarksProvider).value ?? const <String>{};
-    final Map<String, SeenWord> seen =
-        ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
+    // The seen count only: one shelf's progress, never the whole seen map
+    // (a seen write elsewhere must not rebuild this list).
+    final int seenCount = ref.watch(progressOfProvider(widget.slug)).seen;
 
     final Collection? collection = ref.watch(
       collectionBySlugProvider,
@@ -630,10 +627,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       }
     }
 
-    final int seenCount = rawEntries
-        .where((CollectionEntry e) => seen.containsKey(e.key))
-        .length;
-
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () => FocusScope.of(context).unfocus(),
@@ -681,13 +674,15 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                         title: title,
                         onBack: () => context.pop(),
                         actions: <Widget>[
-                          Builder(
-                            builder: (BuildContext anchor) => AppIconButton(
-                              icon: Icons.add_rounded,
-                              semanticLabel: 'Add',
-                              onPressed: () => unawaited(_showAddMenu(anchor)),
+                          // Pre-made shelves are read-only: no + at all.
+                          if (own)
+                            Builder(
+                              builder: (BuildContext anchor) => AppIconButton(
+                                icon: Icons.add_rounded,
+                                semanticLabel: 'Add',
+                                onPressed: () => unawaited(_showAddMenu(anchor)),
+                              ),
                             ),
-                          ),
                           Builder(
                             builder: (BuildContext anchor) => AppIconButton(
                               icon: Icons.more_horiz_rounded,
@@ -713,6 +708,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
+                                if (collection?.note != null && collection!.note!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
+                                    child: Text(collection.note!, style: MullType.note.copyWith(color: c.onSurfaceVariant)),
+                                  ),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: Space.screen,
@@ -841,10 +841,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                               child: rawEntries.isEmpty
                                   ? EmptyState(
                                       title: 'No items on this shelf yet',
-                                      message: 'Add words or phrases from the overflow, or paste a table.',
-                                      actionLabel: 'Add words to it',
-                                      onAction: () =>
-                                          _openAdd(),
+                                      message: own
+                                          ? 'Add words or phrases from the overflow, or paste a table.'
+                                          : 'Nothing here yet.',
+                                      actionLabel: own ? 'Add words to it' : null,
+                                      onAction: own ? () => _openAdd() : null,
                                     )
                                   : Center(
                                       child: Padding(

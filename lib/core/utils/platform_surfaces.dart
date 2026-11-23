@@ -162,22 +162,10 @@ class PlatformSurfaces {
     required DictionaryDb dict,
     required SharedPreferences prefs,
   }) async {
-    final DateTime today = DateTime.now();
-    final List<Map<String, String>> schedule = <Map<String, String>>[
-      for (int i = 0; i < scheduleDays; i++)
-        if (dict.wordOfTheDay(today.add(Duration(days: i))) case final DictionaryWord w)
-          <String, String>{
-            'date': today
-                .add(Duration(days: i))
-                .toIso8601String()
-                .substring(0, 10),
-            'key': w.wordKey,
-            'word': w.headword,
-            'pos': w.pos,
-            'ipa': w.ipa ?? '',
-            'detail': w.definitionShort,
-          },
-    ];
+    // Thirty word-of-the-day picks (the first builds the pool, a DISTINCT
+    // join over three shelves): on the worker, never in the frames right
+    // after Home's first one.
+    final List<Map<String, String>> schedule = await dict.compute(_scheduleWork(DateTime.now()));
     if (schedule.isEmpty) return;
     await prefs.setString(scheduleKey, jsonEncode(schedule));
     try {
@@ -186,6 +174,22 @@ class PlatformSurfaces {
       // Android only; tests and other hosts have no widget to redraw.
     }
   }
+
+  /// Built synchronously, so the closure captures only [today] and is
+  /// sendable to the dictionary's worker isolate.
+  static List<Map<String, String>> Function(DictionaryDb) _scheduleWork(DateTime today) =>
+      (DictionaryDb db) => <Map<String, String>>[
+        for (int i = 0; i < scheduleDays; i++)
+          if (db.wordOfTheDay(today.add(Duration(days: i))) case final DictionaryWord w)
+            <String, String>{
+              'date': today.add(Duration(days: i)).toIso8601String().substring(0, 10),
+              'key': w.wordKey,
+              'word': w.headword,
+              'pos': w.pos,
+              'ipa': w.ipa ?? '',
+              'detail': w.definitionShort,
+            },
+      ];
 
   /// Arrivals while the app is open are pushed by the activity.
   static void listenForArrivals(void Function(Map<Object?, Object?> data) onArrival) {

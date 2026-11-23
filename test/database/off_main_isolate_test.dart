@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mull/features/dictionary/idiom_sheet.dart';
 import 'package:mull/core/database/dictionary_db.dart';
 import 'package:mull/core/database/dictionary_installer.dart';
+import 'package:mull/core/providers.dart' show wordOfTheDayWork;
+import 'package:mull/core/utils/platform_surfaces.dart';
 import 'package:mull/features/quiz/quiz_engine.dart';
+import 'package:mull/features/settings/more_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Watches the calling isolate's event loop while [work] runs and reports the
@@ -149,5 +153,17 @@ void main() {
       await dict.collectionWordKeysAsync(<String>['everyday']),
       dict.collectionWordKeys(<String>['everyday']),
     );
+
+    // More's dictionary row count (a count(DISTINCT) over the whole table).
+    expect(await moreHeadwordCount(dict), dict.headwordCount);
+
+    // Home's word of the day and the launcher widget's thirty-day schedule.
+    final DateTime day = DateTime(2026, 11, 23);
+    expect((await dict.compute(wordOfTheDayWork(day)))?.wordKey, dict.wordOfTheDay(day)?.wordKey);
+    final SharedPreferences schedulePrefs = await SharedPreferences.getInstance();
+    await PlatformSurfaces.syncWidgetSchedule(dict: dict, prefs: schedulePrefs);
+    final List<dynamic> schedule =
+        jsonDecode(schedulePrefs.getString(PlatformSurfaces.scheduleKey)!) as List<dynamic>;
+    expect(schedule, hasLength(PlatformSurfaces.scheduleDays));
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

@@ -636,7 +636,7 @@ class WordList extends DataClass implements Insertable<WordList> {
   final int id;
   final String name;
 
-  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  /// An index into `MullColors.tags`, or null for the theme accent.
   final int? color;
   final bool isReading;
   final DateTime createdAt;
@@ -1217,6 +1217,24 @@ class $UserCollectionsTable extends UserCollections
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _iconMeta = const VerificationMeta('icon');
+  @override
+  late final GeneratedColumn<String> icon = GeneratedColumn<String>(
+    'icon',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1225,6 +1243,8 @@ class $UserCollectionsTable extends UserCollections
     name,
     color,
     createdAt,
+    icon,
+    note,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1279,6 +1299,18 @@ class $UserCollectionsTable extends UserCollections
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('icon')) {
+      context.handle(
+        _iconMeta,
+        icon.isAcceptableOrUnknown(data['icon']!, _iconMeta),
+      );
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
     return context;
   }
 
@@ -1312,6 +1344,14 @@ class $UserCollectionsTable extends UserCollections
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
       )!,
+      icon: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon'],
+      ),
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
     );
   }
 
@@ -1332,9 +1372,13 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
   final String kind;
   final String name;
 
-  /// An index into `MullColors.tagHues`, or null for the theme accent.
+  /// An index into `MullColors.tags`, or null for the theme accent.
   final int? color;
   final DateTime createdAt;
+
+  /// A stable id from `ShelfIcons` (never a code point), or null.
+  final String? icon;
+  final String? note;
   const UserCollection({
     required this.id,
     required this.slug,
@@ -1342,6 +1386,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
     required this.name,
     this.color,
     required this.createdAt,
+    this.icon,
+    this.note,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1354,6 +1400,12 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
       map['color'] = Variable<int>(color);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || icon != null) {
+      map['icon'] = Variable<String>(icon);
+    }
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
     return map;
   }
 
@@ -1367,6 +1419,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
           ? const Value.absent()
           : Value(color),
       createdAt: Value(createdAt),
+      icon: icon == null && nullToAbsent ? const Value.absent() : Value(icon),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
     );
   }
 
@@ -1382,6 +1436,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
       name: serializer.fromJson<String>(json['name']),
       color: serializer.fromJson<int?>(json['color']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      icon: serializer.fromJson<String?>(json['icon']),
+      note: serializer.fromJson<String?>(json['note']),
     );
   }
   @override
@@ -1394,6 +1450,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
       'name': serializer.toJson<String>(name),
       'color': serializer.toJson<int?>(color),
       'createdAt': serializer.toJson<DateTime>(createdAt),
+      'icon': serializer.toJson<String?>(icon),
+      'note': serializer.toJson<String?>(note),
     };
   }
 
@@ -1404,6 +1462,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
     String? name,
     Value<int?> color = const Value.absent(),
     DateTime? createdAt,
+    Value<String?> icon = const Value.absent(),
+    Value<String?> note = const Value.absent(),
   }) => UserCollection(
     id: id ?? this.id,
     slug: slug ?? this.slug,
@@ -1411,6 +1471,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
     name: name ?? this.name,
     color: color.present ? color.value : this.color,
     createdAt: createdAt ?? this.createdAt,
+    icon: icon.present ? icon.value : this.icon,
+    note: note.present ? note.value : this.note,
   );
   UserCollection copyWithCompanion(UserCollectionsCompanion data) {
     return UserCollection(
@@ -1420,6 +1482,8 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
       name: data.name.present ? data.name.value : this.name,
       color: data.color.present ? data.color.value : this.color,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      icon: data.icon.present ? data.icon.value : this.icon,
+      note: data.note.present ? data.note.value : this.note,
     );
   }
 
@@ -1431,13 +1495,16 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
           ..write('kind: $kind, ')
           ..write('name: $name, ')
           ..write('color: $color, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('icon: $icon, ')
+          ..write('note: $note')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, slug, kind, name, color, createdAt);
+  int get hashCode =>
+      Object.hash(id, slug, kind, name, color, createdAt, icon, note);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1447,7 +1514,9 @@ class UserCollection extends DataClass implements Insertable<UserCollection> {
           other.kind == this.kind &&
           other.name == this.name &&
           other.color == this.color &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.icon == this.icon &&
+          other.note == this.note);
 }
 
 class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
@@ -1457,6 +1526,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
   final Value<String> name;
   final Value<int?> color;
   final Value<DateTime> createdAt;
+  final Value<String?> icon;
+  final Value<String?> note;
   const UserCollectionsCompanion({
     this.id = const Value.absent(),
     this.slug = const Value.absent(),
@@ -1464,6 +1535,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
     this.name = const Value.absent(),
     this.color = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.icon = const Value.absent(),
+    this.note = const Value.absent(),
   });
   UserCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -1472,6 +1545,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
     required String name,
     this.color = const Value.absent(),
     required DateTime createdAt,
+    this.icon = const Value.absent(),
+    this.note = const Value.absent(),
   }) : slug = Value(slug),
        kind = Value(kind),
        name = Value(name),
@@ -1483,6 +1558,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
     Expression<String>? name,
     Expression<int>? color,
     Expression<DateTime>? createdAt,
+    Expression<String>? icon,
+    Expression<String>? note,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1491,6 +1568,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
       if (name != null) 'name': name,
       if (color != null) 'color': color,
       if (createdAt != null) 'created_at': createdAt,
+      if (icon != null) 'icon': icon,
+      if (note != null) 'note': note,
     });
   }
 
@@ -1501,6 +1580,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
     Value<String>? name,
     Value<int?>? color,
     Value<DateTime>? createdAt,
+    Value<String?>? icon,
+    Value<String?>? note,
   }) {
     return UserCollectionsCompanion(
       id: id ?? this.id,
@@ -1509,6 +1590,8 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
       name: name ?? this.name,
       color: color ?? this.color,
       createdAt: createdAt ?? this.createdAt,
+      icon: icon ?? this.icon,
+      note: note ?? this.note,
     );
   }
 
@@ -1533,6 +1616,12 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (icon.present) {
+      map['icon'] = Variable<String>(icon.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
     return map;
   }
 
@@ -1544,7 +1633,9 @@ class UserCollectionsCompanion extends UpdateCompanion<UserCollection> {
           ..write('kind: $kind, ')
           ..write('name: $name, ')
           ..write('color: $color, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('icon: $icon, ')
+          ..write('note: $note')
           ..write(')'))
         .toString();
   }
@@ -6557,6 +6648,8 @@ typedef $$UserCollectionsTableCreateCompanionBuilder =
       required String name,
       Value<int?> color,
       required DateTime createdAt,
+      Value<String?> icon,
+      Value<String?> note,
     });
 typedef $$UserCollectionsTableUpdateCompanionBuilder =
     UserCollectionsCompanion Function({
@@ -6566,6 +6659,8 @@ typedef $$UserCollectionsTableUpdateCompanionBuilder =
       Value<String> name,
       Value<int?> color,
       Value<DateTime> createdAt,
+      Value<String?> icon,
+      Value<String?> note,
     });
 
 final class $$UserCollectionsTableReferences
@@ -6641,6 +6736,16 @@ class $$UserCollectionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> userCollectionWordsRefs(
     Expression<bool> Function($$UserCollectionWordsTableFilterComposer f) f,
   ) {
@@ -6705,6 +6810,16 @@ class $$UserCollectionsTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$UserCollectionsTableAnnotationComposer
@@ -6733,6 +6848,12 @@ class $$UserCollectionsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get icon =>
+      $composableBuilder(column: $table.icon, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
 
   Expression<T> userCollectionWordsRefs<T extends Object>(
     Expression<T> Function($$UserCollectionWordsTableAnnotationComposer a) f,
@@ -6797,6 +6918,8 @@ class $$UserCollectionsTableTableManager
                 Value<String> name = const Value.absent(),
                 Value<int?> color = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> icon = const Value.absent(),
+                Value<String?> note = const Value.absent(),
               }) => UserCollectionsCompanion(
                 id: id,
                 slug: slug,
@@ -6804,6 +6927,8 @@ class $$UserCollectionsTableTableManager
                 name: name,
                 color: color,
                 createdAt: createdAt,
+                icon: icon,
+                note: note,
               ),
           createCompanionCallback:
               ({
@@ -6813,6 +6938,8 @@ class $$UserCollectionsTableTableManager
                 required String name,
                 Value<int?> color = const Value.absent(),
                 required DateTime createdAt,
+                Value<String?> icon = const Value.absent(),
+                Value<String?> note = const Value.absent(),
               }) => UserCollectionsCompanion.insert(
                 id: id,
                 slug: slug,
@@ -6820,6 +6947,8 @@ class $$UserCollectionsTableTableManager
                 name: name,
                 color: color,
                 createdAt: createdAt,
+                icon: icon,
+                note: note,
               ),
           withReferenceMapper: (p0) => p0
               .map(

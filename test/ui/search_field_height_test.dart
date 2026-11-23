@@ -4,9 +4,9 @@ import 'package:mull/core/theme/app_theme.dart';
 import 'package:mull/core/theme/palette.dart';
 import 'package:mull/shared/widgets/fields.dart';
 
-/// The pill search field is the same height empty and filled: the clear
-/// button that appears with the first letter must not grow the row, at the
-/// default scale and at Android's largest.
+/// The search bar (Kuber's 48dp pill) is the same height empty and filled:
+/// the clear button that scales in with the first letter must not grow the
+/// row, at the default scale and at Android's largest.
 void main() {
   for (final double scale in const <double>[1.0, 2.0]) {
     testWidgets('SearchField keeps its height when text is entered at ${scale}x', (WidgetTester tester) async {
@@ -30,14 +30,24 @@ void main() {
       final double empty = tester.getSize(find.byType(SearchField)).height;
       expect(find.bySemanticsLabel('Clear'), findsNothing, reason: 'no clear button while empty');
 
+      // The whole pill takes the tap, and the text sits in its middle.
+      final Rect pill = tester.getRect(find.byType(SearchField));
+      await tester.tapAt(Offset(pill.center.dx, pill.bottom - 4));
+      await tester.pump();
+      expect(tester.state<EditableTextState>(find.byType(EditableText)).widget.focusNode.hasFocus, isTrue);
+      expect(tester.getCenter(find.byType(EditableText)).dy, closeTo(pill.center.dy, 1.5));
+
       await tester.enterText(find.byType(TextField), 'mitigate');
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300)); // the clear button scales in
       final double filled = tester.getSize(find.byType(SearchField)).height;
       expect(find.bySemanticsLabel('Clear'), findsOneWidget, reason: 'clear button once there is text');
       expect(filled, empty, reason: 'height changed from $empty to $filled at ${scale}x');
+      expect(empty, SearchField.height, reason: "Kuber's pill is 48dp");
 
       await tester.tap(find.bySemanticsLabel('Clear'));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(controller.text, isEmpty);
       expect(tester.getSize(find.byType(SearchField)).height, empty);
     });

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/database/dictionary_db.dart';
-import '../../core/database/user_db.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -67,9 +66,8 @@ class _ShelfStatsScreenState extends ConsumerState<ShelfStatsScreen> {
   @override
   Widget build(BuildContext context) {
     final MullColors c = context.colors;
-    final List<String> shelfKeys = ref.watch(collectionKeysProvider)[widget.slug] ?? const <String>[];
-    final Map<String, SeenWord> seenMap = ref.watch(seenMapProvider).value ?? const <String, SeenWord>{};
-    final int seenCount = shelfKeys.where(seenMap.containsKey).length;
+    final Progress progress = ref.watch(progressOfProvider(widget.slug));
+    final int seenCount = progress.seen;
 
     final String accuracyStr = _totalQuestions > 0
         ? '${((_totalCorrect / _totalQuestions) * 100).round()}%'
@@ -100,7 +98,7 @@ class _ShelfStatsScreenState extends ConsumerState<ShelfStatsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: <Widget>[
                       _StatColumn(
-                        figure: '$seenCount of ${shelfKeys.length}',
+                        figure: '$seenCount of ${progress.total}',
                         label: 'SEEN OF TOTAL',
                       ),
                       _StatColumn(

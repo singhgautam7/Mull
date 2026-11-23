@@ -110,6 +110,11 @@ abstract final class MullType {
   /// Nav label.
   static TextStyle get titleSmall => _sans(13.5, 1.3, 600);
 
+  /// Kuber's button labels: Material's titleMedium (16 / 24, 500) on a 56dp
+  /// button, labelLarge (14 / 20, 500) on a 40dp one.
+  static TextStyle get buttonLarge => _sans(16, 1.5, 500);
+  static TextStyle get buttonSmall => _sans(14, 20 / 14, 500);
+
   /// Notes, secondary body.
   static TextStyle get note => _sans(13.5, 1.65, 400);
 

@@ -101,6 +101,7 @@ class Collection {
     required this.sortOrder,
     required this.wordCount,
     this.color,
+    this.note,
   });
 
   /// The row id in whichever database owns it. Never stored in user data.
@@ -118,8 +119,12 @@ class Collection {
   final int sortOrder;
   final int wordCount;
 
-  /// User collections only: an index into `MullColors.tagHues`.
+  /// User collections only: an index into `MullColors.tags`.
   final int? color;
+
+  /// User collections only: the shelf's own note. (`icon` above is the topic
+  /// icon for dictionary shelves and a `ShelfIcons` id for user shelves.)
+  final String? note;
 
   /// Lives in the user database: a system or user collection.
   bool get isUsers => kind == 'user' || kind == 'system';
@@ -731,16 +736,6 @@ class DictionaryDb {
         }
         return out;
       });
-
-  /// Slugs of the collections a word belongs to.
-  List<String> collectionsOf(String wordKey) => _db
-      .select(
-        'SELECT c.slug FROM collection_words cw JOIN collections c ON c.id = cw.collection_id '
-        'WHERE cw.word_key = ? ORDER BY c.sort_order',
-        <Object>[wordKey],
-      )
-      .map((Row r) => r['slug'] as String)
-      .toList();
 
   /// The inflections the dictionary knows for a word (plural, past...).
   List<String> inflections(String wordKey) => _db
